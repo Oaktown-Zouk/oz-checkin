@@ -66,11 +66,15 @@ export const api = {
   login: (password: string) =>
     request<{ ok: true }>("/api/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
-  students: (q: string) => request<StudentStatus[]>(`/api/students?q=${encodeURIComponent(q)}`),
-  checkIn: (studentId: number, paymentId?: number) =>
+  students: (q: string, date?: string) => {
+    const params = new URLSearchParams({ q });
+    if (date) params.set("date", date);
+    return request<StudentStatus[]>(`/api/students?${params.toString()}`);
+  },
+  checkIn: (studentId: number, paymentId?: number, effectiveAt?: string) =>
     request<StudentStatus>("/api/checkins", {
       method: "POST",
-      body: JSON.stringify({ studentId, paymentId }),
+      body: JSON.stringify({ studentId, paymentId, effectiveAt }),
     }),
   undoCheckIn: (checkinId: number) =>
     request<StudentStatus>(`/api/checkins/${checkinId}`, { method: "DELETE" }),

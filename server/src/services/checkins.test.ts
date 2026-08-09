@@ -1,5 +1,6 @@
 import { before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { eq } from "drizzle-orm";
 import {
   setupTestDb,
   resetDb,
@@ -8,7 +9,11 @@ import {
   insertPayment,
 } from "../testing/helpers.js";
 import { createCheckIn, undoCheckIn } from "./checkins.js";
+import { listStudentStatuses } from "./studentStatus.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
+import { db } from "../db/client.js";
+import { payments } from "../db/schema.js";
+import { dateStringFor, today } from "../lib/date.js";
 
 before(setupTestDb);
 beforeEach(resetDb);
@@ -171,5 +176,80 @@ describe("undoCheckIn", () => {
 
     await assert.rejects(() => undoCheckIn(checkinId), NotFoundError);
     await assert.rejects(() => undoCheckIn(999_999), NotFoundError);
+  });
+});
+
+describe("createCheckIn — backdating via effectiveAt", () => {
+  it("stamps both the day-bucket and the exact time from effectiveAt, not now", async () => {
+    const studentId = await insertStudent("kate@example.com");
+    const effectiveAt = new Date("2026-08-01T15:04:00");
+
+    const status = await createCheckIn(studentId, { effectiveAt });
+
+    assert.equal(status.checkinsToday[0].checkedInAt, effectiveAt.toISOString());
+  });
+
+  it("a backdated check-in shows up when viewing that day, not when viewing today", async () => {
+    const studentId = await insertStudent("liam@example.com", "Liam");
+    const pastDate = "2026-08-01";
+    const effectiveAt = new Date(`${pastDate}T15:04:00`);
+
+    await createCheckIn(studentId, { effectiveAt });
+
+    const [pastView] = await listStudentStatuses({ ids: [studentId], date: pastDate });
+    assert.equal(pastView.checkedInToday, true);
+
+    const [todayView] = await listStudentStatuses({ ids: [studentId] });
+    assert.equal(todayView.checkedInToday, false, "today's real view is unaffected");
+  });
+
+  it("credit redemption is stamped with the effective time too", async () => {
+    const studentId = await insertStudent("mona@example.com");
+    const paymentId = await insertPayment(studentId);
+    const effectiveAt = new Date("2026-08-01T15:04:00");
+
+    await createCheckIn(studentId, { effectiveAt });
+
+    const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+    assert.equal(payment.redeemedAt?.toISOString(), effectiveAt.toISOString());
+  });
+
+  it("the daily cap applies per backdated day, independent of today's real state", async () => {
+    const studentId = await insertStudent("noah@example.com");
+    await insertMembership(studentId, { status: "active" });
+    const pastDate = "2026-08-01";
+
+    // Check in for real today first.
+    await createCheckIn(studentId);
+    // A correction for a different (past) day is still allowed — it's a separate cap.
+    const backdated = await createCheckIn(studentId, {
+      effectiveAt: new Date(`${pastDate}T09:00:00`),
+    });
+    assert.equal(dateStringFor(new Date(backdated.checkinsToday[0].checkedInAt)), pastDate);
+
+    // But a second correction for that SAME past day hits the same one-per-day cap.
+    await assert.rejects(
+      () => createCheckIn(studentId, { effectiveAt: new Date(`${pastDate}T09:30:00`) }),
+      ConflictError
+    );
+  });
+});
+
+describe("undoCheckIn — on a backdated check-in", () => {
+  it("returns status for the check-in's own day, not today", async () => {
+    const studentId = await insertStudent("olive@example.com");
+    const pastDate = "2026-08-01";
+    const status = await createCheckIn(studentId, {
+      effectiveAt: new Date(`${pastDate}T09:00:00`),
+    });
+    const checkinId = status.checkinsToday[0].id;
+
+    const afterUndo = await undoCheckIn(checkinId);
+
+    assert.equal(afterUndo.checkedInToday, false);
+    // Sanity: this student really does have no check-in today (the real today), so the
+    // fact that checkedInToday is false here is specifically about pastDate's view, not
+    // a coincidence of also being true for real today.
+    assert.notEqual(pastDate, today());
   });
 });

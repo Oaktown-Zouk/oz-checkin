@@ -40,10 +40,14 @@ export interface StudentStatus {
     currentPeriodEnd: string | null;
   } | null;
   credits: { available: number; total: number; payments: CreditInfo[] } | null;
+  // "Today" here means the *viewed* date — callers can look at (and check in against)
+  // a past date via listStudentStatuses'/createCheckIn's `date` param, defaulting to the
+  // real today when omitted. Field names kept as -Today for minimal API churn; the
+  // caller already knows which date it asked for.
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
-  // Whether a *next* check-in is currently possible: the first check-in of the day is
-  // always allowed; any check-in after that requires an unredeemed credit to spend.
+  // Whether a *next* check-in is currently possible: the first check-in of the (viewed)
+  // day is always allowed; any check-in after that requires an unredeemed credit to spend.
   canCheckIn: boolean;
   requiresCreditToCheckIn: boolean;
 }
@@ -132,9 +136,9 @@ function buildStatus(
   };
 }
 
-export async function listStudentStatuses(opts: { query?: string; ids?: number[] } = {}): Promise<
-  StudentStatus[]
-> {
+export async function listStudentStatuses(
+  opts: { query?: string; ids?: number[]; date?: string } = {}
+): Promise<StudentStatus[]> {
   const conditions = [];
   if (opts.query) conditions.push(like(students.name, `%${opts.query}%`));
   if (opts.ids) conditions.push(inArray(students.id, opts.ids));
@@ -150,7 +154,7 @@ export async function listStudentStatuses(opts: { query?: string; ids?: number[]
   if (studentRows.length === 0) return [];
 
   const ids = studentRows.map((s) => s.id);
-  const todayStr = today();
+  const todayStr = opts.date ?? today();
 
   const [waiverRows, membershipRows, paymentRows, checkinRows, studentEmailRows] = await Promise.all([
     db.select().from(waivers).where(inArray(waivers.studentId, ids)),
@@ -184,7 +188,7 @@ export async function listStudentStatuses(opts: { query?: string; ids?: number[]
   return statuses;
 }
 
-export async function getStudentStatusById(id: number): Promise<StudentStatus | null> {
-  const [status] = await listStudentStatuses({ ids: [id] });
+export async function getStudentStatusById(id: number, date?: string): Promise<StudentStatus | null> {
+  const [status] = await listStudentStatuses({ ids: [id], date });
   return status ?? null;
 }

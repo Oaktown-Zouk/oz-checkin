@@ -155,4 +155,34 @@ describe("getStudentStatusById", () => {
     const status = await getStudentStatusById(999_999);
     assert.equal(status, null);
   });
+
+  it("accepts a date to view/act on a day other than today", async () => {
+    const id = await insertStudent("a@example.com");
+    const pastDate = "2026-08-01";
+    await insertCheckin(id, { date: pastDate });
+
+    const pastStatus = await getStudentStatusById(id, pastDate);
+    assert.equal(pastStatus?.checkedInToday, true);
+
+    const liveStatus = await getStudentStatusById(id);
+    assert.equal(liveStatus?.checkedInToday, false);
+  });
+});
+
+describe("listStudentStatuses — date param", () => {
+  it("scopes the checked-in bucket and sort to the given date, not real today", async () => {
+    const checkedOnPastDay = await insertStudent("p@example.com", "Past Day Person");
+    await insertStudent("q@example.com", "Nobody");
+    await insertCheckin(checkedOnPastDay, { date: "2026-08-01" });
+
+    const pastView = await listStudentStatuses({ date: "2026-08-01" });
+    const pastStatus = pastView.find((s) => s.id === checkedOnPastDay);
+    assert.equal(pastStatus?.checkedInToday, true);
+    // sorted to the bottom on that day's view
+    assert.equal(pastView[pastView.length - 1].id, checkedOnPastDay);
+
+    const liveView = await listStudentStatuses();
+    const liveStatus = liveView.find((s) => s.id === checkedOnPastDay);
+    assert.equal(liveStatus?.checkedInToday, false);
+  });
 });

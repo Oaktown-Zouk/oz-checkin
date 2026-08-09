@@ -2,19 +2,25 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { checkins, payments } from "../db/schema.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
-import { today } from "../lib/date.js";
+import { dateStringFor } from "../lib/date.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
 export async function createCheckIn(
   studentId: number,
-  opts: { paymentId?: number; checkedInBy?: string } = {}
+  opts: { paymentId?: number; checkedInBy?: string; effectiveAt?: Date } = {}
 ): Promise<StudentStatus> {
-  const status = await getStudentStatusById(studentId);
+  // Front desk can backdate a correction via effectiveAt — both the day-bucket and the
+  // exact timestamp follow it, so "already checked in" / credit-cap logic below is
+  // evaluated against that day, not whatever day it actually is right now.
+  const effectiveAt = opts.effectiveAt ?? new Date();
+  const date = dateStringFor(effectiveAt);
+
+  const status = await getStudentStatusById(studentId, date);
   if (!status) throw new NotFoundError("Student not found");
 
   if (status.checkedInToday && !status.canCheckIn) {
     throw new ConflictError(
-      "Already checked in today and no unredeemed credits remain to use another pass."
+      `Already checked in on ${date} and no unredeemed credits remain to use another pass.`
     );
   }
 
@@ -26,7 +32,7 @@ export async function createCheckIn(
     if (credit.redeemed) throw new ConflictError("That payment has already been redeemed.");
     paymentIdToRedeem = opts.paymentId;
   } else if (status.checkedInToday) {
-    // Additional check-in beyond the first today always spends a credit.
+    // Additional check-in beyond the first for this day always spends a credit.
     const oldestUnredeemed = status.credits?.payments.find((p) => !p.redeemed);
     if (!oldestUnredeemed) {
       throw new ConflictError("No unredeemed credits available to use another pass.");
@@ -45,7 +51,8 @@ export async function createCheckIn(
       .insert(checkins)
       .values({
         studentId,
-        date: today(),
+        date,
+        checkedInAt: effectiveAt,
         checkedInBy: opts.checkedInBy ?? null,
         paymentId: paymentIdToRedeem,
       })
@@ -55,13 +62,13 @@ export async function createCheckIn(
     if (paymentIdToRedeem !== null) {
       tx
         .update(payments)
-        .set({ redeemedAt: new Date(), redeemedByCheckinId: inserted.id })
+        .set({ redeemedAt: effectiveAt, redeemedByCheckinId: inserted.id })
         .where(eq(payments.id, paymentIdToRedeem))
         .run();
     }
   });
 
-  const updated = await getStudentStatusById(studentId);
+  const updated = await getStudentStatusById(studentId, date);
   if (!updated) throw new NotFoundError("Student not found");
   return updated;
 }
@@ -86,7 +93,9 @@ export async function undoCheckIn(checkinId: number): Promise<StudentStatus> {
     }
   });
 
-  const updated = await getStudentStatusById(checkin.studentId);
+  // Return status for the day the check-in belonged to, not literally today — undoing a
+  // backdated correction should reflect back on that day's view, not "today"'s.
+  const updated = await getStudentStatusById(checkin.studentId, checkin.date);
   if (!updated) throw new NotFoundError("Student not found");
   return updated;
 }

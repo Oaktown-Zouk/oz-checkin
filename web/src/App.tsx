@@ -3,6 +3,7 @@ import { api, UnauthorizedError, type StudentStatus, type SyncStatus } from "./a
 import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
+import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "never";
@@ -12,6 +13,10 @@ function timeAgo(iso: string | null): string {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ago`;
+}
+
+function formatEffectiveBanner(datetimeLocal: string): string {
+  return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 }
 
 export function App() {
@@ -24,6 +29,12 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
 
+  // "" means live (now); otherwise a datetime-local string ("2026-08-05T14:30") the
+  // front desk picked to view and correct a past day. Not persisted — a page reload
+  // always comes back up live, so nobody's stuck backdating without realizing it.
+  const [effectiveAt, setEffectiveAt] = useState("");
+  const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
+
   useEffect(() => {
     api
       .session()
@@ -32,10 +43,10 @@ export function App() {
       .finally(() => setAuthChecked(true));
   }, []);
 
-  const refreshStudents = useCallback(async (q: string) => {
+  const refreshStudents = useCallback(async (q: string, date?: string) => {
     setLoading(true);
     try {
-      const results = await api.students(q);
+      const results = await api.students(q, date);
       setStudents(results);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
@@ -59,14 +70,15 @@ export function App() {
 
   useEffect(() => {
     if (!authenticated) return;
-    const handle = setTimeout(() => refreshStudents(query), 250);
+    const handle = setTimeout(() => refreshStudents(query, effectiveDate), 250);
     return () => clearTimeout(handle);
-  }, [authenticated, query, refreshStudents]);
+  }, [authenticated, query, effectiveDate, refreshStudents]);
 
   async function handleCheckIn(studentId: number) {
     try {
-      await api.checkIn(studentId);
-      await refreshStudents(query);
+      const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+      await api.checkIn(studentId, undefined, effectiveIso);
+      await refreshStudents(query, effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
       else alert(err instanceof Error ? err.message : "Check-in failed");
@@ -76,7 +88,7 @@ export function App() {
   async function handleUndo(checkinId: number) {
     try {
       await api.undoCheckIn(checkinId);
-      await refreshStudents(query);
+      await refreshStudents(query, effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
       else alert(err instanceof Error ? err.message : "Undo failed");
@@ -86,7 +98,7 @@ export function App() {
   async function handleMerge(studentId: number, otherEmail: string) {
     try {
       await api.mergeStudent(studentId, otherEmail);
-      await refreshStudents(query);
+      await refreshStudents(query, effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
       throw err;
@@ -97,7 +109,7 @@ export function App() {
     setSyncing(true);
     try {
       await api.triggerSync();
-      await Promise.all([refreshSyncStatus(), refreshStudents(query)]);
+      await Promise.all([refreshSyncStatus(), refreshStudents(query, effectiveDate)]);
     } finally {
       setSyncing(false);
     }
@@ -113,16 +125,30 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <h1>OZ Check-In</h1>
-        <div className="sync-info">
-          <span>
-            Forms synced {timeAgo(syncStatus?.google_forms ?? null)} · Givebutter synced{" "}
-            {timeAgo(syncStatus?.givebutter ?? null)}
-          </span>
-          <button className="btn btn-secondary" disabled={syncing} onClick={handleRefresh}>
-            {syncing ? "Refreshing…" : "Refresh now"}
-          </button>
+        <div className="header-controls">
+          <div className="sync-info">
+            <span>
+              Forms synced {timeAgo(syncStatus?.google_forms ?? null)} · Givebutter synced{" "}
+              {timeAgo(syncStatus?.givebutter ?? null)}
+            </span>
+            <button className="btn btn-secondary" disabled={syncing} onClick={handleRefresh}>
+              {syncing ? "Refreshing…" : "Refresh now"}
+            </button>
+          </div>
+          <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
         </div>
       </header>
+
+      {effectiveAt && (
+        <div className="effective-date-banner">
+          <span>
+            Viewing and Checking In for <strong>{formatEffectiveBanner(effectiveAt)}</strong>
+          </span>
+          <button type="button" className="btn btn-secondary" onClick={() => setEffectiveAt("")}>
+            Return to live
+          </button>
+        </div>
+      )}
 
       <SearchBar value={query} onChange={setQuery} />
 

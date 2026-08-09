@@ -3,11 +3,15 @@ import { requireAuth } from "../lib/auth.js";
 import { listStudentStatuses } from "../services/studentStatus.js";
 import { mergeStudents } from "../services/merge.js";
 import { HttpError } from "../lib/errors.js";
+import { isValidDateString } from "../lib/date.js";
 
 export const studentRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/", { preHandler: requireAuth }, async (req) => {
-    const { q } = req.query as { q?: string };
-    return listStudentStatuses({ query: q });
+  app.get("/", { preHandler: requireAuth }, async (req, reply) => {
+    const { q, date } = req.query as { q?: string; date?: string };
+    if (date !== undefined && !isValidDateString(date)) {
+      return reply.code(400).send({ error: "date must be YYYY-MM-DD" });
+    }
+    return listStudentStatuses({ query: q, date });
   });
 
   app.post("/:id/merge", { preHandler: requireAuth }, async (req, reply) => {

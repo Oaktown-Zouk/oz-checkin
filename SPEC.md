@@ -106,6 +106,29 @@ and a confirm-to-override, but never hard-blocks check-in.
 - History is retained indefinitely (`checkins` table keeps one row per redemption) — this is
   also the natural place to compute attendance stats later.
 
+### Viewing and correcting past days
+
+Front desk can set an **effective date & time** (a `datetime-local` picker in the header,
+"live" — i.e. unset — by default) that affects both what the page shows and what a new
+check-in gets stamped with:
+
+- **View**: the whole page — who's checked in, sort order, the daily cap — is scoped to the
+  effective date instead of the real today. This falls directly out of `checkins.date`
+  already being a per-row field; it was always "correct" per day, the app just never asked
+  for anything other than today's.
+- **Check in**: while an effective date/time is set, a new check-in's `date` *and*
+  `checked_in_at` (and a redeemed credit's `redeemed_at`) are stamped with that value, not
+  the real now. This is how a missed check-in from three days ago gets corrected — set the
+  time, check them in, return to live.
+- Not persisted anywhere — it's in-memory UI state that resets to live on page reload. That's
+  intentional: the risk of this feature is someone forgetting they're in the past and
+  backdating today's real walk-ins by accident, so leaving it can't survive past "close the
+  tab." A yellow banner ("Viewing and Checking In for `<date>`") is shown above the search
+  bar the entire time it's set, impossible to miss.
+- No guardrail on future dates — checking someone in "tomorrow" just isn't a thing that
+  happens in practice, and if picked by accident the view is simply empty (harmless), so it
+  wasn't worth adding friction for.
+
 ## Architecture
 
 Single Node.js/TypeScript process for v1 — one deployable, no separate frontend host needed:
@@ -177,12 +200,14 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
 
 ## API
 
-- `GET /api/students?q=<search>` — list with computed waiver/payment/checkin status, filtered
-  server-side by name.
-- `POST /api/checkins` `{ studentId, paymentId? }` — check in for today; auto-selects oldest
-  unredeemed credit if the student is a one-time payer and `paymentId` isn't given. Rejected
-  (409) if: a recurring member already has a check-in today, or a one-time payer has no
-  unredeemed credits left.
+- `GET /api/students?q=<search>&date=<YYYY-MM-DD>` — list with computed waiver/payment/checkin
+  status, filtered server-side by name. `date` defaults to today; 400 if malformed.
+- `POST /api/checkins` `{ studentId, paymentId?, effectiveAt? }` — check in for today (or for
+  `effectiveAt`'s day if given, an ISO datetime — see "Viewing and correcting past days"
+  above); auto-selects oldest unredeemed credit if the student is a one-time payer and
+  `paymentId` isn't given. 400 if `effectiveAt` doesn't parse. Rejected (409) if: this
+  student already has a check-in that day and can't spend a credit for another, or a
+  one-time payer has no unredeemed credits left.
 - `DELETE /api/checkins/:id` — undo that specific check-in (and un-redeem its payment, if any).
 - `POST /api/students/:id/merge` `{ otherEmail }` — merge the student found by `otherEmail`
   into `:id`. 404 if no student has that email; 409 if it's the same student or the
@@ -204,6 +229,10 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
   address and merge that student's records into this row. Errors (blocked guardrail, no
   matching student) show inline in the dialog. A merged row's linked emails show under
   the primary one so front desk can see why a row combines a waiver and a payment.
+- `datetime-local` picker in the header, empty ("live") by default — set it to view and
+  check in against a past day. A yellow banner ("Viewing and Checking In for `<date>`")
+  appears above the search bar the whole time it's set; a "Return to live" button clears
+  it. Resets to live on page reload — never persisted.
 
 ## Open items to confirm before/while building
 

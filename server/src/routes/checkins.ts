@@ -5,10 +5,20 @@ import { HttpError } from "../lib/errors.js";
 
 export const checkinRoutes: FastifyPluginAsync = async (app) => {
   app.post("/", { preHandler: requireAuth }, async (req, reply) => {
-    const body = req.body as { studentId: number; paymentId?: number };
+    const body = req.body as { studentId: number; paymentId?: number; effectiveAt?: string };
+
+    let effectiveAt: Date | undefined;
+    if (body.effectiveAt !== undefined) {
+      effectiveAt = new Date(body.effectiveAt);
+      if (Number.isNaN(effectiveAt.getTime())) {
+        return reply.code(400).send({ error: "Invalid effectiveAt" });
+      }
+    }
+
     try {
       return await createCheckIn(body.studentId, {
         paymentId: body.paymentId,
+        effectiveAt,
         // Single shared front-desk login for now (see SPEC.md auth section) — nothing
         // more specific to attribute a check-in to yet.
         checkedInBy: "front-desk",
