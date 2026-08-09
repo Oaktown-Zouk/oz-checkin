@@ -3,6 +3,7 @@ import { db } from "../db/client.js";
 import { checkins, payments } from "../db/schema.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { dateStringFor } from "../lib/date.js";
+import { broadcastChange } from "../lib/events.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
 export async function createCheckIn(
@@ -70,6 +71,7 @@ export async function createCheckIn(
 
   const updated = await getStudentStatusById(studentId, date);
   if (!updated) throw new NotFoundError("Student not found");
+  broadcastChange("checkin");
   return updated;
 }
 
@@ -97,5 +99,6 @@ export async function undoCheckIn(checkinId: number): Promise<StudentStatus> {
   // backdated correction should reflect back on that day's view, not "today"'s.
   const updated = await getStudentStatusById(checkin.studentId, checkin.date);
   if (!updated) throw new NotFoundError("Student not found");
+  broadcastChange("undo");
   return updated;
 }

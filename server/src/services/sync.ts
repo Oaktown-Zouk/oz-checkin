@@ -1,5 +1,6 @@
 import { db } from "../db/client.js";
 import { syncState } from "../db/schema.js";
+import { broadcastChange } from "../lib/events.js";
 import { syncGoogleForms } from "./googleForms.js";
 import { syncGivebutter } from "./givebutter.js";
 
@@ -18,7 +19,11 @@ export async function runSync() {
   })();
 
   try {
-    return await syncInFlight;
+    const result = await syncInFlight;
+    // Covers both triggers (cron tick and the manual "Refresh now" button) with one
+    // broadcast, since both funnel through here.
+    broadcastChange("sync");
+    return result;
   } finally {
     syncInFlight = null;
   }

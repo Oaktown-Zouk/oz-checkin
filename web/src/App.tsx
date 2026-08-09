@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, UnauthorizedError, type StudentStatus, type SyncStatus } from "./api.js";
 import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
@@ -73,6 +73,46 @@ export function App() {
     const handle = setTimeout(() => refreshStudents(query, effectiveDate), 250);
     return () => clearTimeout(handle);
   }, [authenticated, query, effectiveDate, refreshStudents]);
+
+  // query/effectiveDate change on every keystroke/date-pick — read the latest values via
+  // ref inside the SSE handlers below instead of putting them in that effect's deps,
+  // which would otherwise tear down and reopen the connection constantly.
+  const queryRef = useRef(query);
+  const effectiveDateRef = useRef(effectiveDate);
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+  useEffect(() => {
+    effectiveDateRef.current = effectiveDate;
+  }, [effectiveDate]);
+
+  // One persistent Server-Sent Events connection instead of polling on a timer: the
+  // backend pushes a "changed" event after any real write (check-in, undo, merge, sync
+  // landing) so every open tab — useful once there's more than one front-desk device —
+  // picks it up right away. The very first event on every connection (including
+  // reconnects) is the server's per-boot random id; EventSource auto-reconnects on its
+  // own after a network blip or a backend restart, and comparing bootId is how we tell
+  // those apart — same server on reconnect means no reload, a different id means the
+  // process actually restarted, so reload to pick up any new frontend build too.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    let knownBootId: string | null = null;
+    const source = new EventSource("/api/events");
+
+    source.addEventListener("boot", (e) => {
+      const { bootId } = JSON.parse((e as MessageEvent).data);
+      if (knownBootId === null) knownBootId = bootId;
+      else if (bootId !== knownBootId) window.location.reload();
+    });
+
+    source.addEventListener("changed", () => {
+      refreshStudents(queryRef.current, effectiveDateRef.current);
+      refreshSyncStatus();
+    });
+
+    return () => source.close();
+  }, [authenticated, refreshStudents, refreshSyncStatus]);
 
   async function handleCheckIn(studentId: number) {
     try {

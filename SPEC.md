@@ -215,6 +215,7 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
 - `POST /api/sync` — trigger an immediate Forms + Givebutter refetch.
 - `GET /api/sync/status` — last-synced timestamps per source, for the "synced Xm ago" UI.
 - `POST /api/login` / `POST /api/logout` — session auth.
+- `GET /api/events` — Server-Sent Events stream (see "Live updates" below).
 
 ## Webpage (front desk view)
 
@@ -223,8 +224,33 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
 - Checked-in-today rows sink to the bottom, grayed out, listing each check-in time + Undo.
   One-time payers with remaining credits keep an active "Use another pass" button on the
   grayed row; recurring members and fully-redeemed one-time payers don't.
-- Missing waiver / no payment → red badge; check-in still works but confirms first.
+- Missing waiver / no payment → red badge; check-in still works but confirms first. A
+  blue "New Member" badge shows for anyone who's never actually checked in before
+  (any date, all-time — `StudentStatus.everCheckedIn`), independent of payment or
+  membership status — a heads-up to be extra welcoming, separate from the free
+  first-time-drop-in promo (which is specifically "no payment + never checked in," and
+  only changes the confirm-dialog wording, not the badges).
 - "Last synced Xm ago" + manual Refresh button, top of page.
+
+### Live updates
+
+One Server-Sent Events connection per open tab (`GET /api/events`, `EventSource` on the
+frontend — auto-reconnects on its own, no client-side retry logic needed):
+
+- The backend calls `broadcastChange()` (`server/src/lib/events.ts`) after any real write
+  — check-in, undo, merge, or a sync landing (cron tick or the manual "Refresh now"
+  button both funnel through `runSync()`, so one call covers both) — fanning a `changed`
+  event out to every connected tab, which triggers a re-fetch of the student list and
+  sync status. This is what makes multiple front-desk devices (a real near-term plan, not
+  just a today concern) see each other's check-ins without a manual refresh.
+- The first event on every connection — including reconnects — is a random id generated
+  once at process boot. The frontend compares it to what it already knows: same id on
+  reconnect means the connection merely blipped (nothing to do); a different id means the
+  backend process actually restarted, so it hard `location.reload()`s to pick up any new
+  frontend build too, instead of running a stale bundle indefinitely. `GET /health` also
+  exposes this id as a plain ops health-check convenience, independent of the frontend.
+- No payload beyond a debug-friendly reason string — at this app's scale (~1k students) a
+  full re-fetch is cheap enough that there's no reason to diff and ship what changed.
 - 3-dot (⋮) menu on each row → **Merge info** — opens a dialog to enter another email
   address and merge that student's records into this row. Errors (blocked guardrail, no
   matching student) show inline in the dialog. A merged row's linked emails show under

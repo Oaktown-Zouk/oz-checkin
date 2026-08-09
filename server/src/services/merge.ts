@@ -12,6 +12,7 @@ import {
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { findStudentIdByEmail } from "../lib/upsertStudent.js";
 import { normalizeEmail } from "../lib/date.js";
+import { broadcastChange } from "../lib/events.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
 async function hasWaiver(studentId: number): Promise<boolean> {
@@ -95,5 +96,6 @@ export async function mergeStudents(survivorId: number, otherEmailRaw: string): 
 
   const updated = await getStudentStatusById(survivorId);
   if (!updated) throw new NotFoundError("Student not found");
+  broadcastChange("merge");
   return updated;
 }
