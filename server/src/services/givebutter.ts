@@ -81,6 +81,15 @@ function dollarsToCents(amount: number): number {
   return Math.round(amount * 100);
 }
 
+// Givebutter timestamps on plans (next_bill_date, start_at, canceled_at) come as
+// "YYYY-MM-DD HH:MM:SS" with no offset — replacing the space with "T" makes this parse
+// as local time per the ECMA-262 Date Time String spec (rather than V8's non-standard
+// handling of the space-separated form), consistent across engines.
+function parseGivebutterTimestamp(value: unknown): Date | null {
+  if (!value) return null;
+  return new Date(String(value).replace(" ", "T"));
+}
+
 export interface SyncResult {
   skipped: boolean;
   processed?: number;
@@ -210,12 +219,9 @@ async function syncPlans(contactsById: Map<string, any>): Promise<SyncResult> {
     const status = String(plan.status ?? "unknown");
     const frequency = plan.frequency ? String(plan.frequency) : null;
     const amountCents = plan.amount != null ? dollarsToCents(Number(plan.amount)) : null;
-    // "YYYY-MM-DD HH:MM:SS", no offset — replacing the space with "T" makes this parse
-    // as local time per the ECMA-262 Date Time String spec (rather than V8's non-standard
-    // handling of the space-separated form), consistent across engines.
-    const currentPeriodEnd = plan.next_bill_date
-      ? new Date(String(plan.next_bill_date).replace(" ", "T"))
-      : null;
+    const currentPeriodEnd = parseGivebutterTimestamp(plan.next_bill_date);
+    const startedAt = parseGivebutterTimestamp(plan.start_at);
+    const canceledAt = parseGivebutterTimestamp(plan.canceled_at);
 
     await db
       .insert(memberships)
@@ -226,10 +232,20 @@ async function syncPlans(contactsById: Map<string, any>): Promise<SyncResult> {
         frequency,
         amountCents,
         currentPeriodEnd,
+        startedAt,
+        canceledAt,
       })
       .onConflictDoUpdate({
         target: memberships.givebutterPlanId,
-        set: { status, frequency, amountCents, currentPeriodEnd, updatedAt: new Date() },
+        set: {
+          status,
+          frequency,
+          amountCents,
+          currentPeriodEnd,
+          startedAt,
+          canceledAt,
+          updatedAt: new Date(),
+        },
       });
 
     processed++;

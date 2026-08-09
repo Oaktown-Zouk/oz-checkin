@@ -4,6 +4,7 @@ import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
+import { StudentPage } from "./components/StudentPage.js";
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "never";
@@ -19,9 +20,40 @@ function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 }
 
+type Route = { type: "list" } | { type: "student"; id: number };
+
+function parseRoute(pathname: string): Route {
+  const match = pathname.match(/^\/students\/(\d+)$/);
+  if (match) return { type: "student", id: Number(match[1]) };
+  return { type: "list" };
+}
+
 export function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+
+  // Hand-rolled instead of pulling in a router: the app only ever has two "pages," and
+  // this needs to (a) parse the initial URL on load so a direct link or a reload lands
+  // on the right view, and (b) update the URL on navigation. Both are plain History API.
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
+
+  useEffect(() => {
+    function onPopState() {
+      setRoute(parseRoute(window.location.pathname));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const navigateToStudent = useCallback((id: number) => {
+    window.history.pushState(null, "", `/students/${id}`);
+    setRoute({ type: "student", id });
+  }, []);
+
+  const navigateToList = useCallback(() => {
+    window.history.pushState(null, "", "/");
+    setRoute({ type: "list" });
+  }, []);
 
   const [query, setQuery] = useState("");
   const [students, setStudents] = useState<StudentStatus[]>([]);
@@ -63,16 +95,21 @@ export function App() {
     }
   }, []);
 
+  // Bumped on every backend-pushed "changed" event (see the SSE effect below). Both the
+  // list view and StudentPage react to it independently via their own effects, so
+  // whichever is actually on screen stays live without polling.
+  const [changeSignal, setChangeSignal] = useState(0);
+
   useEffect(() => {
     if (!authenticated) return;
     refreshSyncStatus();
-  }, [authenticated, refreshSyncStatus]);
+  }, [authenticated, changeSignal, refreshSyncStatus]);
 
   useEffect(() => {
     if (!authenticated) return;
     const handle = setTimeout(() => refreshStudents(query, effectiveDate), 250);
     return () => clearTimeout(handle);
-  }, [authenticated, query, effectiveDate, refreshStudents]);
+  }, [authenticated, query, effectiveDate, changeSignal, refreshStudents]);
 
   // query/effectiveDate change on every keystroke/date-pick — read the latest values via
   // ref inside the SSE handlers below instead of putting them in that effect's deps,
@@ -107,12 +144,11 @@ export function App() {
     });
 
     source.addEventListener("changed", () => {
-      refreshStudents(queryRef.current, effectiveDateRef.current);
-      refreshSyncStatus();
+      setChangeSignal((n) => n + 1);
     });
 
     return () => source.close();
-  }, [authenticated, refreshStudents, refreshSyncStatus]);
+  }, [authenticated]);
 
   async function handleCheckIn(studentId: number) {
     try {
@@ -161,6 +197,17 @@ export function App() {
     return <Login onSuccess={() => setAuthenticated(true)} />;
   }
 
+  if (route.type === "student") {
+    return (
+      <StudentPage
+        studentId={route.id}
+        changeSignal={changeSignal}
+        onBack={navigateToList}
+        onUnauthorized={() => setAuthenticated(false)}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -198,6 +245,7 @@ export function App() {
         onCheckIn={handleCheckIn}
         onUndo={handleUndo}
         onMerge={handleMerge}
+        onOpenStudent={navigateToStudent}
       />
     </div>
   );

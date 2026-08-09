@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { requireAuth } from "../lib/auth.js";
 import { listStudentStatuses } from "../services/studentStatus.js";
 import { mergeStudents } from "../services/merge.js";
+import { getStudentTimeline } from "../services/studentTimeline.js";
 import { HttpError } from "../lib/errors.js";
 import { isValidDateString } from "../lib/date.js";
 
@@ -12,6 +13,13 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: "date must be YYYY-MM-DD" });
     }
     return listStudentStatuses({ query: q, date });
+  });
+
+  app.get("/:id/timeline", { preHandler: requireAuth }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const timeline = await getStudentTimeline(Number(id));
+    if (!timeline) return reply.code(404).send({ error: "Student not found" });
+    return timeline;
   });
 
   app.post("/:id/merge", { preHandler: requireAuth }, async (req, reply) => {

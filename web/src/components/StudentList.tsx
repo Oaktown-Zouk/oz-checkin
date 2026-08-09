@@ -7,12 +7,14 @@ export function StudentList({
   onCheckIn,
   onUndo,
   onMerge,
+  onOpenStudent,
 }: {
   students: StudentStatus[];
   loading: boolean;
   onCheckIn: (studentId: number) => Promise<void>;
   onUndo: (checkinId: number) => Promise<void>;
   onMerge: (studentId: number, otherEmail: string) => Promise<void>;
+  onOpenStudent: (studentId: number) => void;
 }) {
   if (loading && students.length === 0) {
     return <p className="empty-state">Loading…</p>;
@@ -24,7 +26,14 @@ export function StudentList({
   return (
     <div className="student-list">
       {students.map((s) => (
-        <StudentRow key={s.id} student={s} onCheckIn={onCheckIn} onUndo={onUndo} onMerge={onMerge} />
+        <StudentRow
+          key={s.id}
+          student={s}
+          onCheckIn={onCheckIn}
+          onUndo={onUndo}
+          onMerge={onMerge}
+          onOpenStudent={onOpenStudent}
+        />
       ))}
     </div>
   );

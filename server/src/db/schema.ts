@@ -114,6 +114,11 @@ export const memberships = sqliteTable(
     // Not all Givebutter plan responses expose a period-end date; when absent this
     // is derived from status alone (active == good for now). See sync service.
     currentPeriodEnd: integer("current_period_end", { mode: "timestamp" }),
+    // From Givebutter's start_at/canceled_at — real event timestamps for the student
+    // timeline (services/studentTimeline.ts), distinct from our own created_at/updated_at
+    // (which only reflect when *we* first synced/last touched this row).
+    startedAt: integer("started_at", { mode: "timestamp" }),
+    canceledAt: integer("canceled_at", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => ({

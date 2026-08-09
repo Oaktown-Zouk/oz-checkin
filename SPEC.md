@@ -185,7 +185,11 @@ givebutter_contacts (id, student_id FK, givebutter_contact_id UNIQUE)
 payments          (id, student_id FK, givebutter_transaction_id UNIQUE, amount_cents,
                     paid_at, redeemed_at NULL, redeemed_by_checkin_id NULL)
 memberships       (id, student_id FK, givebutter_recurring_plan_id UNIQUE, status,
-                    current_period_end NULL, updated_at)
+                    current_period_end NULL, started_at NULL, canceled_at NULL, updated_at)
+                  -- started_at/canceled_at are Givebutter's real event timestamps
+                  -- (start_at/canceled_at on the plan), distinct from our own
+                  -- created_at/updated_at which only reflect when *we* last synced —
+                  -- these are what the student timeline's events are built from
 checkins          (id, student_id FK, date, checked_in_at, checked_in_by,
                     payment_id NULL FK, undone_at NULL)
                   -- no unique(student_id, date): one-time payers can have multiple rows
@@ -216,6 +220,7 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
 - `GET /api/sync/status` — last-synced timestamps per source, for the "synced Xm ago" UI.
 - `POST /api/login` / `POST /api/logout` — session auth.
 - `GET /api/events` — Server-Sent Events stream (see "Live updates" below).
+- `GET /api/students/:id/timeline` — see "Student detail page" below. 404 if unknown id.
 
 ## Webpage (front desk view)
 
@@ -231,6 +236,15 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
   first-time-drop-in promo (which is specifically "no payment + never checked in," and
   only changes the confirm-dialog wording, not the badges).
 - "Last synced Xm ago" + manual Refresh button, top of page.
+- 3-dot (⋮) menu on each row → **Merge info** — opens a dialog to enter another email
+  address and merge that student's records into this row. Errors (blocked guardrail, no
+  matching student) show inline in the dialog. A merged row's linked emails show under
+  the primary one so front desk can see why a row combines a waiver and a payment.
+- `datetime-local` picker in the header, empty ("live") by default — set it to view and
+  check in against a past day. A yellow banner ("Viewing and Checking In for `<date>`")
+  appears above the search bar the whole time it's set; a "Return to live" button clears
+  it. Resets to live on page reload — never persisted.
+- Student names link to `/students/:id` — see "Student detail page" below.
 
 ### Live updates
 
@@ -251,14 +265,33 @@ frontend — auto-reconnects on its own, no client-side retry logic needed):
   exposes this id as a plain ops health-check convenience, independent of the frontend.
 - No payload beyond a debug-friendly reason string — at this app's scale (~1k students) a
   full re-fetch is cheap enough that there's no reason to diff and ship what changed.
-- 3-dot (⋮) menu on each row → **Merge info** — opens a dialog to enter another email
-  address and merge that student's records into this row. Errors (blocked guardrail, no
-  matching student) show inline in the dialog. A merged row's linked emails show under
-  the primary one so front desk can see why a row combines a waiver and a payment.
-- `datetime-local` picker in the header, empty ("live") by default — set it to view and
-  check in against a past day. A yellow banner ("Viewing and Checking In for `<date>`")
-  appears above the search bar the whole time it's set; a "Return to live" button clears
-  it. Resets to live on page reload — never persisted.
+
+### Student detail page
+
+`/students/:id` (`GET /api/students/:id/timeline`) — a read-only history view, reached by
+clicking a name. No check-in actions here; it's for looking someone up, not acting on them.
+
+- Header: name, email, alternate emails, and the same status badges as the list row.
+- Three stats: **first registered** (earliest of any waiver signature, payment, or
+  membership start — whichever source saw this person first), **most recent check-in**
+  ("Never" if none), **total check-ins** (real ones only — undone check-ins don't count,
+  same as `everCheckedIn`).
+- A newest-first timeline synthesized from four sources, not a stored event log:
+  - **Membership started** — `memberships.started_at` (Givebutter's real start date; falls
+    back to our own `created_at` if a plan predates that column existing).
+  - **Membership `<status>`** — whenever a membership's status isn't `"active"`, labeled
+    with Givebutter's actual status word (verified real value: `"paused"`) rather than
+    guessing "paused" vs "cancelled" — we don't have full certainty on every value it can
+    take. Timestamped with `canceled_at` if Givebutter gave us one, else our own
+    `updated_at` (the last time we noticed the status had changed) as a best effort.
+  - **One-time pass purchased** — one per `payments` row, with the dollar amount.
+  - **Checked in** — one per non-undone `checkins` row.
+- Routing is hand-rolled (`window.history.pushState` + a `popstate` listener in `App.tsx`),
+  not a router library — the app only ever has two "pages." The backend's catch-all
+  static-file fallback (any non-`/api` 404 serves `index.html`) already handled arbitrary
+  paths correctly before this existed, so a direct load or reload of `/students/:id` — the
+  live-updates reload included — lands back on that student's page, not the list, without
+  any special-casing beyond parsing the route from the URL once on mount.
 
 ## Open items to confirm before/while building
 

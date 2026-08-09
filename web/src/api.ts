@@ -37,6 +37,20 @@ export interface SyncStatus {
   givebutter: string | null;
 }
 
+export interface TimelineEvent {
+  type: "membership_started" | "membership_status" | "payment" | "checkin";
+  at: string;
+  label: string;
+}
+
+export interface StudentTimeline {
+  status: StudentStatus;
+  firstRegisteredAt: string | null;
+  mostRecentCheckInAt: string | null;
+  totalCheckIns: number;
+  events: TimelineEvent[];
+}
+
 export class UnauthorizedError extends Error {
   constructor() {
     super("Unauthorized");
@@ -86,4 +100,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ otherEmail }),
     }),
+  studentTimeline: (studentId: number) =>
+    request<StudentTimeline>(`/api/students/${studentId}/timeline`),
 };

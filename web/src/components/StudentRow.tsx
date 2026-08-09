@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { StudentStatus } from "../api.js";
 import { RowMenu } from "./RowMenu.js";
 import { MergeDialog } from "./MergeDialog.js";
+import { StudentBadges } from "./StudentBadges.js";
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -12,11 +13,13 @@ export function StudentRow({
   onCheckIn,
   onUndo,
   onMerge,
+  onOpenStudent,
 }: {
   student: StudentStatus;
   onCheckIn: (studentId: number) => Promise<void>;
   onUndo: (checkinId: number) => Promise<void>;
   onMerge: (studentId: number, otherEmail: string) => Promise<void>;
+  onOpenStudent: (studentId: number) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -30,9 +33,6 @@ export function StudentRow({
   // StudentStatus.everCheckedIn). Drives the confirm-dialog wording only — the "No
   // payment on file" badge always shows regardless.
   const isNewStudent = !hasAnyPayment && !student.everCheckedIn;
-  // Anyone who's never actually checked in before, regardless of payment/membership —
-  // a heads-up to be extra welcoming, not a payment signal (that's isNewStudent above).
-  const isNewMember = !student.everCheckedIn;
 
   async function handleCheckIn() {
     const warnings: string[] = [];
@@ -73,36 +73,23 @@ export function StudentRow({
   return (
     <div className={`student-row${student.checkedInToday ? " checked-in" : ""}`}>
       <div className="student-info">
-        <div className="student-name">{student.name}</div>
+        <a
+          href={`/students/${student.id}`}
+          className="student-name"
+          onClick={(e) => {
+            e.preventDefault();
+            onOpenStudent(student.id);
+          }}
+        >
+          {student.name}
+        </a>
         <div className="student-email">{student.email}</div>
         {student.alternateEmails.length > 0 && (
           <div className="student-alt-emails">also {student.alternateEmails.join(", ")}</div>
         )}
       </div>
 
-      <div className="badges">
-        <span className={`badge ${student.waiver.signed ? "badge-green" : "badge-red"}`}>
-          {student.waiver.signed ? "Waiver signed" : "No waiver"}
-        </span>
-
-        {student.membership && (
-          <span className={`badge ${student.membership.active ? "badge-green" : "badge-gray"}`}>
-            {student.membership.active ? "Member" : `Member (${student.membership.status})`}
-          </span>
-        )}
-
-        {student.credits && (
-          <span className={`badge ${creditsAvailable > 0 ? "badge-green" : "badge-amber"}`}>
-            {creditsAvailable > 0
-              ? `${creditsAvailable} credit${creditsAvailable === 1 ? "" : "s"} available`
-              : "No credits remaining"}
-          </span>
-        )}
-
-        {!hasAnyPayment && <span className="badge badge-red">No payment on file</span>}
-
-        {isNewMember && <span className="badge badge-blue">New Member</span>}
-      </div>
+      <StudentBadges student={student} />
 
       <div className="checkin-status">
         {student.checkinsToday.map((c) => (

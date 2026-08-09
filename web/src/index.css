@@ -167,6 +167,14 @@ body {
 
 .student-name {
   font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+  display: inline-block;
+  width: fit-content;
+}
+
+.student-name:hover {
+  text-decoration: underline;
 }
 
 .student-email {
@@ -364,6 +372,117 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.back-link {
+  margin-bottom: 16px;
+}
+
+.student-page-header {
+  margin-bottom: 20px;
+}
+
+.student-page-header h1 {
+  font-size: 1.6rem;
+  margin: 0 0 4px;
+}
+
+.student-page-header .student-email {
+  font-size: 0.9rem;
+}
+
+.student-page-header .badges {
+  margin-top: 10px;
+}
+
+.student-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.stat {
+  flex: 1;
+  min-width: 160px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--gray);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.timeline-heading {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline-event {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 999px;
+}
+
+.timeline-dot-membership_started {
+  background: var(--green);
+}
+
+.timeline-dot-membership_status {
+  background: var(--gray);
+}
+
+.timeline-dot-payment {
+  background: var(--blue);
+}
+
+.timeline-dot-checkin {
+  background: var(--amber);
+}
+
+.timeline-content {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.timeline-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.timeline-date {
+  font-size: 0.8rem;
+  color: var(--gray);
 }
 
 @media (max-width: 640px) {

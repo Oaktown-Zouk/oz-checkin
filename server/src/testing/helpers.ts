@@ -61,15 +61,28 @@ export async function insertWaiver(
 
 export async function insertMembership(
   studentId: number,
-  opts: { status?: string; currentPeriodEnd?: Date | null; planId?: string; frequency?: string } = {}
-): Promise<void> {
-  await db.insert(memberships).values({
-    studentId,
-    givebutterPlanId: opts.planId ?? unique("plan"),
-    status: opts.status ?? "active",
-    frequency: opts.frequency ?? "monthly",
-    currentPeriodEnd: opts.currentPeriodEnd ?? null,
-  });
+  opts: {
+    status?: string;
+    currentPeriodEnd?: Date | null;
+    planId?: string;
+    frequency?: string;
+    startedAt?: Date | null;
+    canceledAt?: Date | null;
+  } = {}
+): Promise<number> {
+  const [row] = await db
+    .insert(memberships)
+    .values({
+      studentId,
+      givebutterPlanId: opts.planId ?? unique("plan"),
+      status: opts.status ?? "active",
+      frequency: opts.frequency ?? "monthly",
+      currentPeriodEnd: opts.currentPeriodEnd ?? null,
+      startedAt: opts.startedAt ?? null,
+      canceledAt: opts.canceledAt ?? null,
+    })
+    .returning();
+  return row.id;
 }
 
 export async function insertPayment(
