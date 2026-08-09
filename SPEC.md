@@ -1,0 +1,183 @@
+# OZ Check-In — Spec & Design
+
+Student check-in tool for Oaktown Zouk. A front-desk staffer (currently just Ben) searches
+for a student and taps a button to check them in, seeing waiver and payment status at a glance.
+
+## Scale & constraints
+
+- ~1,000 students total, ~100 checked in on a typical day.
+- Single studio, single check-in flow (no multi-session-per-day support needed).
+- Runs locally on a front-desk laptop for v1; should be deployable to a cheap always-on
+  host later without a rewrite.
+- Solo operator for now, but design for basic auth from day one since remote/hosted
+  access is a near-term goal.
+
+## Data sources
+
+| Source | What we pull | Access |
+|---|---|---|
+| Google Forms | Waiver form responses | OAuth2 (installed-app flow, one-time consent, refresh token stored server-side) — Forms API doesn't support service accounts for a personal Google account |
+| Givebutter | Contacts, transactions, recurring plans | Bearer API key (account settings) |
+
+**Sync strategy (v1): polling, not webhooks/watches.** Google Forms push notifications
+require a Cloud Pub/Sub topic and a watch that expires weekly (needs a renewal job); Givebutter
+webhooks require a public HTTPS endpoint. Neither is worth the setup cost while running
+locally. Instead:
+
+- Backend polls both APIs on an interval (default **10 min**, configurable via env var).
+- A manual **"Refresh now"** button on the webpage triggers an immediate re-sync.
+- The UI shows "last synced Xm ago" so staff know how fresh the data is.
+- Polling uses incremental fetch where the API supports it (Forms `responses.list` with a
+  `timestamp >` filter; Givebutter transactions/contacts fetched by `updated_at` where
+  available) and upserts into SQLite, so this scales fine to 1k students on a laptop.
+- **Upgrade path:** once hosted somewhere with a public URL, swap polling for a Forms
+  Pub/Sub watch (+ weekly renewal cron) and Givebutter webhooks, triggering the same
+  upsert functions the poller uses today. This is a swap of the *trigger*, not the sync
+  logic itself.
+
+## Identity: matching a person across three systems
+
+**Email is the canonical match key**, normalized (lowercased, trimmed) before comparison.
+Both Google Forms and Givebutter capture email, so a `students` table keyed by email is the
+join point between waiver records, payment records, and check-in history. Name is stored for
+display/search but never used to match identity.
+
+*Verified against the live waiver form:* it has no "email" question — email comes from
+Google's built-in respondent-email collection (`emailCollectionType: RESPONDER_INPUT`),
+which the API exposes as a top-level `respondentEmail` field on each response, not as an
+answer tied to a question ID. The sync code reads that field directly, with a fallback to
+a titled "email" question for forms that don't use the built-in collection.
+
+## Payment model
+
+Givebutter supports both **one-time payments** and **recurring memberships**, and both are in
+active use, so payment status isn't a single boolean — it's shown differently depending on type:
+
+- **Active recurring membership** → green "Member" badge. Good for the current period;
+  checking in does *not* consume anything.
+- **One-time payments** → each successful transaction is a redeemable line item ("class
+  credit"). Badge shows `N credits available`. Checking in **redeems the oldest unredeemed
+  credit** by default (one click, no staff decision needed in the common case); an expandable
+  row lets staff pick a specific payment to redeem instead, for the rare edge case.
+- **Neither** (no active membership, no unredeemed credits) → red "No payment on file" badge.
+  Check-in is still *allowed* — front desk makes the judgment call (e.g. cash payment
+  happening right now that hasn't hit Givebutter yet) — but the badge makes the gap visible,
+  and checking in shows a confirmation prompt ("No payment on file — check in anyway?").
+
+Waiver status follows the same "flag, don't block" pattern: missing waiver shows a red badge
+and a confirm-to-override, but never hard-blocks check-in.
+
+## Check-in semantics
+
+- Check-ins are scoped to a **day** (`YYYY-MM-DD`), not a session.
+- **Recurring members:** capped at one check-in per day — a membership isn't consumed by
+  checking in, so a second check-in the same day wouldn't do anything.
+- **One-time-payment students: one check-in per unredeemed credit, per day.** A student who
+  bought two passes can be checked in twice today (e.g. using one themselves and handing the
+  other to a friend at the door) — each check-in redeems one credit, and the option to check
+  in again stays available as long as unredeemed credits remain.
+- Once a student has ≥1 check-in today, their row sorts to the **bottom of the list, grayed
+  out**, showing each check-in time. If they're a one-time payer with remaining credits, a
+  **"Use another pass"** action stays active on the (otherwise grayed) row.
+- Each check-in is independently undoable same-day (mis-clicks happen at a front desk) — undo
+  removes that specific check-in and, if it redeemed a credit, un-redeems that credit.
+- History is retained indefinitely (`checkins` table keeps one row per redemption) — this is
+  also the natural place to compute attendance stats later.
+
+## Architecture
+
+Single Node.js/TypeScript process for v1 — one deployable, no separate frontend host needed:
+
+```
+┌─────────────────────────────────────────────┐
+│ Node process (Fastify)                       │
+│                                               │
+│  REST API  ── serves ──▶  React (Vite) SPA   │
+│     │                     (built + served     │
+│     │                      as static files)   │
+│  Poller (node-cron, in-process interval)      │
+│     │                                         │
+│     ├──▶ Google Forms API (OAuth2)            │
+│     └──▶ Givebutter API (API key)             │
+│     │                                         │
+│  SQLite (via Drizzle ORM)                     │
+└─────────────────────────────────────────────┘
+```
+
+**Backend: Fastify + TypeScript.** Lightweight, low overhead, built-in schema validation —
+a good fit for a small typed REST API. (Express would also work fine if you'd rather use
+the more familiar option; the rest of this design doesn't depend on the choice.)
+
+**DB: SQLite via Drizzle ORM.** Drizzle's schema syntax is (almost) identical across SQLite
+and Postgres, so "migrate later" — which you flagged as likely — is a driver swap and a
+`drizzle-kit` migration generation, not a rewrite. `better-sqlite3` as the driver (sync,
+fast, no native-binding headaches for this scale).
+
+**Frontend: React + Vite SPA**, built to static files and served by the same Fastify process.
+Keeps deployment to one process/one port, which matters for "cheap to host" (a single small
+VPS or a $0–7/mo host like Fly.io/Railway/Render all work — anywhere that runs a persistent
+Node process, since the poller needs to keep running between requests, unlike serverless).
+
+**Auth (v1):** a single shared-password gate — password in an env var, checked against a
+login form, issuing a signed session cookie (`@fastify/secure-session` or similar). No user
+accounts, no per-staff login yet. Cheap to extend to per-staff accounts later since the
+session layer is already in place; not worth building multi-user auth for a one-person front
+desk today.
+
+## Data model
+
+```
+students          (id, email UNIQUE, name, phone, created_at, updated_at)
+waivers           (id, student_id FK, form_response_id UNIQUE, signed_at, raw_json)
+givebutter_contacts (id, student_id FK, givebutter_contact_id UNIQUE)
+payments          (id, student_id FK, givebutter_transaction_id UNIQUE, amount_cents,
+                    paid_at, redeemed_at NULL, redeemed_by_checkin_id NULL)
+memberships       (id, student_id FK, givebutter_recurring_plan_id UNIQUE, status,
+                    current_period_end NULL, updated_at)
+checkins          (id, student_id FK, date, checked_in_at, checked_in_by,
+                    payment_id NULL FK, undone_at NULL)
+                  -- no unique(student_id, date): one-time payers can have multiple rows
+                  -- per day (one per redeemed credit); recurring members are capped at
+                  -- one per day by application logic, not a DB constraint
+sync_state        (source PK: 'google_forms' | 'givebutter', last_synced_at, cursor)
+```
+
+`students` rows are created/updated by the sync jobs (upsert on email) from whichever source
+sees a person first — a Forms respondent with no Givebutter record yet still shows up as
+"waiver signed, no payment," and vice versa.
+
+## API
+
+- `GET /api/students?q=<search>` — list with computed waiver/payment/checkin status, filtered
+  server-side by name.
+- `POST /api/checkins` `{ studentId, paymentId? }` — check in for today; auto-selects oldest
+  unredeemed credit if the student is a one-time payer and `paymentId` isn't given. Rejected
+  (409) if: a recurring member already has a check-in today, or a one-time payer has no
+  unredeemed credits left.
+- `DELETE /api/checkins/:id` — undo that specific check-in (and un-redeem its payment, if any).
+- `POST /api/sync` — trigger an immediate Forms + Givebutter refetch.
+- `GET /api/sync/status` — last-synced timestamps per source, for the "synced Xm ago" UI.
+- `POST /api/login` / `POST /api/logout` — session auth.
+
+## Webpage (front desk view)
+
+- Search bar (name), debounced, filters the list client-side or via `?q=`.
+- Rows: name · waiver badge · payment badge (membership or credit count) · Check In button.
+- Checked-in-today rows sink to the bottom, grayed out, listing each check-in time + Undo.
+  One-time payers with remaining credits keep an active "Use another pass" button on the
+  grayed row; recurring members and fully-redeemed one-time payers don't.
+- Missing waiver / no payment → red badge; check-in still works but confirms first.
+- "Last synced Xm ago" + manual Refresh button, top of page.
+
+## Open items to confirm before/while building
+
+1. ~~Confirm the live waiver form actually has an email question~~ — verified: it doesn't;
+   uses `respondentEmail`. Handled.
+2. ~~Confirm Givebutter recurring-plan objects expose enough to compute "active this
+   period"~~ — verified against real account data (2026-08-08): plans expose
+   `next_bill_date` directly. Also found and handled a real edge case while checking:
+   a recurring plan's charge transactions carry that plan's `plan_id` and must be
+   excluded from one-time "credits" — otherwise a member's monthly charge would also
+   look like a spare class pass.
+3. Decide the shared-password auth secret storage (plain env var is fine for v1 given the
+   threat model, but flag if you want something stronger before going remote).
