@@ -43,8 +43,12 @@ function unique(prefix: string): string {
   return `${prefix}-${counter}`;
 }
 
-export async function insertStudent(email: string, name = "Test Student"): Promise<number> {
-  const [row] = await db.insert(students).values({ email, name }).returning();
+export async function insertStudent(
+  email: string,
+  name = "Test Student",
+  nameSource: string | null = null
+): Promise<number> {
+  const [row] = await db.insert(students).values({ email, name, nameSource }).returning();
   return row.id;
 }
 

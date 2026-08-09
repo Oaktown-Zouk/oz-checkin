@@ -94,6 +94,41 @@ describe("mergeStudents — happy path", () => {
   });
 });
 
+describe("mergeStudents — name reconciliation (Givebutter is payment-verified)", () => {
+  it("adopts the absorbed student's name when it's Givebutter-sourced and the survivor's isn't", async () => {
+    const survivor = await insertStudent("hanna.personal@example.com", "Hanna", "google_forms");
+    await insertWaiver(survivor);
+    const other = await insertStudent("hanna.gb@example.com", "Hanna Larracas", "givebutter");
+    await insertMembership(other);
+
+    const merged = await mergeStudents(survivor, "hanna.gb@example.com");
+
+    assert.equal(merged.name, "Hanna Larracas");
+  });
+
+  it("does NOT downgrade a Givebutter-sourced survivor name to the absorbed Forms name", async () => {
+    const survivor = await insertStudent("hanna.gb@example.com", "Hanna Larracas", "givebutter");
+    await insertMembership(survivor);
+    const other = await insertStudent("hanna.personal@example.com", "Hanna", "google_forms");
+    await insertWaiver(other);
+
+    const merged = await mergeStudents(survivor, "hanna.personal@example.com");
+
+    assert.equal(merged.name, "Hanna Larracas");
+  });
+
+  it("leaves the name alone when both sides already agree", async () => {
+    const survivor = await insertStudent("a@example.com", "Hanna Larracas", "google_forms");
+    await insertWaiver(survivor);
+    const other = await insertStudent("b@example.com", "Hanna Larracas", "givebutter");
+    await insertMembership(other);
+
+    const merged = await mergeStudents(survivor, "b@example.com");
+
+    assert.equal(merged.name, "Hanna Larracas");
+  });
+});
+
 describe("mergeStudents — guardrails", () => {
   it("blocks merging two students that both already have Givebutter data", async () => {
     const s1 = await insertStudent("one@example.com");

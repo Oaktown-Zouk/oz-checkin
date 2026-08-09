@@ -3,6 +3,16 @@ import { db } from "../db/client.js";
 import { students, studentEmails } from "../db/schema.js";
 import { normalizeEmail } from "./date.js";
 
+export type NameSource = "google_forms" | "givebutter";
+
+// Givebutter names are checked against a real credit card by a payment processor;
+// Google Forms names are free text someone typed. Once a name has been set from
+// Givebutter, a Forms sync must never downgrade it — this is the only ordering that
+// matters, so it's expressed directly rather than as a general-purpose priority scale.
+export function shouldUpdateName(existingSource: string | null, newSource: NameSource): boolean {
+  return !(existingSource === "givebutter" && newSource === "google_forms");
+}
+
 // Resolves an email to a student, checking both the primary `students.email` and any
 // alternate emails linked via a merge (see services/merge.ts). This is what makes a
 // merge "stick" — once two duplicate students are merged, a future sync that sees the
@@ -18,7 +28,11 @@ export async function findStudentIdByEmail(rawEmail: string): Promise<number | u
   return linked?.studentId;
 }
 
-export async function upsertStudent(rawEmail: string, rawName: string): Promise<number> {
+export async function upsertStudent(
+  rawEmail: string,
+  rawName: string,
+  source: NameSource
+): Promise<number> {
   const email = normalizeEmail(rawEmail);
   // Real waiver data has trailing whitespace on names (seen live from the OZ form),
   // so this is a real case, not defensive-for-its-own-sake.
@@ -27,10 +41,19 @@ export async function upsertStudent(rawEmail: string, rawName: string): Promise<
   const existingId = await findStudentIdByEmail(email);
   if (existingId) {
     const [existing] = await db.select().from(students).where(eq(students.id, existingId));
-    if (name && existing && name !== existing.name) {
+    // Stamp the source even when the name text is unchanged: rows created before
+    // name-source tracking existed (or backfilled by a migration) have a null
+    // source, so this is what claims them as Givebutter-verified going forward
+    // instead of leaving them permanently open to a later Forms downgrade.
+    if (
+      name &&
+      existing &&
+      (name !== existing.name || existing.nameSource !== source) &&
+      shouldUpdateName(existing.nameSource, source)
+    ) {
       await db
         .update(students)
-        .set({ name, updatedAt: new Date() })
+        .set({ name, nameSource: source, updatedAt: new Date() })
         .where(eq(students.id, existingId));
     }
     return existingId;
@@ -38,7 +61,7 @@ export async function upsertStudent(rawEmail: string, rawName: string): Promise<
 
   const [created] = await db
     .insert(students)
-    .values({ email, name: name || email })
+    .values({ email, name: name || email, nameSource: name ? source : null })
     .returning();
   return created.id;
 }

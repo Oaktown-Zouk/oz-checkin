@@ -10,7 +10,7 @@ import {
   waivers,
 } from "../db/schema.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
-import { findStudentIdByEmail } from "../lib/upsertStudent.js";
+import { findStudentIdByEmail, shouldUpdateName, type NameSource } from "../lib/upsertStudent.js";
 import { normalizeEmail } from "../lib/date.js";
 import { broadcastChange } from "../lib/events.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
@@ -73,10 +73,27 @@ export async function mergeStudents(survivorId: number, otherEmailRaw: string): 
     );
   }
 
+  const [survivorRow] = await db.select().from(students).where(eq(students.id, survivorId));
   const [otherStudent] = await db.select().from(students).where(eq(students.id, otherId));
-  if (!otherStudent) throw new NotFoundError("Student not found");
+  if (!survivorRow || !otherStudent) throw new NotFoundError("Student not found");
+
+  // Givebutter names are checked against a real credit card by a payment processor;
+  // Google Forms names are free text. Merging shouldn't be able to downgrade a
+  // payment-verified name any more than a routine sync can — same rule, reused.
+  const adoptOtherName =
+    otherStudent.nameSource !== null &&
+    otherStudent.name !== survivorRow.name &&
+    shouldUpdateName(survivorRow.nameSource, otherStudent.nameSource as NameSource);
 
   db.transaction((tx) => {
+    if (adoptOtherName) {
+      tx
+        .update(students)
+        .set({ name: otherStudent.name, nameSource: otherStudent.nameSource, updatedAt: new Date() })
+        .where(eq(students.id, survivorId))
+        .run();
+    }
+
     tx.update(waivers).set({ studentId: survivorId }).where(eq(waivers.studentId, otherId)).run();
     tx.update(givebutterContacts).set({ studentId: survivorId }).where(eq(givebutterContacts.studentId, otherId)).run();
     tx.update(payments).set({ studentId: survivorId }).where(eq(payments.studentId, otherId)).run();

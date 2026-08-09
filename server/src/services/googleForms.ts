@@ -103,7 +103,7 @@ export async function syncGoogleForms(): Promise<SyncResult> {
       continue;
     }
 
-    const studentId = await upsertStudent(email, name ?? email);
+    const studentId = await upsertStudent(email, name ?? email, "google_forms");
 
     const existing = await db
       .select()

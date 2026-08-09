@@ -135,7 +135,7 @@ async function resolveStudentIdForRecord(record: any, contactsById: Map<string, 
   const contactId = record.contact_id ?? record.contact?.id;
 
   if (directEmail) {
-    const studentId = await upsertStudent(directEmail, directName || directEmail);
+    const studentId = await upsertStudent(directEmail, directName || directEmail, "givebutter");
     await linkGivebutterContact(studentId, contactId);
     return studentId;
   }
@@ -144,7 +144,7 @@ async function resolveStudentIdForRecord(record: any, contactsById: Map<string, 
     const contact = contactsById.get(String(contactId));
     const email = contactEmail(contact);
     if (email) {
-      const studentId = await upsertStudent(email, contactName(contact) ?? email);
+      const studentId = await upsertStudent(email, contactName(contact) ?? email, "givebutter");
       await linkGivebutterContact(studentId, contactId);
       return studentId;
     }

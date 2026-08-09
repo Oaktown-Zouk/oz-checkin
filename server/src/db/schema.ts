@@ -17,6 +17,11 @@ export const students = sqliteTable(
     // normalized: lowercased + trimmed. This is the cross-system identity key.
     email: text("email").notNull(),
     name: text("name").notNull(),
+    // Which source last set `name` — 'givebutter' | 'google_forms' | null. Givebutter
+    // names are payment-processor-verified (checked against a credit card); Forms names
+    // are free text. Once a name has been set by Givebutter, a later Forms sync must not
+    // downgrade it — see lib/upsertStudent.ts.
+    nameSource: text("name_source"),
     phone: text("phone"),
     ...timestamps,
   },
