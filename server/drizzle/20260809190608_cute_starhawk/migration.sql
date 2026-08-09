@@ -1,0 +1,1 @@
+ALTER TABLE `students` ADD `name_source` text;

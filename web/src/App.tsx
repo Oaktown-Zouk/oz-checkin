@@ -28,6 +28,21 @@ function parseRoute(pathname: string): Route {
   return { type: "list" };
 }
 
+function parseEffectiveAt(search: string): string {
+  return new URLSearchParams(search).get("effectiveAt") ?? "";
+}
+
+// Builds the URL for a route + the current backdate, so every navigation (route change
+// or effective-date change) keeps both in sync — a forced refresh while backdating lands
+// back on the same past date instead of silently snapping to live.
+function buildUrl(route: Route, effectiveAt: string): string {
+  const pathname = route.type === "student" ? `/students/${route.id}` : "/";
+  const params = new URLSearchParams();
+  if (effectiveAt) params.set("effectiveAt", effectiveAt);
+  const qs = params.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
 export function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -37,35 +52,48 @@ export function App() {
   // on the right view, and (b) update the URL on navigation. Both are plain History API.
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
 
+  // "" means live (now); otherwise a datetime-local string ("2026-08-05T14:30") the
+  // front desk picked to view and correct a past day. Kept in the URL (?effectiveAt=...)
+  // so a forced refresh while backdating lands back on the same past date instead of
+  // silently snapping to live.
+  const [effectiveAt, setEffectiveAt] = useState(() => parseEffectiveAt(window.location.search));
+  const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
+
   useEffect(() => {
     function onPopState() {
       setRoute(parseRoute(window.location.pathname));
+      setEffectiveAt(parseEffectiveAt(window.location.search));
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  const navigateToStudent = useCallback((id: number) => {
-    window.history.pushState(null, "", `/students/${id}`);
-    setRoute({ type: "student", id });
-  }, []);
+  const navigateToStudent = useCallback(
+    (id: number) => {
+      window.history.pushState(null, "", buildUrl({ type: "student", id }, effectiveAt));
+      setRoute({ type: "student", id });
+    },
+    [effectiveAt]
+  );
 
   const navigateToList = useCallback(() => {
-    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", buildUrl({ type: "list" }, effectiveAt));
     setRoute({ type: "list" });
-  }, []);
+  }, [effectiveAt]);
+
+  const handleEffectiveAtChange = useCallback(
+    (value: string) => {
+      setEffectiveAt(value);
+      window.history.replaceState(null, "", buildUrl(route, value));
+    },
+    [route]
+  );
 
   const [query, setQuery] = useState("");
   const [students, setStudents] = useState<StudentStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
-
-  // "" means live (now); otherwise a datetime-local string ("2026-08-05T14:30") the
-  // front desk picked to view and correct a past day. Not persisted — a page reload
-  // always comes back up live, so nobody's stuck backdating without realizing it.
-  const [effectiveAt, setEffectiveAt] = useState("");
-  const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
 
   useEffect(() => {
     api
@@ -222,7 +250,7 @@ export function App() {
               {syncing ? "Refreshing…" : "Refresh now"}
             </button>
           </div>
-          <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
+          <EffectiveDateControl value={effectiveAt} onChange={handleEffectiveAtChange} />
         </div>
       </header>
 
@@ -231,7 +259,7 @@ export function App() {
           <span>
             Viewing and Checking In for <strong>{formatEffectiveBanner(effectiveAt)}</strong>
           </span>
-          <button type="button" className="btn btn-secondary" onClick={() => setEffectiveAt("")}>
+          <button type="button" className="btn btn-secondary" onClick={() => handleEffectiveAtChange("")}>
             Return to live
           </button>
         </div>
