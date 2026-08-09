@@ -6,6 +6,7 @@ dist/
 *.sqlite-shm
 .env
 .env.local
+.env.scratch
 web/dist/
 server/dist/
 server/drizzle/meta/

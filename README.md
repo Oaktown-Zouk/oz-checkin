@@ -90,6 +90,20 @@ requests, so it needs somewhere that stays up (a small VPS, or a $0–7/mo host 
 Fly.io / Railway / Render), not a serverless platform. Running it locally on a front-desk
 laptop (as planned for the first few weeks) works the same way.
 
+## Testing / manual verification — don't touch the real DB
+
+`server/data/oz-checkin.sqlite` (the path in your real `server/.env`) holds real check-in
+and merge history once this is in use — merges especially have no external source of
+truth, so wiping that file loses them permanently; a resync will not bring them back.
+
+- For anything automatable, use `npm test` — it runs against an isolated in-memory DB
+  (`.env.test`) and never touches a file on disk.
+- For a manual/browser check against realistic data, use `npm run start:scratch` — reads
+  `server/.env.scratch` (same Forms/Givebutter credentials, since those are read-only
+  pulls, but a separate `DATABASE_PATH` and password) so a live check-in or merge you make
+  while poking at the UI lands in a throwaway file, not your real one.
+- Never run `rm`/reset/re-migrate against the path in the real `server/.env`.
+
 ## Useful commands
 
 | Command | What it does |

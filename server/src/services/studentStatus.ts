@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, like } from "drizzle-orm";
+import { and, inArray, isNull, like } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   checkins,
@@ -50,6 +50,11 @@ export interface StudentStatus {
   // day is always allowed; any check-in after that requires an unredeemed credit to spend.
   canCheckIn: boolean;
   requiresCreditToCheckIn: boolean;
+  // Any real (non-undone) check-in ever, on ANY date — unlike checkedInToday this is not
+  // scoped to the viewed date. Used to gate the one-time "first class free" promo: it
+  // shouldn't reappear for someone who used it on a different day than the one you
+  // happen to be viewing.
+  everCheckedIn: boolean;
 }
 
 function isMembershipActive(status: string, currentPeriodEnd: Date | null): boolean {
@@ -63,8 +68,9 @@ function buildStatus(
   waiverRows: (typeof waivers.$inferSelect)[],
   membershipRows: (typeof memberships.$inferSelect)[],
   paymentRows: (typeof payments.$inferSelect)[],
-  checkinRows: (typeof checkins.$inferSelect)[],
-  studentEmailRows: (typeof studentEmails.$inferSelect)[]
+  allCheckinRows: (typeof checkins.$inferSelect)[],
+  studentEmailRows: (typeof studentEmails.$inferSelect)[],
+  viewedDate: string
 ): StudentStatus {
   const latestWaiver = waiverRows
     .filter((w) => w.studentId === student.id)
@@ -79,9 +85,11 @@ function buildStatus(
   const studentPayments = paymentRows.filter((p) => p.studentId === student.id);
   const unredeemed = studentPayments.filter((p) => p.redeemedAt === null);
 
-  const studentCheckinsToday = checkinRows.filter((c) => c.studentId === student.id);
+  const studentAllCheckins = allCheckinRows.filter((c) => c.studentId === student.id);
+  const studentCheckinsToday = studentAllCheckins.filter((c) => c.date === viewedDate);
 
   const checkedInToday = studentCheckinsToday.length > 0;
+  const everCheckedIn = studentAllCheckins.length > 0;
   const creditsAvailable = unredeemed.length;
   const requiresCreditToCheckIn = checkedInToday;
   const canCheckIn = !checkedInToday || creditsAvailable > 0;
@@ -133,6 +141,7 @@ function buildStatus(
     checkedInToday,
     canCheckIn,
     requiresCreditToCheckIn,
+    everCheckedIn,
   };
 }
 
@@ -156,21 +165,21 @@ export async function listStudentStatuses(
   const ids = studentRows.map((s) => s.id);
   const todayStr = opts.date ?? today();
 
-  const [waiverRows, membershipRows, paymentRows, checkinRows, studentEmailRows] = await Promise.all([
+  const [waiverRows, membershipRows, paymentRows, allCheckinRows, studentEmailRows] = await Promise.all([
     db.select().from(waivers).where(inArray(waivers.studentId, ids)),
     db.select().from(memberships).where(inArray(memberships.studentId, ids)),
     db.select().from(payments).where(inArray(payments.studentId, ids)),
+    // Not date-filtered: buildStatus needs both the viewed day's check-ins and
+    // whether the student has ANY real check-in ever (for the New Student promo).
     db
       .select()
       .from(checkins)
-      .where(
-        and(inArray(checkins.studentId, ids), eq(checkins.date, todayStr), isNull(checkins.undoneAt))
-      ),
+      .where(and(inArray(checkins.studentId, ids), isNull(checkins.undoneAt))),
     db.select().from(studentEmails).where(inArray(studentEmails.studentId, ids)),
   ]);
 
   const statuses = studentRows.map((s) =>
-    buildStatus(s, waiverRows, membershipRows, paymentRows, checkinRows, studentEmailRows)
+    buildStatus(s, waiverRows, membershipRows, paymentRows, allCheckinRows, studentEmailRows, todayStr)
   );
 
   // Not-checked-in-today first (alphabetical), checked-in-today sink to the bottom

@@ -186,3 +186,34 @@ describe("listStudentStatuses — date param", () => {
     assert.equal(liveStatus?.checkedInToday, false);
   });
 });
+
+describe("everCheckedIn — New Student promo eligibility", () => {
+  it("is false for a student with no check-in history at all", async () => {
+    const id = await insertStudent("a@example.com");
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.everCheckedIn, false);
+  });
+
+  it("is true once they have any real check-in, even on a date other than the one being viewed", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertCheckin(id, { date: "2026-08-01" });
+
+    // Viewing today (they have no check-in today specifically) still reports
+    // everCheckedIn: true — this is a lifetime signal, not scoped to the viewed date.
+    const todayView = await getStudentStatusById(id);
+    assert.equal(todayView?.checkedInToday, false);
+    assert.equal(todayView?.everCheckedIn, true);
+
+    const pastView = await getStudentStatusById(id, "2026-08-01");
+    assert.equal(pastView?.everCheckedIn, true);
+  });
+
+  it("is false again if their only check-in was undone", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertCheckin(id, { date: "2026-08-01", undoneAt: new Date("2026-08-01T10:00:00") });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.everCheckedIn, false, "an undone visit shouldn't burn the promo");
+  });
+});

@@ -11,6 +11,7 @@
     "dev:web": "npm run dev --workspace web",
     "build": "npm run build --workspace web && npm run build --workspace server",
     "start": "npm run start --workspace server",
+    "start:scratch": "npm run start:scratch --workspace server",
     "seed": "npm run seed --workspace server",
     "db:generate": "npm run db:generate --workspace server",
     "db:migrate": "npm run db:migrate --workspace server",

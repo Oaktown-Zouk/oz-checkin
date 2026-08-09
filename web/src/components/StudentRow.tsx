@@ -25,15 +25,34 @@ export function StudentRow({
   const hasCredits = Boolean(student.credits);
   const hasAnyPayment = hasMembership || hasCredits;
   const creditsAvailable = student.credits?.available ?? 0;
+  // Free first-class promo eligibility: no payment on file and they've never actually
+  // checked in before (any date, not just the one being viewed — see
+  // StudentStatus.everCheckedIn). Drives the confirm-dialog wording only — the "No
+  // payment on file" badge always shows regardless.
+  const isNewStudent = !hasAnyPayment && !student.everCheckedIn;
+  // Anyone who's never actually checked in before, regardless of payment/membership —
+  // a heads-up to be extra welcoming, not a payment signal (that's isNewStudent above).
+  const isNewMember = !student.everCheckedIn;
 
   async function handleCheckIn() {
     const warnings: string[] = [];
     if (!student.waiver.signed) warnings.push("no waiver on file");
-    if (!student.checkedInToday && !hasAnyPayment) warnings.push("no payment on file");
-    if (warnings.length > 0) {
+
+    let usePromo = false;
+    if (!student.checkedInToday && !hasAnyPayment) {
+      if (isNewStudent) usePromo = true;
+      else warnings.push("no payment on file");
+    }
+
+    if (usePromo) {
+      const prefix = warnings.length > 0 ? `${warnings.join(" and ")}. ` : "";
+      const ok = window.confirm(`${student.name}: ${prefix}Use first time free drop-in?`);
+      if (!ok) return;
+    } else if (warnings.length > 0) {
       const ok = window.confirm(`${student.name}: ${warnings.join(" and ")}. Check in anyway?`);
       if (!ok) return;
     }
+
     setBusy(true);
     try {
       await onCheckIn(student.id);
@@ -65,6 +84,8 @@ export function StudentRow({
         <span className={`badge ${student.waiver.signed ? "badge-green" : "badge-red"}`}>
           {student.waiver.signed ? "Waiver signed" : "No waiver"}
         </span>
+
+        {isNewMember && <span className="badge badge-blue">New Member</span>}
 
         {student.membership && (
           <span className={`badge ${student.membership.active ? "badge-green" : "badge-gray"}`}>

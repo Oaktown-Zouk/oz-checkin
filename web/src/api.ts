@@ -29,6 +29,7 @@ export interface StudentStatus {
   checkedInToday: boolean;
   canCheckIn: boolean;
   requiresCreditToCheckIn: boolean;
+  everCheckedIn: boolean;
 }
 
 export interface SyncStatus {
