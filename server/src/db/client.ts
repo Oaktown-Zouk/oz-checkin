@@ -11,7 +11,11 @@ import { config } from "../config.js";
 // separate native module to get out of sync with the Node version.
 mkdirSync(dirname(config.DATABASE_PATH), { recursive: true });
 
-const sqlite = new DatabaseSync(config.DATABASE_PATH);
+// Exported so index.ts can close it explicitly on shutdown — without that, the OS-level
+// file lock isn't guaranteed to be released before a fast restart (dev-watch, a redeploy)
+// tries to reopen the same file, which throws "database is locked" since node:sqlite
+// doesn't retry on a busy lock by default (busy timeout defaults to 0).
+export const sqlite = new DatabaseSync(config.DATABASE_PATH);
 sqlite.exec("PRAGMA journal_mode = WAL");
 // Foreign key enforcement defaults to on in node:sqlite (unlike better-sqlite3, which
 // needed an explicit pragma).

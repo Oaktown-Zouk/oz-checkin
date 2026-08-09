@@ -100,15 +100,23 @@ truth, so wiping that file loses them permanently; a resync will not bring them 
   (`.env.test`) and never touches a file on disk.
 - For a manual/browser check against realistic data, use `npm run start:scratch` — reads
   `server/.env.scratch` (same Forms/Givebutter credentials, since those are read-only
-  pulls, but a separate `DATABASE_PATH` and password) so a live check-in or merge you make
-  while poking at the UI lands in a throwaway file, not your real one.
+  pulls, but a separate `DATABASE_PATH`, password, **and port — `:3001`, not `:3000`**)
+  so a live check-in or merge made while poking at the UI lands in a throwaway file, not
+  the real one, and this process can never collide with (or get killed alongside) a real
+  instance on `:3000`.
 - Never run `rm`/reset/re-migrate against the path in the real `server/.env`.
+- The real instance (`npm start`, port `:3000`) should be left running after a change is
+  verified, so it's ready to try immediately at http://localhost:3000 without needing to
+  start it yourself. `npm run db:migrate` against the real `.env` is fine when needed
+  (schema migrations are additive — `CREATE`/`ALTER ADD COLUMN`, never `DROP`/`DELETE`)
+  — that's a different thing from wiping the database file.
 
 ## Useful commands
 
 | Command | What it does |
 |---|---|
 | `npm run dev:server` / `npm run dev:web` | Dev mode, two processes |
+| `npm run watch` | Backend auto-restarts on save (`tsx watch`) + frontend auto-rebuilds on save (`vite build --watch`), together, serving on whichever `PORT`/`DATABASE_PATH` the active env points at — leave it running against the real `.env` instead of manually rebuilding after each change |
 | `npm run build && npm start` | Production mode, one process |
 | `npm run seed` | Reset local DB to sample data (dev only — never run against real check-in history) |
 | `npm run typecheck` | Type-check both workspaces |

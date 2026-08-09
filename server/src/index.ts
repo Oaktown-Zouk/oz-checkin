@@ -7,7 +7,8 @@ import cron from "node-cron";
 import { config, googleFormsConfigured, givebutterConfigured } from "./config.js";
 import { registerSession } from "./lib/session.js";
 import { requireAuth } from "./lib/auth.js";
-import { addSseClient, removeSseClient } from "./lib/events.js";
+import { addSseClient, removeSseClient, closeAllSseClients } from "./lib/events.js";
+import { sqlite } from "./db/client.js";
 import { authRoutes } from "./routes/auth.js";
 import { studentRoutes } from "./routes/students.js";
 import { checkinRoutes } from "./routes/checkins.js";
@@ -87,6 +88,23 @@ async function main() {
   }
 
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
+
+  // Close the DB connection explicitly before exiting — otherwise a fast restart
+  // (dev-watch, a redeploy) can try to reopen the same file before the OS has released
+  // the previous process's lock, which node:sqlite surfaces as "database is locked"
+  // rather than retrying (its busy timeout defaults to 0). Also drain SSE connections
+  // first since they're long-lived and would otherwise block app.close() from settling.
+  let shuttingDown = false;
+  async function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    closeAllSseClients();
+    await app.close();
+    sqlite.close();
+    process.exit(0);
+  }
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((err) => {

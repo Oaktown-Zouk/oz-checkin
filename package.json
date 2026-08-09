@@ -9,6 +9,7 @@
   "scripts": {
     "dev:server": "npm run dev --workspace server",
     "dev:web": "npm run dev --workspace web",
+    "watch": "trap 'kill 0' EXIT INT TERM; npm run dev:server & npm run build:watch --workspace web & wait",
     "build": "npm run build --workspace web && npm run build --workspace server",
     "start": "npm run start --workspace server",
     "start:scratch": "npm run start:scratch --workspace server",
