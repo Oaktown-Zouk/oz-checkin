@@ -1,0 +1,247 @@
+import { eq } from "drizzle-orm";
+import { config, givebutterConfigured } from "../config.js";
+import { db } from "../db/client.js";
+import { givebutterContacts, memberships, payments, syncState } from "../db/schema.js";
+import { upsertStudent } from "../lib/upsertStudent.js";
+
+// Field names below are verified against real /contacts, /transactions, and /plans
+// responses from the OZ Givebutter account (2026-08-08) — see SPEC.md. Notable, non-obvious
+// findings from that check:
+//  - Pagination is Laravel-style { data, links, meta }.
+//  - Transactions and plans both carry contact_id/email/first_name/last_name directly —
+//    no need to cross-reference /contacts for the common case. The contacts map below is
+//    only a fallback for records that (unexpectedly) lack a direct email.
+//  - Amounts are plain dollar floats (e.g. 95, or 3.15 for a fee), not cents.
+//  - A transaction that's the initial or renewal charge of a recurring plan carries that
+//    plan's id in `plan_id`. Those must NOT also become a redeemable one-time credit —
+//    the matching `memberships` row already represents that student's access. Only
+//    transactions with plan_id == null are "bought N passes" one-time purchases.
+//  - Plans expose `next_bill_date` (format "YYYY-MM-DD HH:MM:SS", no offset) — this is
+//    the "current period end" signal that was an open question in SPEC.md; it's resolved.
+// Known gap, out of scope for v1: a transaction's nested `transactions[]` array can carry
+// per-installment refund info that isn't reflected in the top-level `status` — a refund
+// after the fact won't un-redeem a credit or retroactively revoke a checked-in visit.
+
+const BASE_URL = "https://api.givebutter.com/v1";
+
+async function givebutterGet(path: string, params: Record<string, string> = {}): Promise<any> {
+  const url = new URL(BASE_URL + path);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${config.GIVEBUTTER_API_KEY}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Givebutter API ${path} failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+async function fetchAllPages(path: string): Promise<any[]> {
+  const results: any[] = [];
+  let page = 1;
+  const perPage = 100;
+
+  for (;;) {
+    const json = await givebutterGet(path, { page: String(page), per_page: String(perPage) });
+    // Handle both a bare array response and a Laravel-style { data, links, meta } wrapper.
+    const items: any[] = Array.isArray(json) ? json : (json.data ?? []);
+    results.push(...items);
+
+    const hasMore = Array.isArray(json)
+      ? items.length === perPage
+      : Boolean(json.links?.next) ||
+        (json.meta ? json.meta.current_page < json.meta.last_page : false);
+
+    if (!hasMore || items.length === 0) break;
+    page++;
+  }
+
+  return results;
+}
+
+function contactEmail(contact: any): string | undefined {
+  return (
+    contact?.primary_email ??
+    contact?.email ??
+    contact?.emails?.find((e: any) => e?.type === "primary")?.value ??
+    contact?.emails?.[0]?.value
+  );
+}
+
+function contactName(contact: any): string | undefined {
+  if (contact?.name) return contact.name;
+  const first = contact?.first_name ?? "";
+  const last = contact?.last_name ?? "";
+  const full = `${first} ${last}`.trim();
+  return full || undefined;
+}
+
+function dollarsToCents(amount: number): number {
+  return Math.round(amount * 100);
+}
+
+export interface SyncResult {
+  skipped: boolean;
+  processed?: number;
+  unmatched?: number;
+}
+
+export async function syncGivebutter(): Promise<{ payments: SyncResult; memberships: SyncResult }> {
+  if (!givebutterConfigured) {
+    return { payments: { skipped: true }, memberships: { skipped: true } };
+  }
+
+  const contacts = await fetchAllPages("/contacts");
+  const contactsById = new Map<string, any>(contacts.map((c) => [String(c.id), c]));
+
+  const paymentsResult = await syncTransactions(contactsById);
+  const membershipsResult = await syncPlans(contactsById);
+
+  return { payments: paymentsResult, memberships: membershipsResult };
+}
+
+// Links a Givebutter contact id to a student — the signal used by the merge
+// guardrails to know a student "has Givebutter on file" (see services/merge.ts).
+async function linkGivebutterContact(studentId: number, contactId: unknown): Promise<void> {
+  if (contactId === undefined || contactId === null) return;
+  await db
+    .insert(givebutterContacts)
+    .values({ studentId, givebutterContactId: String(contactId) })
+    .onConflictDoUpdate({
+      target: givebutterContacts.givebutterContactId,
+      set: { studentId, updatedAt: new Date() },
+    });
+}
+
+async function resolveStudentIdForRecord(record: any, contactsById: Map<string, any>): Promise<
+  number | undefined
+> {
+  // Transactions and plans both carry these directly (verified) — prefer them over any
+  // contact lookup.
+  const directEmail =
+    record.email ?? record.primary_email ?? record.giving_space?.email ?? record.donor?.email;
+  const directFullName = `${record.first_name ?? ""} ${record.last_name ?? ""}`.trim();
+  const directName = directFullName || record.name || record.giving_space?.name;
+  const contactId = record.contact_id ?? record.contact?.id;
+
+  if (directEmail) {
+    const studentId = await upsertStudent(directEmail, directName || directEmail);
+    await linkGivebutterContact(studentId, contactId);
+    return studentId;
+  }
+
+  if (contactId !== undefined && contactId !== null) {
+    const contact = contactsById.get(String(contactId));
+    const email = contactEmail(contact);
+    if (email) {
+      const studentId = await upsertStudent(email, contactName(contact) ?? email);
+      await linkGivebutterContact(studentId, contactId);
+      return studentId;
+    }
+  }
+
+  return undefined;
+}
+
+async function syncTransactions(contactsById: Map<string, any>): Promise<SyncResult> {
+  const transactions = await fetchAllPages("/transactions");
+
+  let processed = 0;
+  let unmatched = 0;
+
+  for (const tx of transactions) {
+    const status = String(tx.status ?? "").toLowerCase();
+    if (status !== "succeeded" && status !== "success" && status !== "completed") continue;
+
+    // A transaction tied to a recurring plan (the plan's first charge, or a renewal) is
+    // NOT a one-time "bought a pass" purchase — the matching `memberships` row already
+    // represents that student's access, so redeeming this too would double-count it.
+    if (tx.plan_id) continue;
+
+    const studentId = await resolveStudentIdForRecord(tx, contactsById);
+    if (!studentId) {
+      unmatched++;
+      continue;
+    }
+
+    const txId = String(tx.id);
+    const amountCents = dollarsToCents(Number(tx.amount ?? 0));
+
+    const existing = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.givebutterTransactionId, txId));
+
+    if (existing.length === 0) {
+      await db.insert(payments).values({
+        studentId,
+        givebutterTransactionId: txId,
+        amountCents,
+        paidAt: new Date(tx.created_at ?? Date.now()),
+      });
+    } else {
+      await db
+        .update(payments)
+        .set({ amountCents, updatedAt: new Date() })
+        .where(eq(payments.givebutterTransactionId, txId));
+    }
+
+    processed++;
+  }
+
+  return { skipped: false, processed, unmatched };
+}
+
+async function syncPlans(contactsById: Map<string, any>): Promise<SyncResult> {
+  const plans = await fetchAllPages("/plans");
+
+  let processed = 0;
+  let unmatched = 0;
+
+  for (const plan of plans) {
+    const studentId = await resolveStudentIdForRecord(plan, contactsById);
+    if (!studentId) {
+      unmatched++;
+      continue;
+    }
+
+    const planId = String(plan.id);
+    const status = String(plan.status ?? "unknown");
+    const frequency = plan.frequency ? String(plan.frequency) : null;
+    const amountCents = plan.amount != null ? dollarsToCents(Number(plan.amount)) : null;
+    // "YYYY-MM-DD HH:MM:SS", no offset — replacing the space with "T" makes this parse
+    // as local time per the ECMA-262 Date Time String spec (rather than V8's non-standard
+    // handling of the space-separated form), consistent across engines.
+    const currentPeriodEnd = plan.next_bill_date
+      ? new Date(String(plan.next_bill_date).replace(" ", "T"))
+      : null;
+
+    await db
+      .insert(memberships)
+      .values({
+        studentId,
+        givebutterPlanId: planId,
+        status,
+        frequency,
+        amountCents,
+        currentPeriodEnd,
+      })
+      .onConflictDoUpdate({
+        target: memberships.givebutterPlanId,
+        set: { status, frequency, amountCents, currentPeriodEnd, updatedAt: new Date() },
+      });
+
+    processed++;
+  }
+
+  await db
+    .insert(syncState)
+    .values({ source: "givebutter", lastSyncedAt: new Date(), cursor: null })
+    .onConflictDoUpdate({
+      target: syncState.source,
+      set: { lastSyncedAt: new Date() },
+    });
+
+  return { skipped: false, processed, unmatched };
+}

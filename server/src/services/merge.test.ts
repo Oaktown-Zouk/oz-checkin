@@ -1,0 +1,145 @@
+import { before, beforeEach, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  setupTestDb,
+  resetDb,
+  insertStudent,
+  insertWaiver,
+  insertMembership,
+  insertPayment,
+  insertGivebutterContact,
+  insertCheckin,
+} from "../testing/helpers.js";
+import { mergeStudents } from "./merge.js";
+import { findStudentIdByEmail } from "../lib/upsertStudent.js";
+import { ConflictError, NotFoundError } from "../lib/errors.js";
+
+before(setupTestDb);
+beforeEach(resetDb);
+
+describe("mergeStudents — happy path", () => {
+  it("combines a Forms-only student with a Givebutter-only student", async () => {
+    const formsStudent = await insertStudent("aastha.personal@gmail.com", "Aastha Sehgal");
+    await insertWaiver(formsStudent, { signedAt: new Date("2026-08-01") });
+
+    const gbStudent = await insertStudent("aastha.work@company.com", "Aastha S.");
+    await insertMembership(gbStudent, { status: "active" });
+    await insertGivebutterContact(gbStudent, "contact-1");
+
+    const merged = await mergeStudents(formsStudent, "aastha.work@company.com");
+
+    assert.equal(merged.id, formsStudent, "the survivor is the one whose menu was opened");
+    assert.equal(merged.waiver.signed, true);
+    assert.equal(merged.membership?.active, true);
+    assert.deepEqual(merged.alternateEmails, ["aastha.work@company.com"]);
+  });
+
+  it("reassigns check-in history from the absorbed student", async () => {
+    const formsStudent = await insertStudent("a@example.com");
+    await insertWaiver(formsStudent);
+
+    const gbStudent = await insertStudent("b@example.com");
+    const paymentId = await insertPayment(gbStudent);
+    await insertCheckin(gbStudent, { paymentId });
+
+    const merged = await mergeStudents(formsStudent, "b@example.com");
+
+    assert.equal(merged.checkedInToday, true);
+    assert.equal(merged.checkinsToday[0].paymentId, paymentId);
+  });
+
+  it("deletes the absorbed student row", async () => {
+    const formsStudent = await insertStudent("a@example.com");
+    await insertWaiver(formsStudent);
+    const gbStudent = await insertStudent("b@example.com");
+    await insertMembership(gbStudent);
+
+    await mergeStudents(formsStudent, "b@example.com");
+
+    // The absorbed student's own id no longer resolves to itself as a live student —
+    // it now resolves (via the linked email) to the survivor.
+    const resolvedId = await findStudentIdByEmail("b@example.com");
+    assert.equal(resolvedId, formsStudent);
+  });
+
+  it("the merge sticks: a future sync recognizes the absorbed email as already-known", async () => {
+    const formsStudent = await insertStudent("a@example.com");
+    await insertWaiver(formsStudent);
+    const gbStudent = await insertStudent("b@example.com");
+    await insertMembership(gbStudent);
+
+    await mergeStudents(formsStudent, "b@example.com");
+
+    // This is exactly what sync's upsertStudent does on every run — simulate it
+    // directly against the lookup the merge is supposed to fix.
+    const idForOldEmail = await findStudentIdByEmail("b@example.com");
+    const idForOriginalEmail = await findStudentIdByEmail("a@example.com");
+    assert.equal(idForOldEmail, idForOriginalEmail, "both emails now resolve to the same student");
+  });
+
+  it("a student who already absorbed one merge can't be merged again (guardrail prevents chains)", async () => {
+    // Once a student has both a waiver and Givebutter data (from one legitimate merge),
+    // it no longer fits either half of the "exactly one gap" rule, so it can't be pulled
+    // into a second merge — a structural property of the guardrail worth locking in.
+    const a = await insertStudent("a@example.com");
+    await insertWaiver(a);
+    const b = await insertStudent("b@example.com");
+    await insertMembership(b);
+    await mergeStudents(a, "b@example.com");
+
+    const c = await insertStudent("c@example.com");
+    await insertMembership(c);
+
+    await assert.rejects(() => mergeStudents(a, "c@example.com"), ConflictError);
+  });
+});
+
+describe("mergeStudents — guardrails", () => {
+  it("blocks merging two students that both already have Givebutter data", async () => {
+    const s1 = await insertStudent("one@example.com");
+    await insertMembership(s1);
+    const s2 = await insertStudent("two@example.com");
+    await insertPayment(s2);
+
+    await assert.rejects(() => mergeStudents(s1, "two@example.com"), ConflictError);
+  });
+
+  it("blocks merging two students that both already have Forms data", async () => {
+    const s1 = await insertStudent("one@example.com");
+    await insertWaiver(s1);
+    const s2 = await insertStudent("two@example.com");
+    await insertWaiver(s2);
+
+    await assert.rejects(() => mergeStudents(s1, "two@example.com"), ConflictError);
+  });
+
+  it("treats a bare givebutter_contacts link (no payments/memberships yet) as 'has Givebutter'", async () => {
+    const s1 = await insertStudent("one@example.com");
+    await insertGivebutterContact(s1); // contact on file, never paid
+    const s2 = await insertStudent("two@example.com");
+    await insertMembership(s2);
+
+    await assert.rejects(() => mergeStudents(s1, "two@example.com"), ConflictError);
+  });
+
+  it("throws NotFoundError when no student has the given email", async () => {
+    const s1 = await insertStudent("one@example.com");
+    await insertWaiver(s1);
+
+    await assert.rejects(() => mergeStudents(s1, "nobody@example.com"), NotFoundError);
+  });
+
+  it("throws ConflictError when merging a student with itself", async () => {
+    const s1 = await insertStudent("one@example.com");
+    await insertWaiver(s1);
+
+    await assert.rejects(() => mergeStudents(s1, "one@example.com"), ConflictError);
+  });
+
+  it("throws NotFoundError for an unknown survivor id", async () => {
+    const s2 = await insertStudent("two@example.com");
+    await insertWaiver(s2);
+
+    await assert.rejects(() => mergeStudents(999_999, "two@example.com"), NotFoundError);
+  });
+});

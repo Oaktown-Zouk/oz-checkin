@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.local
+web/dist/
+server/dist/
+server/drizzle/meta/
+*.log
+.DS_Store

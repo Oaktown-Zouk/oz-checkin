@@ -48,6 +48,28 @@ which the API exposes as a top-level `respondentEmail` field on each response, n
 answer tied to a question ID. The sync code reads that field directly, with a fallback to
 a titled "email" question for forms that don't use the built-in collection.
 
+**Reality: the same person sometimes uses different emails for the waiver vs. Givebutter**
+(e.g. a personal address on the form, a work address for payment) — confirmed against real
+account data, where this affected several people. Since matching is per-email, sync creates
+a separate `students` row per email the first time it's seen, so these show up as two rows:
+one with a waiver and no payment, one with a payment and no waiver — and this doesn't
+self-heal, since email-only matching has no way to know they're the same person.
+
+**Fix: a `student_emails` table (one student → many emails) plus a manual "Merge info"
+action.** Front desk finds the duplicate, opens the 3-dot menu on either row, and enters
+the other row's email. The merge reassigns all of the absorbed student's records (waiver,
+Givebutter contact/payments/memberships, check-in history) onto the surviving student,
+links the absorbed email so future syncs recognize it as already-known instead of
+recreating the duplicate, and deletes the absorbed row.
+
+**Guardrail:** the only legitimate use is combining a Google-Forms-only student with a
+Givebutter-only student — exactly one side has waiver data, the other has Givebutter data.
+Merging two students that both already have a waiver, or both already have Givebutter data,
+is blocked (409) — that pattern doesn't fit the "split identity" problem this feature
+exists to fix, and merging anyway would silently combine two people's real, separate
+history. "Has Givebutter on file" is checked across `givebutter_contacts`, `payments`, and
+`memberships` (any one is sufficient); "has Forms on file" is a `waivers` row.
+
 ## Payment model
 
 Givebutter supports both **one-time payments** and **recurring memberships**, and both are in
@@ -110,8 +132,12 @@ the more familiar option; the rest of this design doesn't depend on the choice.)
 
 **DB: SQLite via Drizzle ORM.** Drizzle's schema syntax is (almost) identical across SQLite
 and Postgres, so "migrate later" — which you flagged as likely — is a driver swap and a
-`drizzle-kit` migration generation, not a rewrite. `better-sqlite3` as the driver (sync,
-fast, no native-binding headaches for this scale).
+`drizzle-kit` migration generation, not a rewrite. Driver is Node's built-in `node:sqlite`
+(via `drizzle-orm/node-sqlite`, on Drizzle 1.0's release candidate), not `better-sqlite3` —
+switched after `better-sqlite3`'s locally-compiled native binary (no prebuilt exists yet
+for current Node versions) crashed the process under real load, a known class of issue on
+recent Node majors. `node:sqlite` ships inside Node itself, so there's no separate native
+module to get out of sync with the Node version.
 
 **Frontend: React + Vite SPA**, built to static files and served by the same Fastify process.
 Keeps deployment to one process/one port, which matters for "cheap to host" (a single small
@@ -128,6 +154,9 @@ desk today.
 
 ```
 students          (id, email UNIQUE, name, phone, created_at, updated_at)
+student_emails    (id, student_id FK, email UNIQUE, created_at, updated_at)
+                  -- alternate emails linked by a merge; consulted alongside
+                  -- students.email whenever sync resolves "who does this email belong to"
 waivers           (id, student_id FK, form_response_id UNIQUE, signed_at, raw_json)
 givebutter_contacts (id, student_id FK, givebutter_contact_id UNIQUE)
 payments          (id, student_id FK, givebutter_transaction_id UNIQUE, amount_cents,
@@ -155,6 +184,9 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
   (409) if: a recurring member already has a check-in today, or a one-time payer has no
   unredeemed credits left.
 - `DELETE /api/checkins/:id` — undo that specific check-in (and un-redeem its payment, if any).
+- `POST /api/students/:id/merge` `{ otherEmail }` — merge the student found by `otherEmail`
+  into `:id`. 404 if no student has that email; 409 if it's the same student or the
+  source-collision guardrail blocks it (see "Identity" above).
 - `POST /api/sync` — trigger an immediate Forms + Givebutter refetch.
 - `GET /api/sync/status` — last-synced timestamps per source, for the "synced Xm ago" UI.
 - `POST /api/login` / `POST /api/logout` — session auth.
@@ -168,6 +200,10 @@ sees a person first — a Forms respondent with no Givebutter record yet still s
   grayed row; recurring members and fully-redeemed one-time payers don't.
 - Missing waiver / no payment → red badge; check-in still works but confirms first.
 - "Last synced Xm ago" + manual Refresh button, top of page.
+- 3-dot (⋮) menu on each row → **Merge info** — opens a dialog to enter another email
+  address and merge that student's records into this row. Errors (blocked guardrail, no
+  matching student) show inline in the dialog. A merged row's linked emails show under
+  the primary one so front desk can see why a row combines a waiver and a payment.
 
 ## Open items to confirm before/while building
 

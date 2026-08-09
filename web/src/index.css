@@ -1,0 +1,329 @@
+:root {
+  color-scheme: light dark;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --red: #dc2626;
+  --red-bg: #fee2e2;
+  --amber: #b45309;
+  --amber-bg: #fef3c7;
+  --gray: #6b7280;
+  --gray-bg: #f3f4f6;
+  --border: #e5e7eb;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #fafafa;
+  color: #111827;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+}
+
+.login-card h1 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  text-align: center;
+}
+
+.login-card input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.error {
+  color: var(--red);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.app-header h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.sync-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--gray);
+}
+
+.search-bar {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 1.05rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.empty-state {
+  color: var(--gray);
+  text-align: center;
+  margin-top: 40px;
+}
+
+.student-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.student-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.student-row.checked-in {
+  opacity: 0.55;
+  background: #f9fafb;
+}
+
+.student-row.checked-in .actions,
+.student-row.checked-in .checkin-status {
+  opacity: 1;
+}
+
+.student-name {
+  font-weight: 600;
+}
+
+.student-email {
+  font-size: 0.8rem;
+  color: var(--gray);
+}
+
+.student-alt-emails {
+  font-size: 0.75rem;
+  color: var(--gray);
+  font-style: italic;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-green {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.badge-red {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.badge-amber {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.badge-gray {
+  background: var(--gray-bg);
+  color: var(--gray);
+}
+
+.checkin-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--gray);
+}
+
+.checkin-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-primary {
+  background: #111827;
+  color: white;
+}
+
+.btn-secondary {
+  background: white;
+  border-color: var(--border);
+  color: #111827;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--gray);
+  text-decoration: underline;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.row-menu {
+  position: relative;
+}
+
+.row-menu-trigger {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--gray);
+  border-radius: 6px;
+}
+
+.row-menu-trigger:hover {
+  background: var(--gray-bg);
+}
+
+.row-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 160px;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.row-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #111827;
+}
+
+.row-menu-item:hover {
+  background: var(--gray-bg);
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.dialog-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialog-card h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.dialog-description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--gray);
+}
+
+.dialog-card input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .student-row {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+}
