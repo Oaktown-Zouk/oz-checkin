@@ -85,8 +85,6 @@ export function StudentRow({
           {student.waiver.signed ? "Waiver signed" : "No waiver"}
         </span>
 
-        {isNewMember && <span className="badge badge-blue">New Member</span>}
-
         {student.membership && (
           <span className={`badge ${student.membership.active ? "badge-green" : "badge-gray"}`}>
             {student.membership.active ? "Member" : `Member (${student.membership.status})`}
@@ -102,6 +100,8 @@ export function StudentRow({
         )}
 
         {!hasAnyPayment && <span className="badge badge-red">No payment on file</span>}
+
+        {isNewMember && <span className="badge badge-blue">New Member</span>}
       </div>
 
       <div className="checkin-status">
