@@ -82,8 +82,10 @@ export const api = {
   login: (password: string) =>
     request<{ ok: true }>("/api/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
-  students: (q: string, date?: string) => {
-    const params = new URLSearchParams({ q });
+  // No `q` — the frontend fetches the full roster and filters locally (see App.tsx) so
+  // typing in the search box doesn't round-trip to the server on every keystroke.
+  students: (date?: string) => {
+    const params = new URLSearchParams();
     if (date) params.set("date", date);
     return request<StudentStatus[]>(`/api/students?${params.toString()}`);
   },

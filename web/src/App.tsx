@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, UnauthorizedError, type StudentStatus, type SyncStatus } from "./api.js";
 import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
@@ -103,10 +103,13 @@ export function App() {
       .finally(() => setAuthChecked(true));
   }, []);
 
-  const refreshStudents = useCallback(async (q: string, date?: string) => {
+  // Fetches the full roster for the viewed date — not scoped by `query`. The search box
+  // filters this in memory (see visibleStudents below) instead of round-tripping to the
+  // server on every keystroke, which matters once the server isn't on the same machine.
+  const refreshStudents = useCallback(async (date?: string) => {
     setLoading(true);
     try {
-      const results = await api.students(q, date);
+      const results = await api.students(date);
       setStudents(results);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
@@ -114,6 +117,12 @@ export function App() {
       setLoading(false);
     }
   }, []);
+
+  const visibleStudents = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter((s) => s.name.toLowerCase().includes(q));
+  }, [students, query]);
 
   const refreshSyncStatus = useCallback(async () => {
     try {
@@ -135,21 +144,12 @@ export function App() {
 
   useEffect(() => {
     if (!authenticated) return;
-    const handle = setTimeout(() => refreshStudents(query, effectiveDate), 250);
+    // effectiveDate can change rapidly while adjusting the backdate picker — debounced
+    // the same way the old per-keystroke search fetch was, even though search itself no
+    // longer triggers a fetch at all (see visibleStudents above).
+    const handle = setTimeout(() => refreshStudents(effectiveDate), 250);
     return () => clearTimeout(handle);
-  }, [authenticated, query, effectiveDate, changeSignal, refreshStudents]);
-
-  // query/effectiveDate change on every keystroke/date-pick — read the latest values via
-  // ref inside the SSE handlers below instead of putting them in that effect's deps,
-  // which would otherwise tear down and reopen the connection constantly.
-  const queryRef = useRef(query);
-  const effectiveDateRef = useRef(effectiveDate);
-  useEffect(() => {
-    queryRef.current = query;
-  }, [query]);
-  useEffect(() => {
-    effectiveDateRef.current = effectiveDate;
-  }, [effectiveDate]);
+  }, [authenticated, effectiveDate, changeSignal, refreshStudents]);
 
   // One persistent Server-Sent Events connection instead of polling on a timer: the
   // backend pushes a "changed" event after any real write (check-in, undo, merge, sync
@@ -182,7 +182,7 @@ export function App() {
     try {
       const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
       await api.checkIn(studentId, undefined, effectiveIso);
-      await refreshStudents(query, effectiveDate);
+      await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
       else alert(err instanceof Error ? err.message : "Check-in failed");
@@ -192,7 +192,7 @@ export function App() {
   async function handleUndo(checkinId: number) {
     try {
       await api.undoCheckIn(checkinId);
-      await refreshStudents(query, effectiveDate);
+      await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
       else alert(err instanceof Error ? err.message : "Undo failed");
@@ -202,7 +202,7 @@ export function App() {
   async function handleMerge(studentId: number, otherEmail: string) {
     try {
       await api.mergeStudent(studentId, otherEmail);
-      await refreshStudents(query, effectiveDate);
+      await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
       throw err;
@@ -213,7 +213,7 @@ export function App() {
     setSyncing(true);
     try {
       await api.triggerSync();
-      await Promise.all([refreshSyncStatus(), refreshStudents(query, effectiveDate)]);
+      await Promise.all([refreshSyncStatus(), refreshStudents(effectiveDate)]);
     } finally {
       setSyncing(false);
     }
@@ -268,7 +268,7 @@ export function App() {
       <SearchBar value={query} onChange={setQuery} />
 
       <StudentList
-        students={students}
+        students={visibleStudents}
         loading={loading}
         onCheckIn={handleCheckIn}
         onUndo={handleUndo}
