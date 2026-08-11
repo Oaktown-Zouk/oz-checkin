@@ -6,6 +6,7 @@ import {
   insertStudent,
   insertWaiver,
   insertMembership,
+  insertMembershipCharge,
   insertPayment,
   insertStudentEmail,
   insertCheckin,
@@ -56,6 +57,44 @@ describe("membership active-window logic", () => {
 
     const status = await getStudentStatusById(id);
     assert.equal(status?.membership?.active, false);
+  });
+});
+
+describe("membership.lastPaymentAt — history for judging a paused membership", () => {
+  it("is null when the membership has no charge history", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.lastPaymentAt, null);
+  });
+
+  it("is the most recent charge against that membership's plan", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(id, "plan-1", { paidAt: new Date("2026-07-03") });
+    await insertMembershipCharge(id, "plan-1", { paidAt: new Date("2026-08-03") });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.lastPaymentAt, new Date("2026-08-03").toISOString());
+  });
+
+  it("ignores charges billed against a different plan", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(id, "plan-other", { paidAt: new Date("2026-08-03") });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.lastPaymentAt, null);
+  });
+
+  it("is also surfaced for an active membership, not just paused", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "active", planId: "plan-1" });
+    await insertMembershipCharge(id, "plan-1", { paidAt: new Date("2026-08-03") });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.lastPaymentAt, new Date("2026-08-03").toISOString());
   });
 });
 

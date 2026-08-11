@@ -7,6 +7,7 @@ import {
   insertStudent,
   insertWaiver,
   insertMembership,
+  insertMembershipCharge,
   insertPayment,
   insertCheckin,
 } from "../testing/helpers.js";
@@ -77,6 +78,23 @@ describe("getStudentTimeline", () => {
     assert.equal(event?.at, paidAt.toISOString());
   });
 
+  it("emits a membership_payment event with the dollar amount formatted, distinct from a one-time payment", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+    const paidAt = new Date("2026-08-03T00:00:00Z");
+    await insertMembershipCharge(id, "plan-1", { amountCents: 16500, paidAt });
+
+    const timeline = await getStudentTimeline(id);
+    const event = timeline?.events.find((e) => e.type === "membership_payment");
+    assert.equal(event?.label, "Membership payment ($165.00)");
+    assert.equal(event?.at, paidAt.toISOString());
+    assert.equal(
+      timeline?.events.some((e) => e.type === "payment"),
+      false,
+      "a membership charge must not also show up as a one-time payment"
+    );
+  });
+
   it("emits a checkin event and excludes undone check-ins", async () => {
     const id = await insertStudent("a@example.com");
     const checkedInAt = new Date("2026-03-05T18:00:00Z");
@@ -106,6 +124,15 @@ describe("getStudentTimeline", () => {
     await insertWaiver(id, { signedAt: new Date("2026-05-01T00:00:00Z") });
     await insertPayment(id, { paidAt: new Date("2026-01-01T00:00:00Z") }); // earliest
     await insertMembership(id, { status: "active", startedAt: new Date("2026-03-01T00:00:00Z") });
+
+    const timeline = await getStudentTimeline(id);
+    assert.equal(timeline?.firstRegisteredAt, new Date("2026-01-01T00:00:00Z").toISOString());
+  });
+
+  it("firstRegisteredAt considers membership charges too", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1", startedAt: new Date("2026-05-01") });
+    await insertMembershipCharge(id, "plan-1", { paidAt: new Date("2026-01-01T00:00:00Z") }); // earliest
 
     const timeline = await getStudentTimeline(id);
     assert.equal(timeline?.firstRegisteredAt, new Date("2026-01-01T00:00:00Z").toISOString());

@@ -9,6 +9,7 @@ import {
   checkins,
   givebutterContacts,
   memberships,
+  membershipCharges,
   payments,
   students,
   studentEmails,
@@ -29,6 +30,7 @@ export async function resetDb() {
   // Children before parents — node:sqlite enforces foreign keys by default.
   await db.delete(checkins);
   await db.delete(payments);
+  await db.delete(membershipCharges);
   await db.delete(memberships);
   await db.delete(givebutterContacts);
   await db.delete(studentEmails);
@@ -101,6 +103,24 @@ export async function insertPayment(
       amountCents: opts.amountCents ?? 2000,
       paidAt: opts.paidAt ?? new Date(),
       redeemedAt: opts.redeemed ? new Date() : null,
+    })
+    .returning();
+  return row.id;
+}
+
+export async function insertMembershipCharge(
+  studentId: number,
+  planId: string,
+  opts: { amountCents?: number; paidAt?: Date; txId?: string } = {}
+): Promise<number> {
+  const [row] = await db
+    .insert(membershipCharges)
+    .values({
+      studentId,
+      givebutterPlanId: planId,
+      givebutterTransactionId: opts.txId ?? unique("txn"),
+      amountCents: opts.amountCents ?? 16500,
+      paidAt: opts.paidAt ?? new Date(),
     })
     .returning();
   return row.id;

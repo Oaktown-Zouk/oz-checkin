@@ -462,6 +462,10 @@ body {
   background: var(--blue);
 }
 
+.timeline-dot-membership_payment {
+  background: var(--blue);
+}
+
 .timeline-dot-checkin {
   background: var(--amber);
 }

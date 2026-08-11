@@ -23,6 +23,7 @@ export interface StudentStatus {
     status: string;
     frequency: string | null;
     currentPeriodEnd: string | null;
+    lastPaymentAt: string | null;
   } | null;
   credits: { available: number; total: number; payments: CreditInfo[] } | null;
   checkinsToday: CheckInInfo[];
@@ -38,7 +39,7 @@ export interface SyncStatus {
 }
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "checkin";
+  type: "membership_started" | "membership_status" | "membership_payment" | "payment" | "checkin";
   at: string;
   label: string;
 }

@@ -1,10 +1,10 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { checkins, memberships, payments, students, waivers } from "../db/schema.js";
+import { checkins, memberships, membershipCharges, payments, students, waivers } from "../db/schema.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "checkin";
+  type: "membership_started" | "membership_status" | "membership_payment" | "payment" | "checkin";
   at: string;
   label: string;
 }
@@ -28,18 +28,20 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   const [student] = await db.select().from(students).where(eq(students.id, studentId));
   if (!student) return null;
 
-  const [waiverRows, membershipRows, paymentRows, checkinRows, status] = await Promise.all([
-    db.select().from(waivers).where(eq(waivers.studentId, studentId)),
-    db.select().from(memberships).where(eq(memberships.studentId, studentId)),
-    db.select().from(payments).where(eq(payments.studentId, studentId)),
-    // Undone check-ins are corrections, not real visits — excluded from history same as
-    // everCheckedIn treats them.
-    db
-      .select()
-      .from(checkins)
-      .where(and(eq(checkins.studentId, studentId), isNull(checkins.undoneAt))),
-    getStudentStatusById(studentId),
-  ]);
+  const [waiverRows, membershipRows, membershipChargeRows, paymentRows, checkinRows, status] =
+    await Promise.all([
+      db.select().from(waivers).where(eq(waivers.studentId, studentId)),
+      db.select().from(memberships).where(eq(memberships.studentId, studentId)),
+      db.select().from(membershipCharges).where(eq(membershipCharges.studentId, studentId)),
+      db.select().from(payments).where(eq(payments.studentId, studentId)),
+      // Undone check-ins are corrections, not real visits — excluded from history same as
+      // everCheckedIn treats them.
+      db
+        .select()
+        .from(checkins)
+        .where(and(eq(checkins.studentId, studentId), isNull(checkins.undoneAt))),
+      getStudentStatusById(studentId),
+    ]);
 
   if (!status) return null;
 
@@ -73,6 +75,14 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
     });
   }
 
+  for (const c of membershipChargeRows) {
+    events.push({
+      type: "membership_payment",
+      at: c.paidAt.toISOString(),
+      label: `Membership payment (${formatDollars(c.amountCents)})`,
+    });
+  }
+
   for (const c of checkinRows) {
     events.push({
       type: "checkin",
@@ -86,6 +96,7 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   const firstRegisteredCandidates: Date[] = [
     ...waiverRows.map((w) => w.signedAt),
     ...paymentRows.map((p) => p.paidAt),
+    ...membershipChargeRows.map((c) => c.paidAt),
     ...membershipRows.map((m) => m.startedAt ?? m.createdAt),
   ];
   const firstRegisteredAt = firstRegisteredCandidates.length

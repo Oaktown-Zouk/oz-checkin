@@ -131,6 +131,32 @@ export const memberships = sqliteTable(
   })
 );
 
+// Historical record of charges billed against a recurring membership plan (the initial
+// charge and every renewal) — NOT a redeemable credit like `payments`; the matching
+// `memberships` row already represents that student's access. This exists purely so
+// front desk can see when a member last actually paid, which matters once a plan is
+// paused: pausing doesn't retroactively revoke the month they already paid for, and we
+// deliberately don't try to compute "is this payment good for the currently-viewed
+// month" here — that logic gets fuzzy fast, so we just show the date and let a human
+// judge it (see services/studentStatus.ts, services/studentTimeline.ts).
+export const membershipCharges = sqliteTable(
+  "membership_charges",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    studentId: integer("student_id")
+      .notNull()
+      .references(() => students.id),
+    givebutterPlanId: text("givebutter_plan_id").notNull(),
+    givebutterTransactionId: text("givebutter_transaction_id").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    paidAt: integer("paid_at", { mode: "timestamp" }).notNull(),
+    ...timestamps,
+  },
+  (t) => ({
+    transactionIdx: uniqueIndex("membership_charges_transaction_idx").on(t.givebutterTransactionId),
+  })
+);
+
 export const checkins = sqliteTable("checkins", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   studentId: integer("student_id")
@@ -160,5 +186,6 @@ export type Waiver = typeof waivers.$inferSelect;
 export type GivebutterContact = typeof givebutterContacts.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
+export type MembershipCharge = typeof membershipCharges.$inferSelect;
 export type CheckIn = typeof checkins.$inferSelect;
 export type SyncState = typeof syncState.$inferSelect;

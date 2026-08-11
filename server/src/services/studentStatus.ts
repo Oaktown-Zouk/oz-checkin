@@ -3,6 +3,7 @@ import { db } from "../db/client.js";
 import {
   checkins,
   memberships,
+  membershipCharges,
   payments,
   students,
   studentEmails,
@@ -38,6 +39,11 @@ export interface StudentStatus {
     status: string;
     frequency: string | null;
     currentPeriodEnd: string | null;
+    // Most recent charge billed against this plan, regardless of status. Shown
+    // alongside a non-active (e.g. paused) membership so front desk can judge whether
+    // the student already paid for the current month — deliberately not computed
+    // programmatically (see schema.ts on membershipCharges for why).
+    lastPaymentAt: string | null;
   } | null;
   credits: { available: number; total: number; payments: CreditInfo[] } | null;
   // "Today" here means the *viewed* date — callers can look at (and check in against)
@@ -67,6 +73,7 @@ function buildStatus(
   student: Student,
   waiverRows: (typeof waivers.$inferSelect)[],
   membershipRows: (typeof memberships.$inferSelect)[],
+  membershipChargeRows: (typeof membershipCharges.$inferSelect)[],
   paymentRows: (typeof payments.$inferSelect)[],
   allCheckinRows: (typeof checkins.$inferSelect)[],
   studentEmailRows: (typeof studentEmails.$inferSelect)[],
@@ -81,6 +88,13 @@ function buildStatus(
     isMembershipActive(m.status, m.currentPeriodEnd)
   );
   const primaryMembership = activeMembership ?? studentMemberships[0];
+
+  const primaryMembershipCharges = primaryMembership
+    ? membershipChargeRows.filter((c) => c.givebutterPlanId === primaryMembership.givebutterPlanId)
+    : [];
+  const lastPaymentAt = primaryMembershipCharges.length
+    ? new Date(Math.max(...primaryMembershipCharges.map((c) => c.paidAt.getTime())))
+    : null;
 
   const studentPayments = paymentRows.filter((p) => p.studentId === student.id);
   const unredeemed = studentPayments.filter((p) => p.redeemedAt === null);
@@ -113,6 +127,7 @@ function buildStatus(
           currentPeriodEnd: primaryMembership.currentPeriodEnd
             ? primaryMembership.currentPeriodEnd.toISOString()
             : null,
+          lastPaymentAt: lastPaymentAt ? lastPaymentAt.toISOString() : null,
         }
       : null,
     credits:
@@ -165,9 +180,17 @@ export async function listStudentStatuses(
   const ids = studentRows.map((s) => s.id);
   const todayStr = opts.date ?? today();
 
-  const [waiverRows, membershipRows, paymentRows, allCheckinRows, studentEmailRows] = await Promise.all([
+  const [
+    waiverRows,
+    membershipRows,
+    membershipChargeRows,
+    paymentRows,
+    allCheckinRows,
+    studentEmailRows,
+  ] = await Promise.all([
     db.select().from(waivers).where(inArray(waivers.studentId, ids)),
     db.select().from(memberships).where(inArray(memberships.studentId, ids)),
+    db.select().from(membershipCharges).where(inArray(membershipCharges.studentId, ids)),
     db.select().from(payments).where(inArray(payments.studentId, ids)),
     // Not date-filtered: buildStatus needs both the viewed day's check-ins and
     // whether the student has ANY real check-in ever (for the New Student promo).
@@ -179,7 +202,16 @@ export async function listStudentStatuses(
   ]);
 
   const statuses = studentRows.map((s) =>
-    buildStatus(s, waiverRows, membershipRows, paymentRows, allCheckinRows, studentEmailRows, todayStr)
+    buildStatus(
+      s,
+      waiverRows,
+      membershipRows,
+      membershipChargeRows,
+      paymentRows,
+      allCheckinRows,
+      studentEmailRows,
+      todayStr
+    )
   );
 
   // Not-checked-in-today first (alphabetical), checked-in-today sink to the bottom

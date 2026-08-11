@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { config, givebutterConfigured } from "../config.js";
 import { db } from "../db/client.js";
-import { givebutterContacts, memberships, payments, syncState } from "../db/schema.js";
+import { givebutterContacts, memberships, membershipCharges, payments, syncState } from "../db/schema.js";
 import { upsertStudent } from "../lib/upsertStudent.js";
 
 // Field names below are verified against real /contacts, /transactions, and /plans
@@ -14,8 +14,10 @@ import { upsertStudent } from "../lib/upsertStudent.js";
 //  - Amounts are plain dollar floats (e.g. 95, or 3.15 for a fee), not cents.
 //  - A transaction that's the initial or renewal charge of a recurring plan carries that
 //    plan's id in `plan_id`. Those must NOT also become a redeemable one-time credit —
-//    the matching `memberships` row already represents that student's access. Only
-//    transactions with plan_id == null are "bought N passes" one-time purchases.
+//    the matching `memberships` row already represents that student's access — but they
+//    are recorded as history in `membershipCharges` (see schema.ts) so front desk can see
+//    when a member last actually paid. Only transactions with plan_id == null are
+//    "bought N passes" one-time purchases that become a `payments` row.
 //  - Plans expose `next_bill_date` (format "YYYY-MM-DD HH:MM:SS", no offset) — this is
 //    the "current period end" signal that was an open question in SPEC.md; it's resolved.
 // Known gap, out of scope for v1: a transaction's nested `transactions[]` array can carry
@@ -96,18 +98,30 @@ export interface SyncResult {
   unmatched?: number;
 }
 
-export async function syncGivebutter(): Promise<{ payments: SyncResult; memberships: SyncResult }> {
+export async function syncGivebutter(): Promise<{
+  payments: SyncResult;
+  membershipCharges: SyncResult;
+  memberships: SyncResult;
+}> {
   if (!givebutterConfigured) {
-    return { payments: { skipped: true }, memberships: { skipped: true } };
+    return {
+      payments: { skipped: true },
+      membershipCharges: { skipped: true },
+      memberships: { skipped: true },
+    };
   }
 
   const contacts = await fetchAllPages("/contacts");
   const contactsById = new Map<string, any>(contacts.map((c) => [String(c.id), c]));
 
-  const paymentsResult = await syncTransactions(contactsById);
+  const transactionsResult = await syncTransactions(contactsById);
   const membershipsResult = await syncPlans(contactsById);
 
-  return { payments: paymentsResult, memberships: membershipsResult };
+  return {
+    payments: transactionsResult.credits,
+    membershipCharges: transactionsResult.membershipCharges,
+    memberships: membershipsResult,
+  };
 }
 
 // Links a Givebutter contact id to a student — the signal used by the merge
@@ -153,29 +167,52 @@ async function resolveStudentIdForRecord(record: any, contactsById: Map<string, 
   return undefined;
 }
 
-async function syncTransactions(contactsById: Map<string, any>): Promise<SyncResult> {
+async function syncTransactions(
+  contactsById: Map<string, any>
+): Promise<{ credits: SyncResult; membershipCharges: SyncResult }> {
   const transactions = await fetchAllPages("/transactions");
 
-  let processed = 0;
-  let unmatched = 0;
+  let creditsProcessed = 0;
+  let creditsUnmatched = 0;
+  let chargesProcessed = 0;
+  let chargesUnmatched = 0;
 
   for (const tx of transactions) {
     const status = String(tx.status ?? "").toLowerCase();
     if (status !== "succeeded" && status !== "success" && status !== "completed") continue;
 
-    // A transaction tied to a recurring plan (the plan's first charge, or a renewal) is
-    // NOT a one-time "bought a pass" purchase — the matching `memberships` row already
-    // represents that student's access, so redeeming this too would double-count it.
-    if (tx.plan_id) continue;
-
     const studentId = await resolveStudentIdForRecord(tx, contactsById);
     if (!studentId) {
-      unmatched++;
+      if (tx.plan_id) chargesUnmatched++;
+      else creditsUnmatched++;
       continue;
     }
 
     const txId = String(tx.id);
     const amountCents = dollarsToCents(Number(tx.amount ?? 0));
+    const paidAt = new Date(tx.created_at ?? Date.now());
+
+    // A transaction tied to a recurring plan (the plan's first charge, or a renewal) is
+    // NOT a one-time "bought a pass" purchase — the matching `memberships` row already
+    // represents that student's access — so it's recorded as history, not a redeemable
+    // credit. Only transactions with plan_id == null become a `payments` row.
+    if (tx.plan_id) {
+      await db
+        .insert(membershipCharges)
+        .values({
+          studentId,
+          givebutterPlanId: String(tx.plan_id),
+          givebutterTransactionId: txId,
+          amountCents,
+          paidAt,
+        })
+        .onConflictDoUpdate({
+          target: membershipCharges.givebutterTransactionId,
+          set: { amountCents, updatedAt: new Date() },
+        });
+      chargesProcessed++;
+      continue;
+    }
 
     const existing = await db
       .select()
@@ -187,7 +224,7 @@ async function syncTransactions(contactsById: Map<string, any>): Promise<SyncRes
         studentId,
         givebutterTransactionId: txId,
         amountCents,
-        paidAt: new Date(tx.created_at ?? Date.now()),
+        paidAt,
       });
     } else {
       await db
@@ -196,10 +233,13 @@ async function syncTransactions(contactsById: Map<string, any>): Promise<SyncRes
         .where(eq(payments.givebutterTransactionId, txId));
     }
 
-    processed++;
+    creditsProcessed++;
   }
 
-  return { skipped: false, processed, unmatched };
+  return {
+    credits: { skipped: false, processed: creditsProcessed, unmatched: creditsUnmatched },
+    membershipCharges: { skipped: false, processed: chargesProcessed, unmatched: chargesUnmatched },
+  };
 }
 
 async function syncPlans(contactsById: Map<string, any>): Promise<SyncResult> {

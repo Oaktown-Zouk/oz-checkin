@@ -1,5 +1,9 @@
 import type { StudentStatus } from "../api.js";
 
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 export function StudentBadges({ student }: { student: StudentStatus }) {
   const hasMembership = Boolean(student.membership);
   const hasCredits = Boolean(student.credits);
@@ -15,7 +19,15 @@ export function StudentBadges({ student }: { student: StudentStatus }) {
 
       {student.membership && (
         <span className={`badge ${student.membership.active ? "badge-green" : "badge-gray"}`}>
-          {student.membership.active ? "Member" : `Member (${student.membership.status})`}
+          {student.membership.active
+            ? "Member"
+            : // Pausing doesn't retroactively revoke a month already paid for — showing the
+              // last payment date lets front desk judge that themselves instead of us
+              // guessing at "is this paid for the currently-viewed month" (too fuzzy).
+              `Member (${student.membership.status}` +
+              (student.membership.lastPaymentAt
+                ? `, paid ${formatShortDate(student.membership.lastPaymentAt)})`
+                : ")")}
         </span>
       )}
 
