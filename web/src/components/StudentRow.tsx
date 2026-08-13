@@ -10,12 +10,14 @@ function formatTime(iso: string): string {
 
 export function StudentRow({
   student,
+  isClassDay,
   onCheckIn,
   onUndo,
   onMerge,
   onOpenStudent,
 }: {
   student: StudentStatus;
+  isClassDay: boolean;
   onCheckIn: (studentId: number) => Promise<void>;
   onUndo: (checkinId: number) => Promise<void>;
   onMerge: (studentId: number, otherEmail: string) => Promise<void>;
@@ -94,12 +96,22 @@ export function StudentRow({
 
       <div className="actions">
         {!student.checkedInToday && (
-          <button className="btn btn-primary" disabled={busy} onClick={handleCheckIn}>
+          <button
+            className="btn btn-primary"
+            disabled={busy || !isClassDay}
+            title={isClassDay ? undefined : "OZ only teaches class on Thursdays"}
+            onClick={handleCheckIn}
+          >
             Check In
           </button>
         )}
         {student.checkedInToday && creditsAvailable > 0 && (
-          <button className="btn btn-secondary" disabled={busy} onClick={handleCheckIn}>
+          <button
+            className="btn btn-secondary"
+            disabled={busy || !isClassDay}
+            title={isClassDay ? undefined : "OZ only teaches class on Thursdays"}
+            onClick={handleCheckIn}
+          >
             Use another pass ({creditsAvailable} left)
           </button>
         )}

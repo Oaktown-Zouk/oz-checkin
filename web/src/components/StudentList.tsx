@@ -4,6 +4,7 @@ import { StudentRow } from "./StudentRow.js";
 export function StudentList({
   students,
   loading,
+  isClassDay,
   onCheckIn,
   onUndo,
   onMerge,
@@ -11,6 +12,7 @@ export function StudentList({
 }: {
   students: StudentStatus[];
   loading: boolean;
+  isClassDay: boolean;
   onCheckIn: (studentId: number) => Promise<void>;
   onUndo: (checkinId: number) => Promise<void>;
   onMerge: (studentId: number, otherEmail: string) => Promise<void>;
@@ -29,6 +31,7 @@ export function StudentList({
         <StudentRow
           key={s.id}
           student={s}
+          isClassDay={isClassDay}
           onCheckIn={onCheckIn}
           onUndo={onUndo}
           onMerge={onMerge}

@@ -20,6 +20,13 @@ function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 }
 
+const CLASS_WEEKDAY = 4; // Thursday (0 = Sunday) — the only day OZ teaches class.
+
+function isClassDay(effectiveAt: string): boolean {
+  const viewedDate = effectiveAt ? new Date(effectiveAt) : new Date();
+  return viewedDate.getDay() === CLASS_WEEKDAY;
+}
+
 type Route = { type: "list" } | { type: "student"; id: number };
 
 function parseRoute(pathname: string): Route {
@@ -58,6 +65,10 @@ export function App() {
   // silently snapping to live.
   const [effectiveAt, setEffectiveAt] = useState(() => parseEffectiveAt(window.location.search));
   const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
+  // Class only runs Thursdays — the Check In button is disabled for any other viewed
+  // date (live or backdated), so front desk can't accidentally record a visit on a day
+  // there's no class to attend.
+  const classDay = isClassDay(effectiveAt);
 
   useEffect(() => {
     function onPopState() {
@@ -270,6 +281,7 @@ export function App() {
       <StudentList
         students={visibleStudents}
         loading={loading}
+        isClassDay={classDay}
         onCheckIn={handleCheckIn}
         onUndo={handleUndo}
         onMerge={handleMerge}
