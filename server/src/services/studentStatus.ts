@@ -5,6 +5,7 @@ import {
   memberships,
   membershipCharges,
   payments,
+  promoCredits,
   students,
   studentEmails,
   waivers,
@@ -19,11 +20,24 @@ export interface CreditInfo {
   redeemed: boolean;
 }
 
+// A non-Givebutter credit, e.g. the free drop-in every new student is granted on
+// creation (see lib/upsertStudent.ts). Spends through the same check-in flow as a real
+// payment (see services/checkins.ts) but is kept in its own list here — separate from
+// `payments` — since it isn't a real transaction and callers that pick a *specific*
+// credit to redeem (the checkIn `paymentId` param) only ever mean a real payment.
+export interface PromoCreditInfo {
+  id: number;
+  reason: string;
+  grantedAt: string;
+  redeemed: boolean;
+}
+
 export interface CheckInInfo {
   id: number;
   checkedInAt: string;
   checkedInBy: string | null;
   paymentId: number | null;
+  promoCreditId: number | null;
 }
 
 export interface StudentStatus {
@@ -44,8 +58,24 @@ export interface StudentStatus {
     // the student already paid for the current month — deliberately not computed
     // programmatically (see schema.ts on membershipCharges for why).
     lastPaymentAt: string | null;
+    // Whether THIS check-in should be treated as covered by the membership rather than
+    // spending a credit: true if active, or if paused/etc. but paid within the last
+    // MEMBERSHIP_GRACE_DAYS — pausing doesn't retroactively revoke a month already paid
+    // for. Drives both the credits badge (hidden when covered — see StudentBadges) and
+    // the actual spend decision in services/checkins.ts, from one place, so the two
+    // can't drift out of sync with each other.
+    coversCheckIn: boolean;
   } | null;
-  credits: { available: number; total: number; payments: CreditInfo[] } | null;
+  // available/total fold in both real payments and promo credits (e.g. the free
+  // drop-in every new student gets) — front desk just needs "how many can they
+  // spend," not which kind. The breakdown by kind is still exposed separately below
+  // for the (currently server-internal) explicit-credit-selection path in checkins.ts.
+  credits: {
+    available: number;
+    total: number;
+    payments: CreditInfo[];
+    promo: PromoCreditInfo[];
+  } | null;
   // "Today" here means the *viewed* date — callers can look at (and check in against)
   // a past date via listStudentStatuses'/createCheckIn's `date` param, defaulting to the
   // real today when omitted. Field names kept as -Today for minimal API churn; the
@@ -57,9 +87,9 @@ export interface StudentStatus {
   canCheckIn: boolean;
   requiresCreditToCheckIn: boolean;
   // Any real (non-undone) check-in ever, on ANY date — unlike checkedInToday this is not
-  // scoped to the viewed date. Used to gate the one-time "first class free" promo: it
-  // shouldn't reappear for someone who used it on a different day than the one you
-  // happen to be viewing.
+  // scoped to the viewed date. Drives the "New Member" welcome badge only; it no longer
+  // gates the free-drop-in promo, since that's now a real credit (see credits.promo)
+  // that's either present and unredeemed or it isn't.
   everCheckedIn: boolean;
 }
 
@@ -69,12 +99,22 @@ function isMembershipActive(status: string, currentPeriodEnd: Date | null): bool
   return true;
 }
 
+const MEMBERSHIP_GRACE_DAYS = 30;
+
+function membershipCoversCheckIn(active: boolean, lastPaymentAt: Date | null): boolean {
+  if (active) return true;
+  if (!lastPaymentAt) return false;
+  const ageMs = Date.now() - lastPaymentAt.getTime();
+  return ageMs <= MEMBERSHIP_GRACE_DAYS * 24 * 60 * 60 * 1000;
+}
+
 function buildStatus(
   student: Student,
   waiverRows: (typeof waivers.$inferSelect)[],
   membershipRows: (typeof memberships.$inferSelect)[],
   membershipChargeRows: (typeof membershipCharges.$inferSelect)[],
   paymentRows: (typeof payments.$inferSelect)[],
+  promoCreditRows: (typeof promoCredits.$inferSelect)[],
   allCheckinRows: (typeof checkins.$inferSelect)[],
   studentEmailRows: (typeof studentEmails.$inferSelect)[],
   viewedDate: string
@@ -95,16 +135,25 @@ function buildStatus(
   const lastPaymentAt = primaryMembershipCharges.length
     ? new Date(Math.max(...primaryMembershipCharges.map((c) => c.paidAt.getTime())))
     : null;
+  const membershipIsActive = primaryMembership
+    ? isMembershipActive(primaryMembership.status, primaryMembership.currentPeriodEnd)
+    : false;
+  const membershipCovers = primaryMembership
+    ? membershipCoversCheckIn(membershipIsActive, lastPaymentAt)
+    : false;
 
   const studentPayments = paymentRows.filter((p) => p.studentId === student.id);
-  const unredeemed = studentPayments.filter((p) => p.redeemedAt === null);
+  const unredeemedPayments = studentPayments.filter((p) => p.redeemedAt === null);
+
+  const studentPromoCredits = promoCreditRows.filter((c) => c.studentId === student.id);
+  const unredeemedPromoCredits = studentPromoCredits.filter((c) => c.redeemedAt === null);
 
   const studentAllCheckins = allCheckinRows.filter((c) => c.studentId === student.id);
   const studentCheckinsToday = studentAllCheckins.filter((c) => c.date === viewedDate);
 
   const checkedInToday = studentCheckinsToday.length > 0;
   const everCheckedIn = studentAllCheckins.length > 0;
-  const creditsAvailable = unredeemed.length;
+  const creditsAvailable = unredeemedPayments.length + unredeemedPromoCredits.length;
   const requiresCreditToCheckIn = checkedInToday;
   const canCheckIn = !checkedInToday || creditsAvailable > 0;
 
@@ -121,20 +170,21 @@ function buildStatus(
     },
     membership: primaryMembership
       ? {
-          active: isMembershipActive(primaryMembership.status, primaryMembership.currentPeriodEnd),
+          active: membershipIsActive,
           status: primaryMembership.status,
           frequency: primaryMembership.frequency,
           currentPeriodEnd: primaryMembership.currentPeriodEnd
             ? primaryMembership.currentPeriodEnd.toISOString()
             : null,
           lastPaymentAt: lastPaymentAt ? lastPaymentAt.toISOString() : null,
+          coversCheckIn: membershipCovers,
         }
       : null,
     credits:
-      studentPayments.length > 0
+      studentPayments.length > 0 || studentPromoCredits.length > 0
         ? {
             available: creditsAvailable,
-            total: studentPayments.length,
+            total: studentPayments.length + studentPromoCredits.length,
             payments: studentPayments
               .sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime())
               .map((p) => ({
@@ -142,6 +192,14 @@ function buildStatus(
                 paidAt: p.paidAt.toISOString(),
                 amountCents: p.amountCents,
                 redeemed: p.redeemedAt !== null,
+              })),
+            promo: studentPromoCredits
+              .sort((a, b) => a.grantedAt.getTime() - b.grantedAt.getTime())
+              .map((c) => ({
+                id: c.id,
+                reason: c.reason,
+                grantedAt: c.grantedAt.toISOString(),
+                redeemed: c.redeemedAt !== null,
               })),
           }
         : null,
@@ -152,6 +210,7 @@ function buildStatus(
         checkedInAt: c.checkedInAt.toISOString(),
         checkedInBy: c.checkedInBy,
         paymentId: c.paymentId,
+        promoCreditId: c.promoCreditId,
       })),
     checkedInToday,
     canCheckIn,
@@ -185,6 +244,7 @@ export async function listStudentStatuses(
     membershipRows,
     membershipChargeRows,
     paymentRows,
+    promoCreditRows,
     allCheckinRows,
     studentEmailRows,
   ] = await Promise.all([
@@ -192,8 +252,9 @@ export async function listStudentStatuses(
     db.select().from(memberships).where(inArray(memberships.studentId, ids)),
     db.select().from(membershipCharges).where(inArray(membershipCharges.studentId, ids)),
     db.select().from(payments).where(inArray(payments.studentId, ids)),
+    db.select().from(promoCredits).where(inArray(promoCredits.studentId, ids)),
     // Not date-filtered: buildStatus needs both the viewed day's check-ins and
-    // whether the student has ANY real check-in ever (for the New Student promo).
+    // whether the student has ANY real check-in ever (for the New Member badge).
     db
       .select()
       .from(checkins)
@@ -208,6 +269,7 @@ export async function listStudentStatuses(
       membershipRows,
       membershipChargeRows,
       paymentRows,
+      promoCreditRows,
       allCheckinRows,
       studentEmailRows,
       todayStr

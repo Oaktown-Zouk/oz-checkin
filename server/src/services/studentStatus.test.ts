@@ -8,6 +8,7 @@ import {
   insertMembership,
   insertMembershipCharge,
   insertPayment,
+  insertPromoCredit,
   insertStudentEmail,
   insertCheckin,
 } from "../testing/helpers.js";
@@ -98,6 +99,42 @@ describe("membership.lastPaymentAt — history for judging a paused membership",
   });
 });
 
+describe("membership.coversCheckIn — grace period for a recently-paid paused membership", () => {
+  it("an active membership always covers, with or without payment history", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "active", planId: "plan-1" });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.coversCheckIn, true);
+  });
+
+  it("a paused membership paid within the last 30 days covers", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(id, "plan-1", { paidAt: new Date(Date.now() - 10 * 86_400_000) });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.coversCheckIn, true);
+  });
+
+  it("a paused membership paid more than 30 days ago does NOT cover", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(id, "plan-1", { paidAt: new Date(Date.now() - 31 * 86_400_000) });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.coversCheckIn, false);
+  });
+
+  it("a paused membership with no payment history at all does NOT cover", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertMembership(id, { status: "paused", planId: "plan-1" });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.membership?.coversCheckIn, false);
+  });
+});
+
 describe("credits computation", () => {
   it("counts available vs. total correctly across a mix of redeemed/unredeemed", async () => {
     const id = await insertStudent("a@example.com");
@@ -115,6 +152,36 @@ describe("credits computation", () => {
 
     const status = await getStudentStatusById(id);
     assert.equal(status?.credits, null);
+  });
+
+  it("folds a promo credit (e.g. the new-student freebie) into available/total alongside real payments", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertPayment(id, { redeemed: true });
+    await insertPromoCredit(id);
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.credits?.total, 2);
+    assert.equal(status?.credits?.available, 1, "the unredeemed promo credit counts as available");
+  });
+
+  it("credits is non-null when a student has only a promo credit and no real payments", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertPromoCredit(id);
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.credits?.available, 1);
+    assert.equal(status?.credits?.promo.length, 1);
+    assert.equal(status?.credits?.promo[0].reason, "new_student");
+  });
+
+  it("a redeemed promo credit does not count as available", async () => {
+    const id = await insertStudent("a@example.com");
+    await insertPromoCredit(id, { redeemed: true });
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.credits?.available, 0);
+    assert.equal(status?.credits?.total, 1);
+    assert.equal(status?.credits?.promo[0].redeemed, true);
   });
 });
 

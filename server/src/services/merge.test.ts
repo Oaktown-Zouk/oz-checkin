@@ -9,10 +9,14 @@ import {
   insertPayment,
   insertGivebutterContact,
   insertCheckin,
+  insertPromoCredit,
 } from "../testing/helpers.js";
 import { mergeStudents } from "./merge.js";
 import { findStudentIdByEmail } from "../lib/upsertStudent.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
+import { db } from "../db/client.js";
+import { promoCredits } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
 before(setupTestDb);
 beforeEach(resetDb);
@@ -126,6 +130,53 @@ describe("mergeStudents — name reconciliation (Givebutter is payment-verified)
     const merged = await mergeStudents(survivor, "b@example.com");
 
     assert.equal(merged.name, "Hanna Larracas");
+  });
+});
+
+describe("mergeStudents — promo credits", () => {
+  it("reassigns the absorbed student's promo credit when the survivor doesn't have one for that reason", async () => {
+    const survivor = await insertStudent("a@example.com");
+    await insertWaiver(survivor);
+    const other = await insertStudent("b@example.com");
+    await insertMembership(other);
+    const otherCreditId = await insertPromoCredit(other);
+
+    await mergeStudents(survivor, "b@example.com");
+
+    const [credit] = await db.select().from(promoCredits).where(eq(promoCredits.id, otherCreditId));
+    assert.equal(credit.studentId, survivor);
+  });
+
+  it("drops the absorbed student's duplicate promo credit when the survivor already has one for the same reason (no double freebie)", async () => {
+    // Both sides get a "new_student" grant independently in real usage — the merge
+    // exists to fix one real person being represented twice, not to double the
+    // one-per-student freebie, and the unique (studentId, reason) index would reject
+    // a straight reassignment here anyway.
+    const survivor = await insertStudent("a@example.com");
+    await insertWaiver(survivor);
+    const survivorCreditId = await insertPromoCredit(survivor);
+    const other = await insertStudent("b@example.com");
+    await insertMembership(other);
+    const otherCreditId = await insertPromoCredit(other);
+
+    await mergeStudents(survivor, "b@example.com");
+
+    const remaining = await db.select().from(promoCredits).where(eq(promoCredits.studentId, survivor));
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].id, survivorCreditId, "the survivor's own grant is kept");
+
+    const dropped = await db.select().from(promoCredits).where(eq(promoCredits.id, otherCreditId));
+    assert.equal(dropped.length, 0, "the absorbed duplicate is gone, not orphaned");
+  });
+
+  it("merging still succeeds when neither side has a promo credit", async () => {
+    const survivor = await insertStudent("a@example.com");
+    await insertWaiver(survivor);
+    const other = await insertStudent("b@example.com");
+    await insertMembership(other);
+
+    const merged = await mergeStudents(survivor, "b@example.com");
+    assert.equal(merged.id, survivor);
   });
 });
 

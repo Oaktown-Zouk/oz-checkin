@@ -5,11 +5,19 @@ export interface CreditInfo {
   redeemed: boolean;
 }
 
+export interface PromoCreditInfo {
+  id: number;
+  reason: string;
+  grantedAt: string;
+  redeemed: boolean;
+}
+
 export interface CheckInInfo {
   id: number;
   checkedInAt: string;
   checkedInBy: string | null;
   paymentId: number | null;
+  promoCreditId: number | null;
 }
 
 export interface StudentStatus {
@@ -24,8 +32,14 @@ export interface StudentStatus {
     frequency: string | null;
     currentPeriodEnd: string | null;
     lastPaymentAt: string | null;
+    coversCheckIn: boolean;
   } | null;
-  credits: { available: number; total: number; payments: CreditInfo[] } | null;
+  credits: {
+    available: number;
+    total: number;
+    payments: CreditInfo[];
+    promo: PromoCreditInfo[];
+  } | null;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
   canCheckIn: boolean;
@@ -39,7 +53,13 @@ export interface SyncStatus {
 }
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "membership_payment" | "payment" | "checkin";
+  type:
+    | "membership_started"
+    | "membership_status"
+    | "membership_payment"
+    | "payment"
+    | "promo_credit"
+    | "checkin";
   at: string;
   label: string;
 }

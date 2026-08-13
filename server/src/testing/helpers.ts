@@ -11,6 +11,7 @@ import {
   memberships,
   membershipCharges,
   payments,
+  promoCredits,
   students,
   studentEmails,
   syncState,
@@ -31,6 +32,7 @@ export async function resetDb() {
   await db.delete(checkins);
   await db.delete(payments);
   await db.delete(membershipCharges);
+  await db.delete(promoCredits);
   await db.delete(memberships);
   await db.delete(givebutterContacts);
   await db.delete(studentEmails);
@@ -126,6 +128,22 @@ export async function insertMembershipCharge(
   return row.id;
 }
 
+export async function insertPromoCredit(
+  studentId: number,
+  opts: { reason?: string; grantedAt?: Date; redeemed?: boolean } = {}
+): Promise<number> {
+  const [row] = await db
+    .insert(promoCredits)
+    .values({
+      studentId,
+      reason: opts.reason ?? "new_student",
+      grantedAt: opts.grantedAt ?? new Date(),
+      redeemedAt: opts.redeemed ? new Date() : null,
+    })
+    .returning();
+  return row.id;
+}
+
 export async function insertStudentEmail(studentId: number, email: string): Promise<void> {
   await db.insert(studentEmails).values({ studentId, email });
 }
@@ -139,7 +157,13 @@ export async function insertGivebutterContact(studentId: number, contactId?: str
 
 export async function insertCheckin(
   studentId: number,
-  opts: { date?: string; paymentId?: number | null; undoneAt?: Date | null; checkedInAt?: Date } = {}
+  opts: {
+    date?: string;
+    paymentId?: number | null;
+    promoCreditId?: number | null;
+    undoneAt?: Date | null;
+    checkedInAt?: Date;
+  } = {}
 ): Promise<number> {
   const { today } = await import("../lib/date.js");
   const [row] = await db
@@ -149,6 +173,7 @@ export async function insertCheckin(
       date: opts.date ?? today(),
       checkedInBy: "test",
       paymentId: opts.paymentId ?? null,
+      promoCreditId: opts.promoCreditId ?? null,
       undoneAt: opts.undoneAt ?? null,
       ...(opts.checkedInAt ? { checkedInAt: opts.checkedInAt } : {}),
     })

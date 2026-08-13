@@ -28,27 +28,17 @@ export function StudentRow({
   const hasCredits = Boolean(student.credits);
   const hasAnyPayment = hasMembership || hasCredits;
   const creditsAvailable = student.credits?.available ?? 0;
-  // Free first-class promo eligibility: no payment on file and they've never actually
-  // checked in before (any date, not just the one being viewed — see
-  // StudentStatus.everCheckedIn). Drives the confirm-dialog wording only — the "No
-  // payment on file" badge always shows regardless.
-  const isNewStudent = !hasAnyPayment && !student.everCheckedIn;
 
   async function handleCheckIn() {
+    // Every new student is granted a real, redeemable free-drop-in credit at account
+    // creation (server-side, see lib/upsertStudent.ts) — it auto-spends through the
+    // normal credit flow just like a purchased pass, so there's nothing special to
+    // confirm here beyond the same warnings any other check-in might raise.
     const warnings: string[] = [];
     if (!student.waiver.signed) warnings.push("no waiver on file");
+    if (!student.checkedInToday && !hasAnyPayment) warnings.push("no payment on file");
 
-    let usePromo = false;
-    if (!student.checkedInToday && !hasAnyPayment) {
-      if (isNewStudent) usePromo = true;
-      else warnings.push("no payment on file");
-    }
-
-    if (usePromo) {
-      const prefix = warnings.length > 0 ? `${warnings.join(" and ")}. ` : "";
-      const ok = window.confirm(`${student.name}: ${prefix}Use first time free drop-in?`);
-      if (!ok) return;
-    } else if (warnings.length > 0) {
+    if (warnings.length > 0) {
       const ok = window.confirm(`${student.name}: ${warnings.join(" and ")}. Check in anyway?`);
       if (!ok) return;
     }

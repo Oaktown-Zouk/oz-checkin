@@ -1,10 +1,12 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   checkins,
   givebutterContacts,
   memberships,
+  membershipCharges,
   payments,
+  promoCredits,
   students,
   studentEmails,
   waivers,
@@ -36,9 +38,10 @@ async function hasGivebutterRecord(studentId: number): Promise<boolean> {
 }
 
 // Merges the student found by `otherEmail` into `survivorId`: reassigns all of the
-// absorbed student's child records (waivers, Givebutter contact/payments/memberships,
-// check-ins) to the survivor, links the absorbed email(s) so future syncs recognize them
-// as the survivor, and deletes the absorbed student row.
+// absorbed student's child records (waivers, Givebutter contact/payments/memberships/
+// membership charges, check-ins, promo credits) to the survivor, links the absorbed
+// email(s) so future syncs recognize them as the survivor, and deletes the absorbed
+// student row.
 //
 // Guardrail (per product decision): the only legitimate use today is combining a
 // Google-Forms-only student with a Givebutter-only student — i.e. exactly one side has
@@ -85,6 +88,24 @@ export async function mergeStudents(survivorId: number, otherEmailRaw: string): 
     otherStudent.name !== survivorRow.name &&
     shouldUpdateName(survivorRow.nameSource, otherStudent.nameSource as NameSource);
 
+  // Promo credits are one-per-reason per student (see schema.ts) — if the survivor
+  // already has a grant for some reason (e.g. "new_student", which nearly every real
+  // student row has independently), the absorbed student's matching row can't be
+  // reassigned without violating that constraint. Merging exists to fix one real person
+  // being represented twice, not to double up a one-per-student freebie, so that
+  // duplicate is dropped rather than kept under a fudged reason.
+  const [survivorPromoCredits, otherPromoCredits] = await Promise.all([
+    db.select().from(promoCredits).where(eq(promoCredits.studentId, survivorId)),
+    db.select().from(promoCredits).where(eq(promoCredits.studentId, otherId)),
+  ]);
+  const survivorPromoReasons = new Set(survivorPromoCredits.map((c) => c.reason));
+  const otherPromoCreditIdsToReassign = otherPromoCredits
+    .filter((c) => !survivorPromoReasons.has(c.reason))
+    .map((c) => c.id);
+  const otherPromoCreditIdsToDrop = otherPromoCredits
+    .filter((c) => survivorPromoReasons.has(c.reason))
+    .map((c) => c.id);
+
   db.transaction((tx) => {
     if (adoptOtherName) {
       tx
@@ -98,7 +119,18 @@ export async function mergeStudents(survivorId: number, otherEmailRaw: string): 
     tx.update(givebutterContacts).set({ studentId: survivorId }).where(eq(givebutterContacts.studentId, otherId)).run();
     tx.update(payments).set({ studentId: survivorId }).where(eq(payments.studentId, otherId)).run();
     tx.update(memberships).set({ studentId: survivorId }).where(eq(memberships.studentId, otherId)).run();
+    tx.update(membershipCharges).set({ studentId: survivorId }).where(eq(membershipCharges.studentId, otherId)).run();
     tx.update(checkins).set({ studentId: survivorId }).where(eq(checkins.studentId, otherId)).run();
+
+    if (otherPromoCreditIdsToReassign.length > 0) {
+      tx.update(promoCredits)
+        .set({ studentId: survivorId })
+        .where(inArray(promoCredits.id, otherPromoCreditIdsToReassign))
+        .run();
+    }
+    if (otherPromoCreditIdsToDrop.length > 0) {
+      tx.delete(promoCredits).where(inArray(promoCredits.id, otherPromoCreditIdsToDrop)).run();
+    }
 
     // Re-point any emails already linked to the absorbed student, then link its
     // primary email too — this is what makes the merge "stick" across future syncs.

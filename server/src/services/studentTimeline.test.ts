@@ -9,6 +9,7 @@ import {
   insertMembership,
   insertMembershipCharge,
   insertPayment,
+  insertPromoCredit,
   insertCheckin,
 } from "../testing/helpers.js";
 import { getStudentTimeline } from "./studentTimeline.js";
@@ -95,6 +96,17 @@ describe("getStudentTimeline", () => {
     );
   });
 
+  it("emits a promo_credit event for the new-student free drop-in", async () => {
+    const id = await insertStudent("a@example.com");
+    const grantedAt = new Date("2026-08-01T00:00:00Z");
+    await insertPromoCredit(id, { grantedAt });
+
+    const timeline = await getStudentTimeline(id);
+    const event = timeline?.events.find((e) => e.type === "promo_credit");
+    assert.equal(event?.label, "Free drop-in credit granted");
+    assert.equal(event?.at, grantedAt.toISOString());
+  });
+
   it("emits a checkin event and excludes undone check-ins", async () => {
     const id = await insertStudent("a@example.com");
     const checkedInAt = new Date("2026-03-05T18:00:00Z");
@@ -142,6 +154,17 @@ describe("getStudentTimeline", () => {
     const id = await insertStudent("a@example.com");
     const timeline = await getStudentTimeline(id);
     assert.equal(timeline?.firstRegisteredAt, null);
+  });
+
+  it("firstRegisteredAt ignores a promo credit's grantedAt (a sync-time stamp, not a real-world event)", async () => {
+    const id = await insertStudent("a@example.com");
+    // Granted "earlier" than the real waiver signature — if it were considered, it
+    // would incorrectly win as firstRegisteredAt.
+    await insertPromoCredit(id, { grantedAt: new Date("2026-01-01T00:00:00Z") });
+    await insertWaiver(id, { signedAt: new Date("2026-05-01T00:00:00Z") });
+
+    const timeline = await getStudentTimeline(id);
+    assert.equal(timeline?.firstRegisteredAt, new Date("2026-05-01T00:00:00Z").toISOString());
   });
 
   it("computes mostRecentCheckInAt as the latest check-in, or null if none", async () => {

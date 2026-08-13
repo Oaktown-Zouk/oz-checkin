@@ -10,6 +10,11 @@ export function StudentBadges({ student }: { student: StudentStatus }) {
   const hasAnyPayment = hasMembership || hasCredits;
   const creditsAvailable = student.credits?.available ?? 0;
   const isNewMember = !student.everCheckedIn;
+  // coversCheckIn is computed server-side (active, or paused/etc. but paid within the
+  // last 30 days) and drives the actual check-in spend decision too — see
+  // services/studentStatus.ts. Kept in one place so the badge can't say "covered" while
+  // the real check-in still quietly spends a credit, or vice versa.
+  const membershipCoversCheckIn = student.membership?.coversCheckIn ?? false;
 
   return (
     <div className="badges">
@@ -18,12 +23,19 @@ export function StudentBadges({ student }: { student: StudentStatus }) {
       </span>
 
       {student.membership && (
-        <span className={`badge ${student.membership.active ? "badge-green" : "badge-gray"}`}>
+        <span
+          className={`badge ${
+            student.membership.active
+              ? "badge-green"
+              : membershipCoversCheckIn
+                ? "badge-gray"
+                : "badge-red"
+          }`}
+        >
           {student.membership.active
             ? "Member"
-            : // Pausing doesn't retroactively revoke a month already paid for — showing the
-              // last payment date lets front desk judge that themselves instead of us
-              // guessing at "is this paid for the currently-viewed month" (too fuzzy).
+            : // Showing the last payment date lets front desk judge for themselves whether
+              // it's good for the currently-viewed month, rather than us guessing (too fuzzy).
               `Member (${student.membership.status}` +
               (student.membership.lastPaymentAt
                 ? `, paid ${formatShortDate(student.membership.lastPaymentAt)})`
@@ -31,7 +43,10 @@ export function StudentBadges({ student }: { student: StudentStatus }) {
         </span>
       )}
 
-      {student.credits && (
+      {/* Hidden once the membership covers this check-in (active, or paused-but-recently-
+          paid) — the check-in will be counted against the membership, not a credit, so
+          showing a credit count here would just be confusing, unused information. */}
+      {student.credits && !membershipCoversCheckIn && (
         <span className={`badge ${creditsAvailable > 0 ? "badge-green" : "badge-amber"}`}>
           {creditsAvailable > 0
             ? `${creditsAvailable} credit${creditsAvailable === 1 ? "" : "s"} available`

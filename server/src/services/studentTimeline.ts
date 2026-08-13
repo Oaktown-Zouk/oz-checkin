@@ -1,10 +1,24 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { checkins, memberships, membershipCharges, payments, students, waivers } from "../db/schema.js";
+import {
+  checkins,
+  memberships,
+  membershipCharges,
+  payments,
+  promoCredits,
+  students,
+  waivers,
+} from "../db/schema.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "membership_payment" | "payment" | "checkin";
+  type:
+    | "membership_started"
+    | "membership_status"
+    | "membership_payment"
+    | "payment"
+    | "promo_credit"
+    | "checkin";
   at: string;
   label: string;
 }
@@ -28,20 +42,28 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   const [student] = await db.select().from(students).where(eq(students.id, studentId));
   if (!student) return null;
 
-  const [waiverRows, membershipRows, membershipChargeRows, paymentRows, checkinRows, status] =
-    await Promise.all([
-      db.select().from(waivers).where(eq(waivers.studentId, studentId)),
-      db.select().from(memberships).where(eq(memberships.studentId, studentId)),
-      db.select().from(membershipCharges).where(eq(membershipCharges.studentId, studentId)),
-      db.select().from(payments).where(eq(payments.studentId, studentId)),
-      // Undone check-ins are corrections, not real visits — excluded from history same as
-      // everCheckedIn treats them.
-      db
-        .select()
-        .from(checkins)
-        .where(and(eq(checkins.studentId, studentId), isNull(checkins.undoneAt))),
-      getStudentStatusById(studentId),
-    ]);
+  const [
+    waiverRows,
+    membershipRows,
+    membershipChargeRows,
+    paymentRows,
+    promoCreditRows,
+    checkinRows,
+    status,
+  ] = await Promise.all([
+    db.select().from(waivers).where(eq(waivers.studentId, studentId)),
+    db.select().from(memberships).where(eq(memberships.studentId, studentId)),
+    db.select().from(membershipCharges).where(eq(membershipCharges.studentId, studentId)),
+    db.select().from(payments).where(eq(payments.studentId, studentId)),
+    db.select().from(promoCredits).where(eq(promoCredits.studentId, studentId)),
+    // Undone check-ins are corrections, not real visits — excluded from history same as
+    // everCheckedIn treats them.
+    db
+      .select()
+      .from(checkins)
+      .where(and(eq(checkins.studentId, studentId), isNull(checkins.undoneAt))),
+    getStudentStatusById(studentId),
+  ]);
 
   if (!status) return null;
 
@@ -83,6 +105,14 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
     });
   }
 
+  for (const c of promoCreditRows) {
+    events.push({
+      type: "promo_credit",
+      at: c.grantedAt.toISOString(),
+      label: c.reason === "new_student" ? "Free drop-in credit granted" : `Promo credit granted (${c.reason})`,
+    });
+  }
+
   for (const c of checkinRows) {
     events.push({
       type: "checkin",
@@ -93,6 +123,10 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
 
   events.sort((a, b) => b.at.localeCompare(a.at));
 
+  // promoCredits.grantedAt is deliberately excluded here — it's a sync-time stamp (when
+  // we first saw this student), not a real-world event time like a waiver signature or
+  // a payment, so it shouldn't be able to set firstRegisteredAt (same reasoning as
+  // membership's startedAt/canceledAt vs. our own createdAt — see schema.ts).
   const firstRegisteredCandidates: Date[] = [
     ...waiverRows.map((w) => w.signedAt),
     ...paymentRows.map((p) => p.paidAt),

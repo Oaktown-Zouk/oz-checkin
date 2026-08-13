@@ -466,6 +466,10 @@ body {
   background: var(--blue);
 }
 
+.timeline-dot-promo_credit {
+  background: var(--green);
+}
+
 .timeline-dot-checkin {
   background: var(--amber);
 }

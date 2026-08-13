@@ -1,7 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { students, studentEmails } from "../db/schema.js";
+import { students, studentEmails, promoCredits } from "../db/schema.js";
 import { normalizeEmail } from "./date.js";
+
+// Policy: every new student gets one free drop-in credit, regardless of which sync
+// (Forms or Givebutter) sees them first — granted once, below, at student creation.
+const NEW_STUDENT_PROMO_REASON = "new_student";
 
 export type NameSource = "google_forms" | "givebutter";
 
@@ -63,5 +67,15 @@ export async function upsertStudent(
     .insert(students)
     .values({ email, name: name || email, nameSource: name ? source : null })
     .returning();
+
+  // onConflictDoNothing: defensive against the (rare) race where Forms and Givebutter
+  // sync both see the same brand-new email in the same run — belt-and-suspenders, not
+  // load-bearing, since the unique index on students.email means only one of those two
+  // inserts can actually succeed.
+  await db
+    .insert(promoCredits)
+    .values({ studentId: created.id, reason: NEW_STUDENT_PROMO_REASON, grantedAt: new Date() })
+    .onConflictDoNothing();
+
   return created.id;
 }

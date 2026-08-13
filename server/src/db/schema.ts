@@ -157,6 +157,32 @@ export const membershipCharges = sqliteTable(
   })
 );
 
+// A non-Givebutter redeemable credit — e.g. the one free drop-in every new student gets.
+// Deliberately a separate table from `payments` rather than a $0 synthetic transaction:
+// `payments` represents real money that came in from Givebutter, and a promo credit
+// isn't that — mixing them would make "total revenue"-style queries against `payments`
+// wrong. Shares the same redeemedAt/redeemedByCheckinId redemption shape as `payments`
+// so both can be spent through the same check-in flow (see services/checkins.ts).
+export const promoCredits = sqliteTable(
+  "promo_credits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    studentId: integer("student_id")
+      .notNull()
+      .references(() => students.id),
+    reason: text("reason").notNull(), // e.g. "new_student" — the policy that granted it
+    grantedAt: integer("granted_at", { mode: "timestamp" }).notNull(),
+    redeemedAt: integer("redeemed_at", { mode: "timestamp" }),
+    redeemedByCheckinId: integer("redeemed_by_checkin_id"),
+    ...timestamps,
+  },
+  (t) => ({
+    // One grant per reason per student — guards against a double-grant bug (e.g. a
+    // retried student-creation race, or a future backfill script run twice).
+    studentReasonIdx: uniqueIndex("promo_credits_student_reason_idx").on(t.studentId, t.reason),
+  })
+);
+
 export const checkins = sqliteTable("checkins", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   studentId: integer("student_id")
@@ -171,6 +197,9 @@ export const checkins = sqliteTable("checkins", {
     .default(sql`(unixepoch())`),
   checkedInBy: text("checked_in_by"),
   paymentId: integer("payment_id"),
+  // Mutually exclusive with paymentId — at most one of the two is set, depending on
+  // which kind of credit this check-in spent (see services/checkins.ts).
+  promoCreditId: integer("promo_credit_id"),
   undoneAt: integer("undone_at", { mode: "timestamp" }),
 });
 
@@ -187,5 +216,6 @@ export type GivebutterContact = typeof givebutterContacts.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type MembershipCharge = typeof membershipCharges.$inferSelect;
+export type PromoCredit = typeof promoCredits.$inferSelect;
 export type CheckIn = typeof checkins.$inferSelect;
 export type SyncState = typeof syncState.$inferSelect;

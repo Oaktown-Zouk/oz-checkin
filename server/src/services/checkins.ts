@@ -1,10 +1,27 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { checkins, payments } from "../db/schema.js";
+import { checkins, payments, promoCredits } from "../db/schema.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { dateStringFor } from "../lib/date.js";
 import { broadcastChange } from "../lib/events.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
+
+type CreditPick = { kind: "payment"; id: number } | { kind: "promo"; id: number };
+
+// Auto-selection only — the explicit `paymentId` param stays payments-only (a specific
+// choice among several purchased passes only ever makes sense for real payments; there's
+// at most one promo credit per student, so it never needs picking by id). Both lists are
+// pre-sorted oldest-first, so spending the promo credit ahead of a paid one (when it's
+// older) is the right default — it burns the freebie before eating into what they paid for.
+function pickOldestUnredeemedCredit(status: StudentStatus): CreditPick | null {
+  const paymentCandidate = status.credits?.payments.find((p) => !p.redeemed);
+  const promoCandidate = status.credits?.promo.find((c) => !c.redeemed);
+  if (!paymentCandidate) return promoCandidate ? { kind: "promo", id: promoCandidate.id } : null;
+  if (!promoCandidate) return { kind: "payment", id: paymentCandidate.id };
+  return new Date(paymentCandidate.paidAt).getTime() <= new Date(promoCandidate.grantedAt).getTime()
+    ? { kind: "payment", id: paymentCandidate.id }
+    : { kind: "promo", id: promoCandidate.id };
+}
 
 export async function createCheckIn(
   studentId: number,
@@ -26,6 +43,7 @@ export async function createCheckIn(
   }
 
   let paymentIdToRedeem: number | null = null;
+  let promoCreditIdToRedeem: number | null = null;
 
   if (opts.paymentId !== undefined) {
     const credit = status.credits?.payments.find((p) => p.id === opts.paymentId);
@@ -34,18 +52,25 @@ export async function createCheckIn(
     paymentIdToRedeem = opts.paymentId;
   } else if (status.checkedInToday) {
     // Additional check-in beyond the first for this day always spends a credit.
-    const oldestUnredeemed = status.credits?.payments.find((p) => !p.redeemed);
-    if (!oldestUnredeemed) {
+    const pick = pickOldestUnredeemedCredit(status);
+    if (!pick) {
       throw new ConflictError("No unredeemed credits available to use another pass.");
     }
-    paymentIdToRedeem = oldestUnredeemed.id;
-  } else if (!status.membership?.active) {
-    // First check-in of the day, no active membership: auto-spend oldest credit if any.
-    const oldestUnredeemed = status.credits?.payments.find((p) => !p.redeemed);
-    if (oldestUnredeemed) paymentIdToRedeem = oldestUnredeemed.id;
-    // else: no membership, no credits — front-desk override, checked in with no payment link.
+    if (pick.kind === "payment") paymentIdToRedeem = pick.id;
+    else promoCreditIdToRedeem = pick.id;
+  } else if (!status.membership?.coversCheckIn) {
+    // First check-in of the day, no membership covering it (none at all, or paused/etc.
+    // without a payment in the last 30 days): auto-spend oldest credit if any (a real
+    // payment or a promo credit like the new-student free drop-in).
+    const pick = pickOldestUnredeemedCredit(status);
+    if (pick) {
+      if (pick.kind === "payment") paymentIdToRedeem = pick.id;
+      else promoCreditIdToRedeem = pick.id;
+    }
+    // else: no covering membership, no credits — front-desk override, checked in with
+    // no payment link.
   }
-  // else: active membership covers the first check-in of the day; nothing consumed.
+  // else: membership covers the first check-in of the day; nothing consumed.
 
   db.transaction((tx) => {
     const inserted = tx
@@ -56,6 +81,7 @@ export async function createCheckIn(
         checkedInAt: effectiveAt,
         checkedInBy: opts.checkedInBy ?? null,
         paymentId: paymentIdToRedeem,
+        promoCreditId: promoCreditIdToRedeem,
       })
       .returning()
       .get();
@@ -65,6 +91,14 @@ export async function createCheckIn(
         .update(payments)
         .set({ redeemedAt: effectiveAt, redeemedByCheckinId: inserted.id })
         .where(eq(payments.id, paymentIdToRedeem))
+        .run();
+    }
+
+    if (promoCreditIdToRedeem !== null) {
+      tx
+        .update(promoCredits)
+        .set({ redeemedAt: effectiveAt, redeemedByCheckinId: inserted.id })
+        .where(eq(promoCredits.id, promoCreditIdToRedeem))
         .run();
     }
   });
@@ -91,6 +125,14 @@ export async function undoCheckIn(checkinId: number): Promise<StudentStatus> {
         .update(payments)
         .set({ redeemedAt: null, redeemedByCheckinId: null })
         .where(eq(payments.id, checkin.paymentId))
+        .run();
+    }
+
+    if (checkin.promoCreditId !== null) {
+      tx
+        .update(promoCredits)
+        .set({ redeemedAt: null, redeemedByCheckinId: null })
+        .where(eq(promoCredits.id, checkin.promoCreditId))
         .run();
     }
   });

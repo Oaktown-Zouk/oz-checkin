@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { setupTestDb, resetDb, insertStudent, insertStudentEmail } from "../testing/helpers.js";
 import { upsertStudent, findStudentIdByEmail } from "./upsertStudent.js";
 import { db } from "../db/client.js";
-import { students } from "../db/schema.js";
+import { students, promoCredits } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 
 before(setupTestDb);
@@ -146,6 +146,34 @@ describe("upsertStudent — name source priority (Givebutter is payment-verified
     const [row] = await db.select().from(students).where(eq(students.id, id));
     assert.equal(row.name, "Hanna Larracas");
     assert.equal(row.nameSource, "givebutter");
+  });
+});
+
+describe("upsertStudent — new-student promo credit", () => {
+  it("grants a free drop-in credit when creating a brand new student", async () => {
+    const id = await upsertStudent("new@example.com", "New Student", "google_forms");
+
+    const [credit] = await db.select().from(promoCredits).where(eq(promoCredits.studentId, id));
+    assert.equal(credit.reason, "new_student");
+    assert.equal(credit.redeemedAt, null);
+  });
+
+  it("does not grant another credit on a later sync for an already-known student", async () => {
+    const id = await upsertStudent("a@example.com", "A", "google_forms");
+    await upsertStudent("a@example.com", "A Updated", "givebutter");
+
+    const credits = await db.select().from(promoCredits).where(eq(promoCredits.studentId, id));
+    assert.equal(credits.length, 1, "only the original creation should have granted a credit");
+  });
+
+  it("does not grant a credit when matching an existing student by a linked alternate email", async () => {
+    const existingId = await insertStudent("primary@example.com", "Primary");
+    await insertStudentEmail(existingId, "alt@example.com");
+
+    await upsertStudent("alt@example.com", "Some Name", "google_forms");
+
+    const credits = await db.select().from(promoCredits).where(eq(promoCredits.studentId, existingId));
+    assert.equal(credits.length, 0, "this student predates the promo feature and wasn't newly created");
   });
 });
 

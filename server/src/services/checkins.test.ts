@@ -6,13 +6,15 @@ import {
   resetDb,
   insertStudent,
   insertMembership,
+  insertMembershipCharge,
   insertPayment,
+  insertPromoCredit,
 } from "../testing/helpers.js";
 import { createCheckIn, undoCheckIn } from "./checkins.js";
 import { listStudentStatuses } from "./studentStatus.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { db } from "../db/client.js";
-import { payments } from "../db/schema.js";
+import { payments, promoCredits } from "../db/schema.js";
 import { dateStringFor, today } from "../lib/date.js";
 
 before(setupTestDb);
@@ -54,6 +56,54 @@ describe("createCheckIn — recurring member", () => {
     assert.equal(status.checkinsToday[0].paymentId, null);
 
     // And a second one is blocked, same as the no-payment-at-all case.
+    await assert.rejects(() => createCheckIn(studentId), ConflictError);
+  });
+});
+
+describe("createCheckIn — paused membership with a grace period", () => {
+  it("a paused membership paid within 30 days covers the check-in, not a credit", async () => {
+    const studentId = await insertStudent("paused-recent@example.com");
+    await insertMembership(studentId, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(studentId, "plan-1", {
+      paidAt: new Date(Date.now() - 10 * 86_400_000),
+    });
+    const creditId = await insertPromoCredit(studentId); // must NOT be touched
+
+    const status = await createCheckIn(studentId);
+
+    assert.equal(status.checkinsToday[0].paymentId, null);
+    assert.equal(status.checkinsToday[0].promoCreditId, null);
+    assert.equal(status.credits?.available, 1, "the credit is untouched, membership covered it");
+
+    const [credit] = await db.select().from(promoCredits).where(eq(promoCredits.id, creditId));
+    assert.equal(credit.redeemedAt, null);
+  });
+
+  it("a paused membership paid more than 30 days ago does NOT cover — a credit is spent instead", async () => {
+    const studentId = await insertStudent("paused-stale@example.com");
+    await insertMembership(studentId, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(studentId, "plan-1", {
+      paidAt: new Date(Date.now() - 45 * 86_400_000),
+    });
+    const creditId = await insertPromoCredit(studentId);
+
+    const status = await createCheckIn(studentId);
+
+    assert.equal(status.checkinsToday[0].promoCreditId, creditId);
+    assert.equal(status.credits?.available, 0);
+  });
+
+  it("a paused membership with a covering grace period still blocks a second same-day check-in with no credits", async () => {
+    const studentId = await insertStudent("paused-recent2@example.com");
+    await insertMembership(studentId, { status: "paused", planId: "plan-1" });
+    await insertMembershipCharge(studentId, "plan-1", {
+      paidAt: new Date(Date.now() - 5 * 86_400_000),
+    });
+
+    await createCheckIn(studentId); // first visit: covered by the membership grace period
+
+    // An additional visit the same day always spends a credit, grace period or not —
+    // there just isn't one here.
     await assert.rejects(() => createCheckIn(studentId), ConflictError);
   });
 });
@@ -143,6 +193,47 @@ describe("createCheckIn — no payment on file at all", () => {
   });
 });
 
+describe("createCheckIn — promo credits (e.g. the new-student free drop-in)", () => {
+  it("auto-spends an unredeemed promo credit on the first check-in when there's no membership", async () => {
+    const studentId = await insertStudent("promo1@example.com");
+    const creditId = await insertPromoCredit(studentId);
+
+    const status = await createCheckIn(studentId);
+
+    assert.equal(status.checkinsToday[0].paymentId, null);
+    assert.equal(status.checkinsToday[0].promoCreditId, creditId);
+
+    const [credit] = await db.select().from(promoCredits).where(eq(promoCredits.id, creditId));
+    assert.notEqual(credit.redeemedAt, null);
+    assert.equal(credit.redeemedByCheckinId, status.checkinsToday[0].id);
+  });
+
+  it("prefers the older of a promo credit and a real payment", async () => {
+    const studentId = await insertStudent("promo2@example.com");
+    await insertPromoCredit(studentId, { grantedAt: new Date("2026-01-01") });
+    const paymentId = await insertPayment(studentId, { paidAt: new Date("2026-06-01") });
+
+    const status = await createCheckIn(studentId);
+
+    assert.equal(status.checkinsToday[0].paymentId, null, "the older promo credit was spent, not the payment");
+    assert.notEqual(status.checkinsToday[0].promoCreditId, null);
+
+    const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+    assert.equal(payment.redeemedAt, null, "the real payment is untouched");
+  });
+
+  it("a promo credit counts toward canCheckIn / an additional same-day check-in", async () => {
+    const studentId = await insertStudent("promo3@example.com");
+    await insertPromoCredit(studentId);
+
+    const afterFirst = await createCheckIn(studentId); // no membership/payment: burns the promo
+    assert.equal(afterFirst.credits?.available, 0);
+
+    // Nothing left to spend for a second check-in the same day.
+    await assert.rejects(() => createCheckIn(studentId), ConflictError);
+  });
+});
+
 describe("createCheckIn — errors", () => {
   it("throws NotFoundError for an unknown student", async () => {
     await assert.rejects(() => createCheckIn(999_999), NotFoundError);
@@ -165,6 +256,21 @@ describe("undoCheckIn", () => {
     // And the credit is genuinely usable again, not just cosmetically reset.
     const afterSecondCheckIn = await createCheckIn(studentId);
     assert.equal(afterSecondCheckIn.checkedInToday, true);
+  });
+
+  it("un-redeems a spent promo credit too, not just real payments", async () => {
+    const studentId = await insertStudent("promo-undo@example.com");
+    const creditId = await insertPromoCredit(studentId);
+
+    const afterCheckIn = await createCheckIn(studentId);
+    const checkinId = afterCheckIn.checkinsToday[0].id;
+
+    const afterUndo = await undoCheckIn(checkinId);
+    assert.equal(afterUndo.credits?.available, 1);
+
+    const [credit] = await db.select().from(promoCredits).where(eq(promoCredits.id, creditId));
+    assert.equal(credit.redeemedAt, null);
+    assert.equal(credit.redeemedByCheckinId, null);
   });
 
   it("throws NotFoundError for an unknown or already-undone check-in", async () => {
