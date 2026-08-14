@@ -95,9 +95,15 @@ export class UnauthorizedError extends Error {
 export class ApiError extends Error {}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only claim a JSON body when there actually is one — Fastify's default JSON parser
+  // rejects an empty body sent with Content-Type: application/json (e.g. a bodyless
+  // POST like triggerSync), so setting this unconditionally broke every no-body call.
   const res = await fetch(path, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
 
   if (res.status === 401) throw new UnauthorizedError();
