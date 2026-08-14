@@ -76,12 +76,14 @@ export async function insertMembership(
     frequency?: string;
     startedAt?: Date | null;
     canceledAt?: Date | null;
+    holderStudentId?: number;
   } = {}
 ): Promise<number> {
   const [row] = await db
     .insert(memberships)
     .values({
       studentId,
+      holderStudentId: opts.holderStudentId ?? studentId,
       givebutterPlanId: opts.planId ?? unique("plan"),
       status: opts.status ?? "active",
       frequency: opts.frequency ?? "monthly",
@@ -95,12 +97,13 @@ export async function insertMembership(
 
 export async function insertPayment(
   studentId: number,
-  opts: { amountCents?: number; redeemed?: boolean; paidAt?: Date; txId?: string } = {}
+  opts: { amountCents?: number; redeemed?: boolean; paidAt?: Date; txId?: string; holderStudentId?: number } = {}
 ): Promise<number> {
   const [row] = await db
     .insert(payments)
     .values({
       studentId,
+      holderStudentId: opts.holderStudentId ?? studentId,
       givebutterTransactionId: opts.txId ?? unique("txn"),
       amountCents: opts.amountCents ?? 2000,
       paidAt: opts.paidAt ?? new Date(),
@@ -113,12 +116,13 @@ export async function insertPayment(
 export async function insertMembershipCharge(
   studentId: number,
   planId: string,
-  opts: { amountCents?: number; paidAt?: Date; txId?: string } = {}
+  opts: { amountCents?: number; paidAt?: Date; txId?: string; holderStudentId?: number } = {}
 ): Promise<number> {
   const [row] = await db
     .insert(membershipCharges)
     .values({
       studentId,
+      holderStudentId: opts.holderStudentId ?? studentId,
       givebutterPlanId: planId,
       givebutterTransactionId: opts.txId ?? unique("txn"),
       amountCents: opts.amountCents ?? 16500,

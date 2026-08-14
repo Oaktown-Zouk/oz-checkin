@@ -92,9 +92,17 @@ export const payments = sqliteTable(
   "payments",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Raw Givebutter attribution — whoever's contact/email is on the transaction.
+    // Refreshed freely by sync; never touched by our own app logic. Kept mainly for
+    // provenance ("who actually paid") once holderStudentId has been transferred away.
     studentId: integer("student_id")
       .notNull()
       .references(() => students.id),
+    // Who this credit currently belongs to for check-in/display purposes. Starts equal
+    // to studentId at creation; sync never touches it again once set. The only thing
+    // that changes it is an explicit transfer (see services/transfers.ts) — this is
+    // what lets "Alice bought a pass for Bob" actually redeem against Bob's check-in.
+    holderStudentId: integer("holder_student_id").references(() => students.id),
     givebutterTransactionId: text("givebutter_transaction_id").notNull(),
     amountCents: integer("amount_cents").notNull(),
     paidAt: integer("paid_at", { mode: "timestamp" }).notNull(),
@@ -113,9 +121,13 @@ export const memberships = sqliteTable(
   "memberships",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Raw Givebutter attribution — see payments.studentId above for the same split.
     studentId: integer("student_id")
       .notNull()
       .references(() => students.id),
+    // Who currently holds this membership for check-in/display purposes — see
+    // payments.holderStudentId above. Transferable via services/transfers.ts.
+    holderStudentId: integer("holder_student_id").references(() => students.id),
     givebutterPlanId: text("givebutter_plan_id").notNull(),
     status: text("status").notNull(), // raw status string from Givebutter (e.g. "active", "failing", "cancelled")
     frequency: text("frequency"),
@@ -147,9 +159,18 @@ export const membershipCharges = sqliteTable(
   "membership_charges",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Raw Givebutter attribution — each charge transaction always carries the original
+    // payer's contact, even after the membership itself has been transferred (Givebutter
+    // has no concept of our transfer). See payments.studentId for the same split.
     studentId: integer("student_id")
       .notNull()
       .references(() => students.id),
+    // Whoever currently holds the membership this charge paid for — copied from
+    // memberships.holderStudentId at sync time (see services/givebutter.ts), not from
+    // this transaction's own contact. This is what makes a transferred membership's
+    // *future* charges automatically follow the new holder, and (combined with
+    // studentId) is what lets a charge show on both the payer's and the holder's page.
+    holderStudentId: integer("holder_student_id").references(() => students.id),
     givebutterPlanId: text("givebutter_plan_id").notNull(),
     givebutterTransactionId: text("givebutter_transaction_id").notNull(),
     amountCents: integer("amount_cents").notNull(),

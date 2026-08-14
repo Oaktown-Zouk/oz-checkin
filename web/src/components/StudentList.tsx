@@ -11,6 +11,7 @@ export function StudentList({
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
+  onTransferItem,
 }: {
   students: StudentStatus[];
   loading: boolean;
@@ -21,6 +22,12 @@ export function StudentList({
   onOpenStudent: (studentId: number) => void;
   onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
+  onTransferItem: (
+    studentId: number,
+    kind: "membership" | "payment",
+    itemId: number,
+    targetEmail: string
+  ) => Promise<void>;
 }) {
   if (loading && students.length === 0) {
     return <p className="empty-state">Loading…</p>;
@@ -42,6 +49,7 @@ export function StudentList({
           onOpenStudent={onOpenStudent}
           onUpdateLeadLevel={onUpdateLeadLevel}
           onUpdateFollowLevel={onUpdateFollowLevel}
+          onTransferItem={onTransferItem}
         />
       ))}
     </div>

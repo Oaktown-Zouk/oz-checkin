@@ -193,6 +193,24 @@ describe("createCheckIn — no payment on file at all", () => {
   });
 });
 
+describe("createCheckIn — transferred credit (e.g. Alice bought a pass for Bob)", () => {
+  it("Bob can check in and spend a credit Alice bought and transferred to him", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    const creditId = await insertPayment(alice, { holderStudentId: bob });
+
+    const bobStatus = await createCheckIn(bob);
+    assert.equal(bobStatus.checkinsToday[0].paymentId, creditId);
+
+    const [credit] = await db.select().from(payments).where(eq(payments.id, creditId));
+    assert.equal(credit.redeemedAt !== null, true);
+
+    // Alice never sees this credit as her own to spend.
+    const aliceStatus = await createCheckIn(alice);
+    assert.equal(aliceStatus.checkinsToday[0].paymentId, null, "Alice has no credits of her own left");
+  });
+});
+
 describe("createCheckIn — promo credits (e.g. the new-student free drop-in)", () => {
   it("auto-spends an unredeemed promo credit on the first check-in when there's no membership", async () => {
     const studentId = await insertStudent("promo1@example.com");

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { requireAuth } from "../lib/auth.js";
 import { listStudentStatuses, updateStudentLevel } from "../services/studentStatus.js";
 import { mergeStudents } from "../services/merge.js";
+import { transferItem } from "../services/transfers.js";
 import { getStudentTimeline } from "../services/studentTimeline.js";
 import { HttpError } from "../lib/errors.js";
 import { isValidDateString } from "../lib/date.js";
@@ -65,6 +66,23 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
     }
     try {
       return await mergeStudents(Number(id), body.otherEmail);
+    } catch (err) {
+      if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  app.post("/:id/transfer-item", { preHandler: requireAuth }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as { kind?: string; itemId?: number; targetEmail?: string };
+    if (body?.kind !== "membership" && body?.kind !== "payment") {
+      return reply.code(400).send({ error: "kind must be 'membership' or 'payment'" });
+    }
+    if (!body.itemId || !body?.targetEmail?.trim()) {
+      return reply.code(400).send({ error: "itemId and targetEmail are required" });
+    }
+    try {
+      return await transferItem(Number(id), body.kind, body.itemId, body.targetEmail);
     } catch (err) {
       if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
       throw err;

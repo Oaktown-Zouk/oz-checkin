@@ -82,6 +82,9 @@ export function StudentBadges({
               (student.membership.lastPaymentAt
                 ? `, paid ${formatShortDate(student.membership.lastPaymentAt)})`
                 : ")")}
+          {// Set when someone else pays for this (transferred — see TransferDialog) —
+          // e.g. "Alice bought this membership for Bob."
+          student.membership.managedByName && ` · paid by ${student.membership.managedByName}`}
         </span>
       )}
 

@@ -368,3 +368,84 @@ describe("dance level (leadLevel/followLevel)", () => {
     await assert.rejects(() => updateStudentLevel(999_999, "leadLevel", 2), NotFoundError);
   });
 });
+
+describe("holder/payer split — transferred memberships and credits", () => {
+  it("heldMemberships lists ALL held memberships, not just the primary one (e.g. a second membership bought for someone else)", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    await insertMembership(alice, { planId: "plan-own", status: "active" });
+    await insertMembership(alice, { planId: "plan-gift", status: "active" });
+
+    const status = await getStudentStatusById(alice);
+    assert.equal(status?.heldMemberships.length, 2);
+  });
+
+  it("a transferred membership shows up on the holder's status, not the payer's", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertMembership(alice, { planId: "plan-1", holderStudentId: bob });
+
+    const bobStatus = await getStudentStatusById(bob);
+    assert.equal(bobStatus?.membership?.status, "active");
+
+    const aliceStatus = await getStudentStatusById(alice);
+    assert.equal(aliceStatus?.membership, null, "Alice no longer holds it");
+  });
+
+  it("the holder's membership shows managedByName when the payer differs", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertMembership(alice, { planId: "plan-1", holderStudentId: bob });
+
+    const bobStatus = await getStudentStatusById(bob);
+    assert.equal(bobStatus?.membership?.managedByName, "Alice");
+  });
+
+  it("managedByName is null when the holder and payer are the same (no transfer)", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    await insertMembership(alice, { planId: "plan-1" });
+
+    const status = await getStudentStatusById(alice);
+    assert.equal(status?.membership?.managedByName, null);
+  });
+
+  it("a transferred credit shows up on the holder's credits, with purchasedByName set", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertPayment(alice, { holderStudentId: bob, amountCents: 2000 });
+
+    const bobStatus = await getStudentStatusById(bob);
+    assert.equal(bobStatus?.credits?.available, 1);
+    assert.equal(bobStatus?.credits?.payments[0].purchasedByName, "Alice");
+
+    const aliceStatus = await getStudentStatusById(alice);
+    assert.equal(aliceStatus?.credits, null, "Alice no longer holds the credit");
+  });
+
+  it("a membership's charge history follows its transferred holder for lastPaymentAt", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertMembership(alice, { planId: "plan-1", status: "paused", holderStudentId: bob });
+    const paidAt = new Date("2026-08-01T00:00:00Z");
+    await insertMembershipCharge(alice, "plan-1", { paidAt, holderStudentId: bob });
+
+    const bobStatus = await getStudentStatusById(bob);
+    assert.equal(bobStatus?.membership?.lastPaymentAt, paidAt.toISOString());
+  });
+
+  it("paidMembershipsForOthers surfaces on the payer's status when they paid but don't hold it", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertMembership(alice, { planId: "plan-1", holderStudentId: bob });
+    const paidAt = new Date("2026-08-01T00:00:00Z");
+    await insertMembershipCharge(alice, "plan-1", { holderStudentId: bob, amountCents: 16500, paidAt });
+
+    const aliceStatus = await getStudentStatusById(alice);
+    assert.equal(aliceStatus?.paidMembershipsForOthers.length, 1);
+    assert.equal(aliceStatus?.paidMembershipsForOthers[0].studentName, "Bob");
+    assert.equal(aliceStatus?.paidMembershipsForOthers[0].amountCents, 16500);
+    assert.equal(aliceStatus?.paidMembershipsForOthers[0].paidAt, paidAt.toISOString());
+
+    const bobStatus = await getStudentStatusById(bob);
+    assert.equal(bobStatus?.paidMembershipsForOthers.length, 0, "Bob is the holder, not a payer-for-others");
+  });
+});

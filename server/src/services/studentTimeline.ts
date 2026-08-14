@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   checkins,
@@ -16,6 +16,7 @@ export interface TimelineEvent {
     | "membership_started"
     | "membership_status"
     | "membership_payment"
+    | "membership_payment_for_other"
     | "payment"
     | "promo_credit"
     | "checkin";
@@ -45,16 +46,23 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   const [
     waiverRows,
     membershipRows,
-    membershipChargeRows,
+    allMembershipChargeRows,
     paymentRows,
     promoCreditRows,
     checkinRows,
     status,
   ] = await Promise.all([
     db.select().from(waivers).where(eq(waivers.studentId, studentId)),
-    db.select().from(memberships).where(eq(memberships.studentId, studentId)),
-    db.select().from(membershipCharges).where(eq(membershipCharges.studentId, studentId)),
-    db.select().from(payments).where(eq(payments.studentId, studentId)),
+    // holderStudentId, not studentId — who this membership belongs to for app purposes
+    // (see services/studentStatus.ts / services/transfers.ts).
+    db.select().from(memberships).where(eq(memberships.holderStudentId, studentId)),
+    // Both directions: charges I hold (mine) and charges I paid for that are now held by
+    // someone else (surfaced as membership_payment_for_other events below).
+    db
+      .select()
+      .from(membershipCharges)
+      .where(or(eq(membershipCharges.holderStudentId, studentId), eq(membershipCharges.studentId, studentId))),
+    db.select().from(payments).where(eq(payments.holderStudentId, studentId)),
     db.select().from(promoCredits).where(eq(promoCredits.studentId, studentId)),
     // Undone check-ins are corrections, not real visits — excluded from history same as
     // everCheckedIn treats them.
@@ -66,6 +74,27 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   ]);
 
   if (!status) return null;
+
+  const membershipChargeRows = allMembershipChargeRows.filter((c) => c.holderStudentId === studentId);
+  const paidForOtherChargeRows = allMembershipChargeRows.filter(
+    (c) => c.studentId === studentId && c.holderStudentId !== studentId
+  );
+
+  // Names for anyone this student's records reference but isn't the student themself —
+  // the other holder on a paid-for-other charge, or the original payer on a
+  // transferred-in membership charge/payment (see services/transfers.ts).
+  const otherIds = new Set<number>();
+  for (const c of paidForOtherChargeRows) otherIds.add(c.holderStudentId!);
+  for (const c of membershipChargeRows) if (c.studentId !== studentId) otherIds.add(c.studentId);
+  for (const p of paymentRows) if (p.studentId !== studentId) otherIds.add(p.studentId);
+  const otherNameById = new Map<number, string>();
+  if (otherIds.size > 0) {
+    const otherStudents = await db
+      .select({ id: students.id, name: students.name })
+      .from(students)
+      .where(inArray(students.id, [...otherIds]));
+    for (const s of otherStudents) otherNameById.set(s.id, s.name);
+  }
 
   const events: TimelineEvent[] = [];
 
@@ -90,18 +119,33 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   }
 
   for (const p of paymentRows) {
+    const purchasedByName = p.studentId !== studentId ? otherNameById.get(p.studentId) : undefined;
     events.push({
       type: "payment",
       at: p.paidAt.toISOString(),
-      label: `One-time pass purchased (${formatDollars(p.amountCents)})`,
+      label: purchasedByName
+        ? `One-time pass received from ${purchasedByName} (${formatDollars(p.amountCents)})`
+        : `One-time pass purchased (${formatDollars(p.amountCents)})`,
     });
   }
 
   for (const c of membershipChargeRows) {
+    const paidByName = c.studentId !== studentId ? otherNameById.get(c.studentId) : undefined;
     events.push({
       type: "membership_payment",
       at: c.paidAt.toISOString(),
-      label: `Membership payment (${formatDollars(c.amountCents)})`,
+      label: paidByName
+        ? `Membership payment, paid by ${paidByName} (${formatDollars(c.amountCents)})`
+        : `Membership payment (${formatDollars(c.amountCents)})`,
+    });
+  }
+
+  for (const c of paidForOtherChargeRows) {
+    const holderName = otherNameById.get(c.holderStudentId!) ?? "another student";
+    events.push({
+      type: "membership_payment_for_other",
+      at: c.paidAt.toISOString(),
+      label: `Paid for ${holderName}'s membership (${formatDollars(c.amountCents)})`,
     });
   }
 

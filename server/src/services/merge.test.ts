@@ -15,7 +15,7 @@ import { mergeStudents } from "./merge.js";
 import { findStudentIdByEmail } from "../lib/upsertStudent.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { db } from "../db/client.js";
-import { promoCredits } from "../db/schema.js";
+import { promoCredits, payments, memberships } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 
 before(setupTestDb);
@@ -177,6 +177,51 @@ describe("mergeStudents — promo credits", () => {
 
     const merged = await mergeStudents(survivor, "b@example.com");
     assert.equal(merged.id, survivor);
+  });
+});
+
+describe("mergeStudents — holder/payer split (transferred items)", () => {
+  it("moves holderStudentId to the survivor when the absorbed student holds a transferred item", async () => {
+    // "otherId" is the CURRENT HOLDER of a membership someone else (a third party) paid
+    // for — i.e. it was transferred to otherId before this merge.
+    const survivor = await insertStudent("a@example.com");
+    await insertWaiver(survivor);
+    const other = await insertStudent("b@example.com");
+    const thirdParty = await insertStudent("c@example.com");
+    const membershipId = await insertMembership(thirdParty, { holderStudentId: other });
+
+    await mergeStudents(survivor, "b@example.com");
+
+    const [row] = await db.select().from(memberships).where(eq(memberships.id, membershipId));
+    assert.equal(row.holderStudentId, survivor, "the survivor now holds it");
+    assert.equal(row.studentId, thirdParty, "the real payer is untouched");
+  });
+
+  it("moves studentId (payer) to the survivor when the absorbed student paid for someone else's item", async () => {
+    const survivor = await insertStudent("a@example.com");
+    await insertWaiver(survivor);
+    const other = await insertStudent("b@example.com");
+    const thirdParty = await insertStudent("c@example.com");
+    const paymentId = await insertPayment(other, { holderStudentId: thirdParty });
+
+    await mergeStudents(survivor, "b@example.com");
+
+    const [row] = await db.select().from(payments).where(eq(payments.id, paymentId));
+    assert.equal(row.studentId, survivor, "the survivor is now recorded as the real payer");
+    assert.equal(row.holderStudentId, thirdParty, "the actual holder is untouched");
+  });
+
+  it("moves both fields when the absorbed student was both payer and holder (no prior transfer)", async () => {
+    const survivor = await insertStudent("a@example.com");
+    await insertWaiver(survivor);
+    const other = await insertStudent("b@example.com");
+    const paymentId = await insertPayment(other);
+
+    await mergeStudents(survivor, "b@example.com");
+
+    const [row] = await db.select().from(payments).where(eq(payments.id, paymentId));
+    assert.equal(row.studentId, survivor);
+    assert.equal(row.holderStudentId, survivor);
   });
 });
 

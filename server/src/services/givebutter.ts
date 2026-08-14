@@ -197,18 +197,32 @@ async function syncTransactions(
     // represents that student's access — so it's recorded as history, not a redeemable
     // credit. Only transactions with plan_id == null become a `payments` row.
     if (tx.plan_id) {
+      const planIdStr = String(tx.plan_id);
+      // A charge's holder always follows its plan's CURRENT holder, not this
+      // transaction's own payer — that's what makes a transferred membership's future
+      // (and, refreshed here, past) charges show up under the new holder. Falls back to
+      // the transaction's own resolved payer if the plan hasn't synced yet (e.g. this is
+      // the plan's very first charge, processed before syncPlans creates the row below)
+      // — self-corrects on the next sync once the membership row exists.
+      const [existingMembership] = await db
+        .select({ holderStudentId: memberships.holderStudentId })
+        .from(memberships)
+        .where(eq(memberships.givebutterPlanId, planIdStr));
+      const holderStudentId = existingMembership?.holderStudentId ?? studentId;
+
       await db
         .insert(membershipCharges)
         .values({
           studentId,
-          givebutterPlanId: String(tx.plan_id),
+          holderStudentId,
+          givebutterPlanId: planIdStr,
           givebutterTransactionId: txId,
           amountCents,
           paidAt,
         })
         .onConflictDoUpdate({
           target: membershipCharges.givebutterTransactionId,
-          set: { amountCents, updatedAt: new Date() },
+          set: { studentId, holderStudentId, amountCents, updatedAt: new Date() },
         });
       chargesProcessed++;
       continue;
@@ -220,8 +234,12 @@ async function syncTransactions(
       .where(eq(payments.givebutterTransactionId, txId));
 
     if (existing.length === 0) {
+      // holderStudentId starts equal to studentId and is never touched again by sync —
+      // only an explicit transfer (services/transfers.ts) changes it. studentId itself
+      // stays purely informational (who Givebutter says paid) and is safe to refresh.
       await db.insert(payments).values({
         studentId,
+        holderStudentId: studentId,
         givebutterTransactionId: txId,
         amountCents,
         paidAt,
@@ -229,7 +247,7 @@ async function syncTransactions(
     } else {
       await db
         .update(payments)
-        .set({ amountCents, updatedAt: new Date() })
+        .set({ studentId, amountCents, updatedAt: new Date() })
         .where(eq(payments.givebutterTransactionId, txId));
     }
 
@@ -263,10 +281,14 @@ async function syncPlans(contactsById: Map<string, any>): Promise<SyncResult> {
     const startedAt = parseGivebutterTimestamp(plan.start_at);
     const canceledAt = parseGivebutterTimestamp(plan.canceled_at);
 
+    // holderStudentId starts equal to studentId and is never touched again by sync —
+    // only an explicit transfer (services/transfers.ts) changes it. studentId itself
+    // stays purely informational (who Givebutter says pays) and is safe to refresh.
     await db
       .insert(memberships)
       .values({
         studentId,
+        holderStudentId: studentId,
         givebutterPlanId: planId,
         status,
         frequency,
@@ -278,6 +300,7 @@ async function syncPlans(contactsById: Map<string, any>): Promise<SyncResult> {
       .onConflictDoUpdate({
         target: memberships.givebutterPlanId,
         set: {
+          studentId,
           status,
           frequency,
           amountCents,

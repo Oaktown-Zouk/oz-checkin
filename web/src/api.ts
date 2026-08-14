@@ -3,6 +3,14 @@ export interface CreditInfo {
   paidAt: string;
   amountCents: number;
   redeemed: boolean;
+  purchasedByName: string | null;
+}
+
+export interface PaidForOtherInfo {
+  studentId: number;
+  studentName: string;
+  amountCents: number;
+  paidAt: string;
 }
 
 export interface PromoCreditInfo {
@@ -35,13 +43,16 @@ export interface StudentStatus {
     currentPeriodEnd: string | null;
     lastPaymentAt: string | null;
     coversCheckIn: boolean;
+    managedByName: string | null;
   } | null;
+  heldMemberships: { id: number; status: string; frequency: string | null; amountCents: number | null }[];
   credits: {
     available: number;
     total: number;
     payments: CreditInfo[];
     promo: PromoCreditInfo[];
   } | null;
+  paidMembershipsForOthers: PaidForOtherInfo[];
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
   canCheckIn: boolean;
@@ -59,6 +70,7 @@ export interface TimelineEvent {
     | "membership_started"
     | "membership_status"
     | "membership_payment"
+    | "membership_payment_for_other"
     | "payment"
     | "promo_credit"
     | "checkin";
@@ -136,5 +148,15 @@ export const api = {
     request<StudentStatus>(`/api/students/${studentId}/follow-level`, {
       method: "PATCH",
       body: JSON.stringify({ level }),
+    }),
+  transferItem: (
+    sourceStudentId: number,
+    kind: "membership" | "payment",
+    itemId: number,
+    targetEmail: string
+  ) =>
+    request<StudentStatus>(`/api/students/${sourceStudentId}/transfer-item`, {
+      method: "POST",
+      body: JSON.stringify({ kind, itemId, targetEmail }),
     }),
 };

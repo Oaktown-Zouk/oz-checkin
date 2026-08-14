@@ -362,7 +362,8 @@ body {
   color: var(--gray);
 }
 
-.dialog-card input {
+.dialog-card input,
+.dialog-card select {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -427,6 +428,10 @@ body {
 }
 
 .student-page-header .badges {
+  margin-top: 10px;
+}
+
+.transfer-link {
   margin-top: 10px;
 }
 
@@ -557,6 +562,10 @@ body {
 
 .timeline-dot-membership_payment {
   background: var(--blue);
+}
+
+.timeline-dot-membership_payment_for_other {
+  background: var(--purple);
 }
 
 .timeline-dot-promo_credit {

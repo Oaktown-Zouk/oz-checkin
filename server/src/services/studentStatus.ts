@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, like } from "drizzle-orm";
+import { and, eq, inArray, isNull, like, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   checkins,
@@ -20,6 +20,21 @@ export interface CreditInfo {
   paidAt: string;
   amountCents: number;
   redeemed: boolean;
+  // Set when this credit was bought by someone else and transferred (see
+  // services/transfers.ts) — e.g. "Alice bought a pass, transferred it to Bob."
+  purchasedByName: string | null;
+}
+
+// A membership charge this student PAID for but that now belongs to a different
+// student's membership (transferred away — see services/transfers.ts). Shown on the
+// payer's page/timeline so a transfer is visible from both sides, not just the
+// recipient's — Givebutter itself has no concept of the transfer, so without this the
+// payer's history would just look like the membership silently vanished.
+export interface PaidForOtherInfo {
+  studentId: number;
+  studentName: string;
+  amountCents: number;
+  paidAt: string;
 }
 
 // A non-Givebutter credit, e.g. the free drop-in every new student is granted on
@@ -71,7 +86,16 @@ export interface StudentStatus {
     // the actual spend decision in services/checkins.ts, from one place, so the two
     // can't drift out of sync with each other.
     coversCheckIn: boolean;
+    // Set when someone else pays for this membership (transferred — see
+    // services/transfers.ts), e.g. "Alice bought this membership for Bob."
+    managedByName: string | null;
   } | null;
+  // ALL memberships this student holds, not just the primary one shown above — a
+  // student can genuinely hold more than one (that's the whole scenario transfers
+  // exist for: someone buys a second membership for someone else). Used by the
+  // transfer picker (see services/transfers.ts) so every held item is choosable, not
+  // just the primary.
+  heldMemberships: { id: number; status: string; frequency: string | null; amountCents: number | null }[];
   // available/total fold in both real payments and promo credits (e.g. the free
   // drop-in every new student gets) — front desk just needs "how many can they
   // spend," not which kind. The breakdown by kind is still exposed separately below
@@ -82,6 +106,9 @@ export interface StudentStatus {
     payments: CreditInfo[];
     promo: PromoCreditInfo[];
   } | null;
+  // Membership charges this student paid for that are now held by a different
+  // student's (transferred) membership — see PaidForOtherInfo.
+  paidMembershipsForOthers: PaidForOtherInfo[];
   // "Today" here means the *viewed* date — callers can look at (and check in against)
   // a past date via listStudentStatuses'/createCheckIn's `date` param, defaulting to the
   // real today when omitted. Field names kept as -Today for minimal API churn; the
@@ -123,20 +150,31 @@ function buildStatus(
   promoCreditRows: (typeof promoCredits.$inferSelect)[],
   allCheckinRows: (typeof checkins.$inferSelect)[],
   studentEmailRows: (typeof studentEmails.$inferSelect)[],
+  nameById: Map<number, string>,
   viewedDate: string
 ): StudentStatus {
   const latestWaiver = waiverRows
     .filter((w) => w.studentId === student.id)
     .sort((a, b) => b.signedAt.getTime() - a.signedAt.getTime())[0];
 
-  const studentMemberships = membershipRows.filter((m) => m.studentId === student.id);
+  // holderStudentId is who this belongs to for check-in/display purposes — starts equal
+  // to studentId (the raw Givebutter payer) and only diverges after an explicit transfer
+  // (see services/transfers.ts). Falls back to studentId defensively; in practice
+  // holderStudentId is always populated once a row exists.
+  const holderOf = (row: { studentId: number; holderStudentId: number | null }) =>
+    row.holderStudentId ?? row.studentId;
+
+  const studentMemberships = membershipRows.filter((m) => holderOf(m) === student.id);
   const activeMembership = studentMemberships.find((m) =>
     isMembershipActive(m.status, m.currentPeriodEnd)
   );
   const primaryMembership = activeMembership ?? studentMemberships[0];
 
+  // "My" charges — for lastPaymentAt and the payment timeline — are the ones whose
+  // charge is currently held by me, regardless of who actually paid.
+  const heldMembershipCharges = membershipChargeRows.filter((c) => holderOf(c) === student.id);
   const primaryMembershipCharges = primaryMembership
-    ? membershipChargeRows.filter((c) => c.givebutterPlanId === primaryMembership.givebutterPlanId)
+    ? heldMembershipCharges.filter((c) => c.givebutterPlanId === primaryMembership.givebutterPlanId)
     : [];
   const lastPaymentAt = primaryMembershipCharges.length
     ? new Date(Math.max(...primaryMembershipCharges.map((c) => c.paidAt.getTime())))
@@ -147,8 +185,18 @@ function buildStatus(
   const membershipCovers = primaryMembership
     ? membershipCoversCheckIn(membershipIsActive, lastPaymentAt)
     : false;
+  const managedByName =
+    primaryMembership && primaryMembership.studentId !== holderOf(primaryMembership)
+      ? (nameById.get(primaryMembership.studentId) ?? null)
+      : null;
 
-  const studentPayments = paymentRows.filter((p) => p.studentId === student.id);
+  // Charges I paid for (studentId = me) whose membership is now held by someone else —
+  // the payer's-side view of a transferred membership (see PaidForOtherInfo).
+  const paidForOthersCharges = membershipChargeRows.filter(
+    (c) => c.studentId === student.id && holderOf(c) !== student.id
+  );
+
+  const studentPayments = paymentRows.filter((p) => holderOf(p) === student.id);
   const unredeemedPayments = studentPayments.filter((p) => p.redeemedAt === null);
 
   const studentPromoCredits = promoCreditRows.filter((c) => c.studentId === student.id);
@@ -186,8 +234,15 @@ function buildStatus(
             : null,
           lastPaymentAt: lastPaymentAt ? lastPaymentAt.toISOString() : null,
           coversCheckIn: membershipCovers,
+          managedByName,
         }
       : null,
+    heldMemberships: studentMemberships.map((m) => ({
+      id: m.id,
+      status: m.status,
+      frequency: m.frequency,
+      amountCents: m.amountCents,
+    })),
     credits:
       studentPayments.length > 0 || studentPromoCredits.length > 0
         ? {
@@ -200,6 +255,8 @@ function buildStatus(
                 paidAt: p.paidAt.toISOString(),
                 amountCents: p.amountCents,
                 redeemed: p.redeemedAt !== null,
+                purchasedByName:
+                  p.studentId !== holderOf(p) ? (nameById.get(p.studentId) ?? null) : null,
               })),
             promo: studentPromoCredits
               .sort((a, b) => a.grantedAt.getTime() - b.grantedAt.getTime())
@@ -211,6 +268,14 @@ function buildStatus(
               })),
           }
         : null,
+    paidMembershipsForOthers: paidForOthersCharges
+      .sort((a, b) => b.paidAt.getTime() - a.paidAt.getTime())
+      .map((c) => ({
+        studentId: holderOf(c),
+        studentName: nameById.get(holderOf(c)) ?? "Unknown",
+        amountCents: c.amountCents,
+        paidAt: c.paidAt.toISOString(),
+      })),
     checkinsToday: studentCheckinsToday
       .sort((a, b) => a.checkedInAt.getTime() - b.checkedInAt.getTime())
       .map((c) => ({
@@ -257,9 +322,16 @@ export async function listStudentStatuses(
     studentEmailRows,
   ] = await Promise.all([
     db.select().from(waivers).where(inArray(waivers.studentId, ids)),
-    db.select().from(memberships).where(inArray(memberships.studentId, ids)),
-    db.select().from(membershipCharges).where(inArray(membershipCharges.studentId, ids)),
-    db.select().from(payments).where(inArray(payments.studentId, ids)),
+    // holderStudentId, not studentId — that's who a membership belongs to for app
+    // purposes once it may have been transferred (see services/transfers.ts).
+    db.select().from(memberships).where(inArray(memberships.holderStudentId, ids)),
+    // Both directions: charges I currently hold (mine) AND charges I paid for that are
+    // now held by someone else (surfaced via paidMembershipsForOthers) — see buildStatus.
+    db
+      .select()
+      .from(membershipCharges)
+      .where(or(inArray(membershipCharges.holderStudentId, ids), inArray(membershipCharges.studentId, ids))),
+    db.select().from(payments).where(inArray(payments.holderStudentId, ids)),
     db.select().from(promoCredits).where(inArray(promoCredits.studentId, ids)),
     // Not date-filtered: buildStatus needs both the viewed day's check-ins and
     // whether the student has ANY real check-in ever (for the New Member badge).
@@ -269,6 +341,25 @@ export async function listStudentStatuses(
       .where(and(inArray(checkins.studentId, ids), isNull(checkins.undoneAt))),
     db.select().from(studentEmails).where(inArray(studentEmails.studentId, ids)),
   ]);
+
+  // Names for anyone referenced as a payer/holder who isn't already in this batch (e.g.
+  // viewing just Bob's row, but Alice paid for his membership) — needed for
+  // managedByName/purchasedByName/paidMembershipsForOthers.
+  const nameById = new Map<number, string>(studentRows.map((s) => [s.id, s.name]));
+  const missingIds = new Set<number>();
+  for (const m of membershipRows) if (!nameById.has(m.studentId)) missingIds.add(m.studentId);
+  for (const p of paymentRows) if (!nameById.has(p.studentId)) missingIds.add(p.studentId);
+  for (const c of membershipChargeRows) {
+    if (!nameById.has(c.studentId)) missingIds.add(c.studentId);
+    if (c.holderStudentId !== null && !nameById.has(c.holderStudentId)) missingIds.add(c.holderStudentId);
+  }
+  if (missingIds.size > 0) {
+    const extraStudents = await db
+      .select({ id: students.id, name: students.name })
+      .from(students)
+      .where(inArray(students.id, [...missingIds]));
+    for (const s of extraStudents) nameById.set(s.id, s.name);
+  }
 
   const statuses = studentRows.map((s) =>
     buildStatus(
@@ -280,6 +371,7 @@ export async function listStudentStatuses(
       promoCreditRows,
       allCheckinRows,
       studentEmailRows,
+      nameById,
       todayStr
     )
   );

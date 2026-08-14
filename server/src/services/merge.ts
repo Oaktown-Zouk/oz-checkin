@@ -28,11 +28,14 @@ async function hasWaiver(studentId: number): Promise<boolean> {
 
 async function hasGivebutterRecord(studentId: number): Promise<boolean> {
   // Belt-and-suspenders across all three Givebutter-sourced tables, in case a student
-  // predates givebutter_contacts being populated (see services/givebutter.ts).
+  // predates givebutter_contacts being populated (see services/givebutter.ts). Payments
+  // and memberships are checked by holderStudentId, not studentId — a transferred item
+  // means this student now genuinely holds Givebutter-linked data of their own,
+  // regardless of who originally paid for it.
   const [contact, payment, membership] = await Promise.all([
     db.select({ id: givebutterContacts.id }).from(givebutterContacts).where(eq(givebutterContacts.studentId, studentId)).limit(1),
-    db.select({ id: payments.id }).from(payments).where(eq(payments.studentId, studentId)).limit(1),
-    db.select({ id: memberships.id }).from(memberships).where(eq(memberships.studentId, studentId)).limit(1),
+    db.select({ id: payments.id }).from(payments).where(eq(payments.holderStudentId, studentId)).limit(1),
+    db.select({ id: memberships.id }).from(memberships).where(eq(memberships.holderStudentId, studentId)).limit(1),
   ]);
   return contact.length > 0 || payment.length > 0 || membership.length > 0;
 }
@@ -117,10 +120,21 @@ export async function mergeStudents(survivorId: number, otherEmailRaw: string): 
 
     tx.update(waivers).set({ studentId: survivorId }).where(eq(waivers.studentId, otherId)).run();
     tx.update(givebutterContacts).set({ studentId: survivorId }).where(eq(givebutterContacts.studentId, otherId)).run();
-    tx.update(payments).set({ studentId: survivorId }).where(eq(payments.studentId, otherId)).run();
-    tx.update(memberships).set({ studentId: survivorId }).where(eq(memberships.studentId, otherId)).run();
-    tx.update(membershipCharges).set({ studentId: survivorId }).where(eq(membershipCharges.studentId, otherId)).run();
     tx.update(checkins).set({ studentId: survivorId }).where(eq(checkins.studentId, otherId)).run();
+
+    // A merge means "these are the same real person," so studentId (payer) and
+    // holderStudentId (current holder) both move to the survivor — but they're updated
+    // independently since a transfer may have already made them diverge on the absorbed
+    // student's rows (e.g. otherId paid for someone else's membership, or holds one
+    // someone else paid for). Two separate updates per table correctly handle all four
+    // combinations without one clobbering the other.
+    for (const table of [payments, memberships, membershipCharges]) {
+      tx.update(table).set({ studentId: survivorId }).where(eq(table.studentId, otherId)).run();
+      tx.update(table)
+        .set({ holderStudentId: survivorId })
+        .where(eq(table.holderStudentId, otherId))
+        .run();
+    }
 
     if (otherPromoCreditIdsToReassign.length > 0) {
       tx.update(promoCredits)

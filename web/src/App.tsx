@@ -240,6 +240,21 @@ export function App() {
     }
   }
 
+  async function handleTransferItem(
+    studentId: number,
+    kind: "membership" | "payment",
+    itemId: number,
+    targetEmail: string
+  ) {
+    try {
+      await api.transferItem(studentId, kind, itemId, targetEmail);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   async function handleRefresh() {
     setSyncing(true);
     try {
@@ -308,6 +323,7 @@ export function App() {
         onOpenStudent={navigateToStudent}
         onUpdateLeadLevel={handleUpdateLeadLevel}
         onUpdateFollowLevel={handleUpdateFollowLevel}
+        onTransferItem={handleTransferItem}
       />
     </div>
   );

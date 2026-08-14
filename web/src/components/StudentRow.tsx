@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { StudentStatus } from "../api.js";
 import { RowMenu } from "./RowMenu.js";
 import { MergeDialog } from "./MergeDialog.js";
+import { TransferDialog } from "./TransferDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
 
 function formatTime(iso: string): string {
@@ -17,6 +18,7 @@ export function StudentRow({
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
+  onTransferItem,
 }: {
   student: StudentStatus;
   isClassDay: boolean;
@@ -26,9 +28,16 @@ export function StudentRow({
   onOpenStudent: (studentId: number) => void;
   onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
+  onTransferItem: (
+    studentId: number,
+    kind: "membership" | "payment",
+    itemId: number,
+    targetEmail: string
+  ) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const hasMembership = Boolean(student.membership);
   const hasCredits = Boolean(student.credits);
@@ -123,7 +132,12 @@ export function StudentRow({
             Use another pass ({creditsAvailable} left)
           </button>
         )}
-        <RowMenu items={[{ label: "Merge info", onClick: () => setMergeOpen(true) }]} />
+        <RowMenu
+          items={[
+            { label: "Merge info", onClick: () => setMergeOpen(true) },
+            { label: "Transfer membership/credit", onClick: () => setTransferOpen(true) },
+          ]}
+        />
       </div>
 
       {mergeOpen && (
@@ -131,6 +145,16 @@ export function StudentRow({
           studentName={student.name}
           onSubmit={(otherEmail) => onMerge(student.id, otherEmail)}
           onClose={() => setMergeOpen(false)}
+        />
+      )}
+
+      {transferOpen && (
+        <TransferDialog
+          student={student}
+          onSubmit={(kind, itemId, targetEmail) =>
+            onTransferItem(student.id, kind, itemId, targetEmail)
+          }
+          onClose={() => setTransferOpen(false)}
         />
       )}
     </div>

@@ -3,6 +3,7 @@ import { api, ApiError, UnauthorizedError, type StudentTimeline } from "../api.j
 import { StudentBadges } from "./StudentBadges.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
 import { LevelBadge } from "./LevelBadge.js";
+import { TransferDialog } from "./TransferDialog.js";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
@@ -27,6 +28,7 @@ export function StudentPage({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +52,16 @@ export function StudentPage({
     try {
       if (kind === "lead") await api.updateLeadLevel(studentId, level);
       else await api.updateFollowLevel(studentId, level);
+      await load();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) onUnauthorized();
+      throw err;
+    }
+  }
+
+  async function handleTransferItem(kind: "membership" | "payment", itemId: number, targetEmail: string) {
+    try {
+      await api.transferItem(studentId, kind, itemId, targetEmail);
       await load();
     } catch (err) {
       if (err instanceof UnauthorizedError) onUnauthorized();
@@ -81,6 +93,13 @@ export function StudentPage({
               onUpdateLeadLevel={(level) => handleUpdateLevel("lead", level)}
               onUpdateFollowLevel={(level) => handleUpdateLevel("follow", level)}
             />
+            <button
+              type="button"
+              className="btn btn-secondary transfer-link"
+              onClick={() => setTransferOpen(true)}
+            >
+              Transfer membership/credit
+            </button>
           </div>
 
           <div className="student-stats">
@@ -148,6 +167,14 @@ export function StudentPage({
           shape={editingLevel === "lead" ? "square" : "circle"}
           onSubmit={(level) => handleUpdateLevel(editingLevel, level)}
           onClose={() => setEditingLevel(null)}
+        />
+      )}
+
+      {transferOpen && timeline && (
+        <TransferDialog
+          student={timeline.status}
+          onSubmit={handleTransferItem}
+          onClose={() => setTransferOpen(false)}
         />
       )}
     </div>

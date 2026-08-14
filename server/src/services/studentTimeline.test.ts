@@ -186,3 +186,45 @@ describe("getStudentTimeline", () => {
     assert.equal(timeline?.status.name, "Timeline Test");
   });
 });
+
+describe("getStudentTimeline — transferred memberships and credits", () => {
+  it("labels a held membership payment with who actually paid, when different", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertMembership(alice, { planId: "plan-1", holderStudentId: bob });
+    await insertMembershipCharge(alice, "plan-1", { holderStudentId: bob, amountCents: 16500 });
+
+    const bobTimeline = await getStudentTimeline(bob);
+    const event = bobTimeline?.events.find((e) => e.type === "membership_payment");
+    assert.equal(event?.label, "Membership payment, paid by Alice ($165.00)");
+  });
+
+  it("emits membership_payment_for_other on the payer's timeline for a transferred membership", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertMembership(alice, { planId: "plan-1", holderStudentId: bob });
+    const paidAt = new Date("2026-08-01T00:00:00Z");
+    await insertMembershipCharge(alice, "plan-1", { holderStudentId: bob, amountCents: 16500, paidAt });
+
+    const aliceTimeline = await getStudentTimeline(alice);
+    const event = aliceTimeline?.events.find((e) => e.type === "membership_payment_for_other");
+    assert.equal(event?.label, "Paid for Bob's membership ($165.00)");
+    assert.equal(event?.at, paidAt.toISOString());
+
+    // And Alice's own membership_payment history is empty — she doesn't hold this plan.
+    assert.equal(
+      aliceTimeline?.events.some((e) => e.type === "membership_payment"),
+      false
+    );
+  });
+
+  it("labels a transferred one-time credit with who purchased it", async () => {
+    const alice = await insertStudent("alice@example.com", "Alice");
+    const bob = await insertStudent("bob@example.com", "Bob");
+    await insertPayment(alice, { holderStudentId: bob, amountCents: 2000 });
+
+    const bobTimeline = await getStudentTimeline(bob);
+    const event = bobTimeline?.events.find((e) => e.type === "payment");
+    assert.equal(event?.label, "One-time pass received from Alice ($20.00)");
+  });
+});
