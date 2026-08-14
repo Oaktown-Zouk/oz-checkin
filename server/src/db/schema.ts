@@ -23,6 +23,10 @@ export const students = sqliteTable(
     // downgrade it — see lib/upsertStudent.ts.
     nameSource: text("name_source"),
     phone: text("phone"),
+    // Dance level, 1-4, or null if unset — front desk sets these manually (see
+    // routes/students.ts); not sourced from Forms or Givebutter.
+    leadLevel: integer("lead_level"),
+    followLevel: integer("follow_level"),
     ...timestamps,
   },
   (t) => ({

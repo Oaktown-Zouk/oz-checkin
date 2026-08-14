@@ -15,6 +15,8 @@ export function StudentRow({
   onUndo,
   onMerge,
   onOpenStudent,
+  onUpdateLeadLevel,
+  onUpdateFollowLevel,
 }: {
   student: StudentStatus;
   isClassDay: boolean;
@@ -22,6 +24,8 @@ export function StudentRow({
   onUndo: (checkinId: number) => Promise<void>;
   onMerge: (studentId: number, otherEmail: string) => Promise<void>;
   onOpenStudent: (studentId: number) => void;
+  onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
+  onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -81,7 +85,11 @@ export function StudentRow({
         )}
       </div>
 
-      <StudentBadges student={student} />
+      <StudentBadges
+        student={student}
+        onUpdateLeadLevel={(level) => onUpdateLeadLevel(student.id, level)}
+        onUpdateFollowLevel={(level) => onUpdateFollowLevel(student.id, level)}
+      />
 
       <div className="checkin-status">
         {student.checkinsToday.map((c) => (

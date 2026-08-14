@@ -12,7 +12,8 @@ import {
   insertStudentEmail,
   insertCheckin,
 } from "../testing/helpers.js";
-import { listStudentStatuses, getStudentStatusById } from "./studentStatus.js";
+import { listStudentStatuses, getStudentStatusById, updateStudentLevel } from "./studentStatus.js";
+import { NotFoundError } from "../lib/errors.js";
 
 before(setupTestDb);
 beforeEach(resetDb);
@@ -321,5 +322,49 @@ describe("everCheckedIn — New Student promo eligibility", () => {
 
     const status = await getStudentStatusById(id);
     assert.equal(status?.everCheckedIn, false, "an undone visit shouldn't burn the promo");
+  });
+});
+
+describe("dance level (leadLevel/followLevel)", () => {
+  it("is null for both by default", async () => {
+    const id = await insertStudent("a@example.com");
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.leadLevel, null);
+    assert.equal(status?.followLevel, null);
+  });
+
+  it("sets the lead level independently of the follow level", async () => {
+    const id = await insertStudent("a@example.com");
+
+    await updateStudentLevel(id, "leadLevel", 3);
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.leadLevel, 3);
+    assert.equal(status?.followLevel, null);
+  });
+
+  it("sets the follow level independently of the lead level", async () => {
+    const id = await insertStudent("a@example.com");
+
+    await updateStudentLevel(id, "followLevel", 2);
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.leadLevel, null);
+    assert.equal(status?.followLevel, 2);
+  });
+
+  it("can unset a level by passing null", async () => {
+    const id = await insertStudent("a@example.com");
+    await updateStudentLevel(id, "leadLevel", 4);
+
+    await updateStudentLevel(id, "leadLevel", null);
+
+    const status = await getStudentStatusById(id);
+    assert.equal(status?.leadLevel, null);
+  });
+
+  it("throws NotFoundError for an unknown student", async () => {
+    await assert.rejects(() => updateStudentLevel(999_999, "leadLevel", 2), NotFoundError);
   });
 });

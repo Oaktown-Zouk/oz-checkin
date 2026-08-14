@@ -1,4 +1,4 @@
-import { and, inArray, isNull, like } from "drizzle-orm";
+import { and, eq, inArray, isNull, like } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   checkins,
@@ -12,6 +12,8 @@ import {
   type Student,
 } from "../db/schema.js";
 import { today } from "../lib/date.js";
+import { broadcastChange } from "../lib/events.js";
+import { NotFoundError } from "../lib/errors.js";
 
 export interface CreditInfo {
   id: number;
@@ -44,6 +46,10 @@ export interface StudentStatus {
   id: number;
   name: string;
   email: string;
+  // Dance level, 1-4, or null if unset — front desk-set, not sourced from a sync (see
+  // routes/students.ts).
+  leadLevel: number | null;
+  followLevel: number | null;
   // Additional emails linked via a merge (see services/merge.ts) — shown so front desk
   // can see why a row combines a waiver and a payment history.
   alternateEmails: string[];
@@ -161,6 +167,8 @@ function buildStatus(
     id: student.id,
     name: student.name,
     email: student.email,
+    leadLevel: student.leadLevel,
+    followLevel: student.followLevel,
     alternateEmails: studentEmailRows
       .filter((e) => e.studentId === student.id)
       .map((e) => e.email),
@@ -294,4 +302,24 @@ export async function listStudentStatuses(
 export async function getStudentStatusById(id: number, date?: string): Promise<StudentStatus | null> {
   const [status] = await listStudentStatuses({ ids: [id], date });
   return status ?? null;
+}
+
+// level is 1-4 (validated by the caller — see routes/students.ts) or null to unset.
+export async function updateStudentLevel(
+  id: number,
+  field: "leadLevel" | "followLevel",
+  level: number | null
+): Promise<StudentStatus> {
+  const [existing] = await db.select({ id: students.id }).from(students).where(eq(students.id, id));
+  if (!existing) throw new NotFoundError("Student not found");
+
+  await db
+    .update(students)
+    .set({ [field]: level, updatedAt: new Date() })
+    .where(eq(students.id, id));
+
+  const updated = await getStudentStatusById(id);
+  if (!updated) throw new NotFoundError("Student not found");
+  broadcastChange("levels");
+  return updated;
 }

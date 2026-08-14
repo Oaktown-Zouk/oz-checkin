@@ -10,6 +10,7 @@
   --blue-bg: #dbeafe;
   --gray: #6b7280;
   --gray-bg: #f3f4f6;
+  --purple: #7c3aed;
   --border: #e5e7eb;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -374,6 +375,40 @@ body {
   gap: 8px;
 }
 
+.level-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.level-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font: inherit;
+}
+
+.level-option-selected {
+  border-color: #111827;
+  background: #f3f4f6;
+}
+
+.level-option-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.level-option-label {
+  font-size: 0.7rem;
+  color: var(--gray);
+}
+
 .back-link {
   margin-bottom: 16px;
 }
@@ -411,6 +446,17 @@ body {
   padding: 14px 16px;
 }
 
+.stat-clickable {
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s;
+}
+
+.stat-clickable:hover {
+  border-color: #9ca3af;
+}
+
 .stat-label {
   font-size: 0.75rem;
   color: var(--gray);
@@ -420,6 +466,53 @@ body {
 .stat-value {
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.student-levels {
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.level-badge {
+  border: none;
+  background: none;
+  padding: 2px;
+  font-size: inherit;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.level-badge:hover {
+  background: var(--gray-bg);
+}
+
+.level-badge-shape {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  color: white;
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.level-badge-square {
+  border-radius: 4px;
+  background: var(--blue);
+}
+
+.level-badge-circle {
+  border-radius: 50%;
+  background: var(--purple);
+}
+
+.level-badge-unset {
+  background: var(--gray);
 }
 
 .timeline-heading {

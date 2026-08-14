@@ -24,6 +24,8 @@ export interface StudentStatus {
   id: number;
   name: string;
   email: string;
+  leadLevel: number | null;
+  followLevel: number | null;
   alternateEmails: string[];
   waiver: { signed: boolean; signedAt: string | null };
   membership: {
@@ -125,4 +127,14 @@ export const api = {
     }),
   studentTimeline: (studentId: number) =>
     request<StudentTimeline>(`/api/students/${studentId}/timeline`),
+  updateLeadLevel: (studentId: number, level: number | null) =>
+    request<StudentStatus>(`/api/students/${studentId}/lead-level`, {
+      method: "PATCH",
+      body: JSON.stringify({ level }),
+    }),
+  updateFollowLevel: (studentId: number, level: number | null) =>
+    request<StudentStatus>(`/api/students/${studentId}/follow-level`, {
+      method: "PATCH",
+      body: JSON.stringify({ level }),
+    }),
 };

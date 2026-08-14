@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, UnauthorizedError, type StudentTimeline } from "../api.js";
 import { StudentBadges } from "./StudentBadges.js";
+import { LevelEditDialog } from "./LevelEditDialog.js";
+import { LevelBadge } from "./LevelBadge.js";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
@@ -24,6 +26,7 @@ export function StudentPage({
   const [timeline, setTimeline] = useState<StudentTimeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +45,17 @@ export function StudentPage({
   useEffect(() => {
     load();
   }, [load, changeSignal]);
+
+  async function handleUpdateLevel(kind: "lead" | "follow", level: number | null) {
+    try {
+      if (kind === "lead") await api.updateLeadLevel(studentId, level);
+      else await api.updateFollowLevel(studentId, level);
+      await load();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) onUnauthorized();
+      throw err;
+    }
+  }
 
   return (
     <div className="app student-page">
@@ -62,7 +76,11 @@ export function StudentPage({
                 also {timeline.status.alternateEmails.join(", ")}
               </div>
             )}
-            <StudentBadges student={timeline.status} />
+            <StudentBadges
+              student={timeline.status}
+              onUpdateLeadLevel={(level) => handleUpdateLevel("lead", level)}
+              onUpdateFollowLevel={(level) => handleUpdateLevel("follow", level)}
+            />
           </div>
 
           <div className="student-stats">
@@ -82,6 +100,26 @@ export function StudentPage({
               <div className="stat-label">Total check-ins</div>
               <div className="stat-value">{timeline.totalCheckIns}</div>
             </div>
+            <button
+              type="button"
+              className="stat stat-clickable"
+              onClick={() => setEditingLevel("lead")}
+            >
+              <div className="stat-label">Lead Level</div>
+              <div className="stat-value">
+                <LevelBadge level={timeline.status.leadLevel} shape="square" />
+              </div>
+            </button>
+            <button
+              type="button"
+              className="stat stat-clickable"
+              onClick={() => setEditingLevel("follow")}
+            >
+              <div className="stat-label">Follow Level</div>
+              <div className="stat-value">
+                <LevelBadge level={timeline.status.followLevel} shape="circle" />
+              </div>
+            </button>
           </div>
 
           <h2 className="timeline-heading">Timeline</h2>
@@ -101,6 +139,16 @@ export function StudentPage({
             </div>
           )}
         </>
+      )}
+
+      {editingLevel && timeline && (
+        <LevelEditDialog
+          title={editingLevel === "lead" ? "Edit Lead Level" : "Edit Follow Level"}
+          currentLevel={editingLevel === "lead" ? timeline.status.leadLevel : timeline.status.followLevel}
+          shape={editingLevel === "lead" ? "square" : "circle"}
+          onSubmit={(level) => handleUpdateLevel(editingLevel, level)}
+          onClose={() => setEditingLevel(null)}
+        />
       )}
     </div>
   );

@@ -9,6 +9,8 @@ export function StudentList({
   onUndo,
   onMerge,
   onOpenStudent,
+  onUpdateLeadLevel,
+  onUpdateFollowLevel,
 }: {
   students: StudentStatus[];
   loading: boolean;
@@ -17,6 +19,8 @@ export function StudentList({
   onUndo: (checkinId: number) => Promise<void>;
   onMerge: (studentId: number, otherEmail: string) => Promise<void>;
   onOpenStudent: (studentId: number) => void;
+  onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
+  onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
 }) {
   if (loading && students.length === 0) {
     return <p className="empty-state">Loading…</p>;
@@ -36,6 +40,8 @@ export function StudentList({
           onUndo={onUndo}
           onMerge={onMerge}
           onOpenStudent={onOpenStudent}
+          onUpdateLeadLevel={onUpdateLeadLevel}
+          onUpdateFollowLevel={onUpdateFollowLevel}
         />
       ))}
     </div>

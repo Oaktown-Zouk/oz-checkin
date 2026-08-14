@@ -220,6 +220,26 @@ export function App() {
     }
   }
 
+  async function handleUpdateLeadLevel(studentId: number, level: number | null) {
+    try {
+      await api.updateLeadLevel(studentId, level);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
+  async function handleUpdateFollowLevel(studentId: number, level: number | null) {
+    try {
+      await api.updateFollowLevel(studentId, level);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   async function handleRefresh() {
     setSyncing(true);
     try {
@@ -286,6 +306,8 @@ export function App() {
         onUndo={handleUndo}
         onMerge={handleMerge}
         onOpenStudent={navigateToStudent}
+        onUpdateLeadLevel={handleUpdateLeadLevel}
+        onUpdateFollowLevel={handleUpdateFollowLevel}
       />
     </div>
   );

@@ -1,10 +1,23 @@
+import { useState } from "react";
 import type { StudentStatus } from "../api.js";
+import { LevelEditDialog } from "./LevelEditDialog.js";
+import { LevelBadge } from "./LevelBadge.js";
 
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export function StudentBadges({ student }: { student: StudentStatus }) {
+export function StudentBadges({
+  student,
+  onUpdateLeadLevel,
+  onUpdateFollowLevel,
+}: {
+  student: StudentStatus;
+  onUpdateLeadLevel: (level: number | null) => Promise<void>;
+  onUpdateFollowLevel: (level: number | null) => Promise<void>;
+}) {
+  const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
+
   const hasMembership = Boolean(student.membership);
   const hasCredits = Boolean(student.credits);
   const hasAnyPayment = hasMembership || hasCredits;
@@ -18,6 +31,35 @@ export function StudentBadges({ student }: { student: StudentStatus }) {
 
   return (
     <div className="badges">
+      <span className="student-levels">
+        <button
+          type="button"
+          className="level-badge"
+          title="Edit lead level"
+          onClick={() => setEditingLevel("lead")}
+        >
+          <LevelBadge level={student.leadLevel} shape="square" />
+        </button>
+        <button
+          type="button"
+          className="level-badge"
+          title="Edit follow level"
+          onClick={() => setEditingLevel("follow")}
+        >
+          <LevelBadge level={student.followLevel} shape="circle" />
+        </button>
+      </span>
+
+      {editingLevel && (
+        <LevelEditDialog
+          title={editingLevel === "lead" ? "Edit Lead Level" : "Edit Follow Level"}
+          currentLevel={editingLevel === "lead" ? student.leadLevel : student.followLevel}
+          shape={editingLevel === "lead" ? "square" : "circle"}
+          onSubmit={editingLevel === "lead" ? onUpdateLeadLevel : onUpdateFollowLevel}
+          onClose={() => setEditingLevel(null)}
+        />
+      )}
+
       <span className={`badge ${student.waiver.signed ? "badge-green" : "badge-red"}`}>
         {student.waiver.signed ? "Waiver signed" : "No waiver"}
       </span>
