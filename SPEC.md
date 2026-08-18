@@ -76,6 +76,10 @@ server logs a warning and runs on local data only if neither is configured.
 Field parsing is verified against real `/contacts`, `/transactions`, and `/plans`
 responses from the OZ account, not guessed:
 
+- **Every contact becomes a student**, not just ones with a payment or plan — this is what
+  lets front desk add someone in Givebutter (e.g. a contact who hasn't paid yet and is
+  going to use their free drop-in credit instead) and have them show up on the roster with
+  no payment required first. Contacts without a resolvable email are skipped.
 - Amounts are plain dollar floats (e.g. `95`), not cents — converted to cents on ingest.
 - A transaction carries `plan_id` when it's the initial or renewal charge of a recurring
   plan. Those become `membership_charges` rows (history), **not** a redeemable one-time

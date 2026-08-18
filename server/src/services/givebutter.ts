@@ -99,12 +99,14 @@ export interface SyncResult {
 }
 
 export async function syncGivebutter(): Promise<{
+  contacts: SyncResult;
   payments: SyncResult;
   membershipCharges: SyncResult;
   memberships: SyncResult;
 }> {
   if (!givebutterConfigured) {
     return {
+      contacts: { skipped: true },
       payments: { skipped: true },
       membershipCharges: { skipped: true },
       memberships: { skipped: true },
@@ -114,10 +116,17 @@ export async function syncGivebutter(): Promise<{
   const contacts = await fetchAllPages("/contacts");
   const contactsById = new Map<string, any>(contacts.map((c) => [String(c.id), c]));
 
+  // Policy: every Givebutter contact becomes a student, not just ones with a payment or
+  // plan — e.g. someone added as a contact who hasn't paid yet and is going to use their
+  // free drop-in credit instead (see lib/upsertStudent.ts, granted automatically on
+  // creation). Runs before transactions/plans so the roster is populated first; order
+  // doesn't actually matter for correctness since upsertStudent is idempotent either way.
+  const contactsResult = await syncContacts(contacts);
   const transactionsResult = await syncTransactions(contactsById);
   const membershipsResult = await syncPlans(contactsById);
 
   return {
+    contacts: contactsResult,
     payments: transactionsResult.credits,
     membershipCharges: transactionsResult.membershipCharges,
     memberships: membershipsResult,
@@ -135,6 +144,24 @@ async function linkGivebutterContact(studentId: number, contactId: unknown): Pro
       target: givebutterContacts.givebutterContactId,
       set: { studentId, updatedAt: new Date() },
     });
+}
+
+async function syncContacts(contacts: any[]): Promise<SyncResult> {
+  let processed = 0;
+  let unmatched = 0;
+
+  for (const contact of contacts) {
+    const email = contactEmail(contact);
+    if (!email) {
+      unmatched++;
+      continue;
+    }
+    const studentId = await upsertStudent(email, contactName(contact) ?? email, "givebutter");
+    await linkGivebutterContact(studentId, contact.id);
+    processed++;
+  }
+
+  return { skipped: false, processed, unmatched };
 }
 
 async function resolveStudentIdForRecord(record: any, contactsById: Map<string, any>): Promise<
