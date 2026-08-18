@@ -9,7 +9,6 @@
     "start": "node dist/index.js",
     "start:scratch": "node --env-file=.env.scratch dist/index.js",
     "seed": "tsx src/db/seed.ts",
-    "google:auth": "tsx src/scripts/getGoogleRefreshToken.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -21,13 +20,10 @@
     "dotenv": "^16.4.5",
     "drizzle-orm": "1.0.0-rc.4",
     "fastify": "^4.28.1",
-    "googleapis": "^144.0.0",
-    "node-cron": "^3.0.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/node-cron": "^3.0.11",
     "drizzle-kit": "1.0.0-rc.4",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"

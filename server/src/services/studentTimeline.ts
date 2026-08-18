@@ -1,14 +1,6 @@
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "../db/client.js";
-import {
-  checkins,
-  memberships,
-  membershipCharges,
-  payments,
-  promoCredits,
-  students,
-  waivers,
-} from "../db/schema.js";
+import { checkins, memberships, membershipCharges, payments, promoCredits, students } from "../db/schema.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
 export interface TimelineEvent {
@@ -26,8 +18,8 @@ export interface TimelineEvent {
 
 export interface StudentTimeline {
   status: StudentStatus;
-  // Earliest touchpoint from either source — a waiver signature, a payment, or a
-  // membership starting — not just whichever the student happened to submit first.
+  // Earliest touchpoint from either source — a payment or a membership starting — not
+  // just whichever the student happened to submit first.
   firstRegisteredAt: string | null;
   mostRecentCheckInAt: string | null;
   totalCheckIns: number;
@@ -43,16 +35,8 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   const [student] = await db.select().from(students).where(eq(students.id, studentId));
   if (!student) return null;
 
-  const [
-    waiverRows,
-    membershipRows,
-    allMembershipChargeRows,
-    paymentRows,
-    promoCreditRows,
-    checkinRows,
-    status,
-  ] = await Promise.all([
-    db.select().from(waivers).where(eq(waivers.studentId, studentId)),
+  const [membershipRows, allMembershipChargeRows, paymentRows, promoCreditRows, checkinRows, status] =
+    await Promise.all([
     // holderStudentId, not studentId — who this membership belongs to for app purposes
     // (see services/studentStatus.ts / services/transfers.ts).
     db.select().from(memberships).where(eq(memberships.holderStudentId, studentId)),
@@ -168,11 +152,10 @@ export async function getStudentTimeline(studentId: number): Promise<StudentTime
   events.sort((a, b) => b.at.localeCompare(a.at));
 
   // promoCredits.grantedAt is deliberately excluded here — it's a sync-time stamp (when
-  // we first saw this student), not a real-world event time like a waiver signature or
-  // a payment, so it shouldn't be able to set firstRegisteredAt (same reasoning as
-  // membership's startedAt/canceledAt vs. our own createdAt — see schema.ts).
+  // we first saw this student), not a real-world event time like a payment, so it
+  // shouldn't be able to set firstRegisteredAt (same reasoning as membership's
+  // startedAt/canceledAt vs. our own createdAt — see schema.ts).
   const firstRegisteredCandidates: Date[] = [
-    ...waiverRows.map((w) => w.signedAt),
     ...paymentRows.map((p) => p.paidAt),
     ...membershipChargeRows.map((c) => c.paidAt),
     ...membershipRows.map((m) => m.startedAt ?? m.createdAt),

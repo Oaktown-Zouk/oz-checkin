@@ -85,13 +85,6 @@ body {
   flex-wrap: wrap;
 }
 
-.sync-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.85rem;
-  color: var(--gray);
-}
 
 .effective-date-control {
   display: flex;
@@ -181,12 +174,6 @@ body {
 .student-email {
   font-size: 0.8rem;
   color: var(--gray);
-}
-
-.student-alt-emails {
-  font-size: 0.75rem;
-  color: var(--gray);
-  font-style: italic;
 }
 
 .badges {

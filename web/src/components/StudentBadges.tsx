@@ -60,10 +60,6 @@ export function StudentBadges({
         />
       )}
 
-      <span className={`badge ${student.waiver.signed ? "badge-green" : "badge-red"}`}>
-        {student.waiver.signed ? "Waiver signed" : "No waiver"}
-      </span>
-
       {student.membership && (
         <span
           className={`badge ${

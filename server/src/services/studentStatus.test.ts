@@ -4,12 +4,10 @@ import {
   setupTestDb,
   resetDb,
   insertStudent,
-  insertWaiver,
   insertMembership,
   insertMembershipCharge,
   insertPayment,
   insertPromoCredit,
-  insertStudentEmail,
   insertCheckin,
 } from "../testing/helpers.js";
 import { listStudentStatuses, getStudentStatusById, updateStudentLevel } from "./studentStatus.js";
@@ -183,28 +181,6 @@ describe("credits computation", () => {
     assert.equal(status?.credits?.available, 0);
     assert.equal(status?.credits?.total, 1);
     assert.equal(status?.credits?.promo[0].redeemed, true);
-  });
-});
-
-describe("waiver", () => {
-  it("picks the most recently signed waiver when multiple exist", async () => {
-    const id = await insertStudent("a@example.com");
-    await insertWaiver(id, { signedAt: new Date("2026-01-01"), formResponseId: "r1" });
-    await insertWaiver(id, { signedAt: new Date("2026-06-01"), formResponseId: "r2" });
-
-    const status = await getStudentStatusById(id);
-    assert.equal(status?.waiver.signedAt, new Date("2026-06-01").toISOString());
-  });
-});
-
-describe("alternateEmails", () => {
-  it("includes emails linked via student_emails", async () => {
-    const id = await insertStudent("primary@example.com");
-    await insertStudentEmail(id, "alt1@example.com");
-    await insertStudentEmail(id, "alt2@example.com");
-
-    const status = await getStudentStatusById(id);
-    assert.deepEqual(status?.alternateEmails.sort(), ["alt1@example.com", "alt2@example.com"]);
   });
 });
 

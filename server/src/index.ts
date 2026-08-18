@@ -3,8 +3,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
-import cron from "node-cron";
-import { config, googleFormsConfigured, givebutterConfigured } from "./config.js";
+import { config } from "./config.js";
 import { registerSession } from "./lib/session.js";
 import { requireAuth } from "./lib/auth.js";
 import { addSseClient, removeSseClient, closeAllSseClients } from "./lib/events.js";
@@ -12,8 +11,6 @@ import { sqlite } from "./db/client.js";
 import { authRoutes } from "./routes/auth.js";
 import { studentRoutes } from "./routes/students.js";
 import { checkinRoutes } from "./routes/checkins.js";
-import { syncRoutes } from "./routes/sync.js";
-import { runSync } from "./services/sync.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -56,7 +53,6 @@ async function main() {
   await app.register(authRoutes, { prefix: "/api" });
   await app.register(studentRoutes, { prefix: "/api/students" });
   await app.register(checkinRoutes, { prefix: "/api/checkins" });
-  await app.register(syncRoutes, { prefix: "/api/sync" });
 
   // Serves the built React SPA (npm run build) — see README for the dev-mode setup,
   // where the Vite dev server runs separately and proxies /api here instead.
@@ -71,21 +67,6 @@ async function main() {
     }
     return reply.sendFile("index.html");
   });
-
-  if (googleFormsConfigured || givebutterConfigured) {
-    cron.schedule(`*/${config.SYNC_INTERVAL_MINUTES} * * * *`, () => {
-      app.log.info("Running scheduled sync");
-      runSync().catch((err) => app.log.error(err, "Scheduled sync failed"));
-    });
-    // Kick off an initial sync shortly after boot rather than waiting a full interval.
-    setTimeout(() => {
-      runSync().catch((err) => app.log.error(err, "Initial sync failed"));
-    }, 2000);
-  } else {
-    app.log.warn(
-      "Neither Google Forms nor Givebutter is configured — running with local data only. See README."
-    );
-  }
 
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
 

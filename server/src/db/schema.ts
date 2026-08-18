@@ -17,11 +17,6 @@ export const students = sqliteTable(
     // normalized: lowercased + trimmed. This is the cross-system identity key.
     email: text("email").notNull(),
     name: text("name").notNull(),
-    // Which source last set `name` — 'givebutter' | 'google_forms' | null. Givebutter
-    // names are payment-processor-verified (checked against a credit card); Forms names
-    // are free text. Once a name has been set by Givebutter, a later Forms sync must not
-    // downgrade it — see lib/upsertStudent.ts.
-    nameSource: text("name_source"),
     phone: text("phone"),
     // Dance level, 1-4, or null if unset — front desk sets these manually (see
     // routes/students.ts); not sourced from Forms or Givebutter.
@@ -31,43 +26,6 @@ export const students = sqliteTable(
   },
   (t) => ({
     emailIdx: uniqueIndex("students_email_idx").on(t.email),
-  })
-);
-
-// Alternate emails for a student, beyond their primary `students.email` — e.g. someone
-// who signed the waiver with a personal address but paid via Givebutter with a work
-// address. Populated by merges (see services/merge.ts); consulted by sync so future
-// Forms/Givebutter fetches recognize the alternate email as already-known instead of
-// recreating the duplicate that was just merged away.
-export const studentEmails = sqliteTable(
-  "student_emails",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    studentId: integer("student_id")
-      .notNull()
-      .references(() => students.id),
-    email: text("email").notNull(),
-    ...timestamps,
-  },
-  (t) => ({
-    emailIdx: uniqueIndex("student_emails_email_idx").on(t.email),
-  })
-);
-
-export const waivers = sqliteTable(
-  "waivers",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    studentId: integer("student_id")
-      .notNull()
-      .references(() => students.id),
-    formResponseId: text("form_response_id").notNull(),
-    signedAt: integer("signed_at", { mode: "timestamp" }).notNull(),
-    rawJson: text("raw_json"),
-    ...timestamps,
-  },
-  (t) => ({
-    formResponseIdx: uniqueIndex("waivers_form_response_idx").on(t.formResponseId),
   })
 );
 
@@ -235,8 +193,6 @@ export const syncState = sqliteTable("sync_state", {
 });
 
 export type Student = typeof students.$inferSelect;
-export type StudentEmail = typeof studentEmails.$inferSelect;
-export type Waiver = typeof waivers.$inferSelect;
 export type GivebutterContact = typeof givebutterContacts.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;

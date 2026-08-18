@@ -83,11 +83,6 @@ export function StudentPage({
           <div className="student-page-header">
             <h1>{timeline.status.name}</h1>
             <div className="student-email">{timeline.status.email}</div>
-            {timeline.status.alternateEmails.length > 0 && (
-              <div className="student-alt-emails">
-                also {timeline.status.alternateEmails.join(", ")}
-              </div>
-            )}
             <StudentBadges
               student={timeline.status}
               onUpdateLeadLevel={(level) => handleUpdateLevel("lead", level)}

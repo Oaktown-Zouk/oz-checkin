@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { StudentStatus } from "../api.js";
 import { RowMenu } from "./RowMenu.js";
-import { MergeDialog } from "./MergeDialog.js";
 import { TransferDialog } from "./TransferDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
 
@@ -14,7 +13,6 @@ export function StudentRow({
   isClassDay,
   onCheckIn,
   onUndo,
-  onMerge,
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
@@ -24,7 +22,6 @@ export function StudentRow({
   isClassDay: boolean;
   onCheckIn: (studentId: number) => Promise<void>;
   onUndo: (checkinId: number) => Promise<void>;
-  onMerge: (studentId: number, otherEmail: string) => Promise<void>;
   onOpenStudent: (studentId: number) => void;
   onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
@@ -36,7 +33,6 @@ export function StudentRow({
   ) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
-  const [mergeOpen, setMergeOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
 
   const hasMembership = Boolean(student.membership);
@@ -50,7 +46,6 @@ export function StudentRow({
     // normal credit flow just like a purchased pass, so there's nothing special to
     // confirm here beyond the same warnings any other check-in might raise.
     const warnings: string[] = [];
-    if (!student.waiver.signed) warnings.push("no waiver on file");
     if (!student.checkedInToday && !hasAnyPayment) warnings.push("no payment on file");
 
     if (warnings.length > 0) {
@@ -89,9 +84,6 @@ export function StudentRow({
           {student.name}
         </a>
         <div className="student-email">{student.email}</div>
-        {student.alternateEmails.length > 0 && (
-          <div className="student-alt-emails">also {student.alternateEmails.join(", ")}</div>
-        )}
       </div>
 
       <StudentBadges
@@ -133,20 +125,9 @@ export function StudentRow({
           </button>
         )}
         <RowMenu
-          items={[
-            { label: "Merge info", onClick: () => setMergeOpen(true) },
-            { label: "Transfer membership/credit", onClick: () => setTransferOpen(true) },
-          ]}
+          items={[{ label: "Transfer membership/credit", onClick: () => setTransferOpen(true) }]}
         />
       </div>
-
-      {mergeOpen && (
-        <MergeDialog
-          studentName={student.name}
-          onSubmit={(otherEmail) => onMerge(student.id, otherEmail)}
-          onClose={() => setMergeOpen(false)}
-        />
-      )}
 
       {transferOpen && (
         <TransferDialog

@@ -13,9 +13,7 @@ import {
   payments,
   promoCredits,
   students,
-  studentEmails,
   syncState,
-  waivers,
 } from "../db/schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,8 +33,6 @@ export async function resetDb() {
   await db.delete(promoCredits);
   await db.delete(memberships);
   await db.delete(givebutterContacts);
-  await db.delete(studentEmails);
-  await db.delete(waivers);
   await db.delete(students);
   await db.delete(syncState);
 }
@@ -47,24 +43,9 @@ function unique(prefix: string): string {
   return `${prefix}-${counter}`;
 }
 
-export async function insertStudent(
-  email: string,
-  name = "Test Student",
-  nameSource: string | null = null
-): Promise<number> {
-  const [row] = await db.insert(students).values({ email, name, nameSource }).returning();
+export async function insertStudent(email: string, name = "Test Student"): Promise<number> {
+  const [row] = await db.insert(students).values({ email, name }).returning();
   return row.id;
-}
-
-export async function insertWaiver(
-  studentId: number,
-  opts: { signedAt?: Date; formResponseId?: string } = {}
-): Promise<void> {
-  await db.insert(waivers).values({
-    studentId,
-    formResponseId: opts.formResponseId ?? unique("resp"),
-    signedAt: opts.signedAt ?? new Date(),
-  });
 }
 
 export async function insertMembership(
@@ -146,10 +127,6 @@ export async function insertPromoCredit(
     })
     .returning();
   return row.id;
-}
-
-export async function insertStudentEmail(studentId: number, email: string): Promise<void> {
-  await db.insert(studentEmails).values({ studentId, email });
 }
 
 export async function insertGivebutterContact(studentId: number, contactId?: string): Promise<void> {

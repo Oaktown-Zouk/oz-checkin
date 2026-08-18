@@ -7,8 +7,6 @@ import {
   payments,
   promoCredits,
   students,
-  studentEmails,
-  waivers,
   type Student,
 } from "../db/schema.js";
 import { today } from "../lib/date.js";
@@ -65,10 +63,6 @@ export interface StudentStatus {
   // routes/students.ts).
   leadLevel: number | null;
   followLevel: number | null;
-  // Additional emails linked via a merge (see services/merge.ts) — shown so front desk
-  // can see why a row combines a waiver and a payment history.
-  alternateEmails: string[];
-  waiver: { signed: boolean; signedAt: string | null };
   membership: {
     active: boolean;
     status: string;
@@ -143,20 +137,14 @@ function membershipCoversCheckIn(active: boolean, lastPaymentAt: Date | null): b
 
 function buildStatus(
   student: Student,
-  waiverRows: (typeof waivers.$inferSelect)[],
   membershipRows: (typeof memberships.$inferSelect)[],
   membershipChargeRows: (typeof membershipCharges.$inferSelect)[],
   paymentRows: (typeof payments.$inferSelect)[],
   promoCreditRows: (typeof promoCredits.$inferSelect)[],
   allCheckinRows: (typeof checkins.$inferSelect)[],
-  studentEmailRows: (typeof studentEmails.$inferSelect)[],
   nameById: Map<number, string>,
   viewedDate: string
 ): StudentStatus {
-  const latestWaiver = waiverRows
-    .filter((w) => w.studentId === student.id)
-    .sort((a, b) => b.signedAt.getTime() - a.signedAt.getTime())[0];
-
   // holderStudentId is who this belongs to for check-in/display purposes — starts equal
   // to studentId (the raw Givebutter payer) and only diverges after an explicit transfer
   // (see services/transfers.ts). Falls back to studentId defensively; in practice
@@ -217,13 +205,6 @@ function buildStatus(
     email: student.email,
     leadLevel: student.leadLevel,
     followLevel: student.followLevel,
-    alternateEmails: studentEmailRows
-      .filter((e) => e.studentId === student.id)
-      .map((e) => e.email),
-    waiver: {
-      signed: Boolean(latestWaiver),
-      signedAt: latestWaiver ? latestWaiver.signedAt.toISOString() : null,
-    },
     membership: primaryMembership
       ? {
           active: membershipIsActive,
@@ -312,35 +293,26 @@ export async function listStudentStatuses(
   const ids = studentRows.map((s) => s.id);
   const todayStr = opts.date ?? today();
 
-  const [
-    waiverRows,
-    membershipRows,
-    membershipChargeRows,
-    paymentRows,
-    promoCreditRows,
-    allCheckinRows,
-    studentEmailRows,
-  ] = await Promise.all([
-    db.select().from(waivers).where(inArray(waivers.studentId, ids)),
-    // holderStudentId, not studentId — that's who a membership belongs to for app
-    // purposes once it may have been transferred (see services/transfers.ts).
-    db.select().from(memberships).where(inArray(memberships.holderStudentId, ids)),
-    // Both directions: charges I currently hold (mine) AND charges I paid for that are
-    // now held by someone else (surfaced via paidMembershipsForOthers) — see buildStatus.
-    db
-      .select()
-      .from(membershipCharges)
-      .where(or(inArray(membershipCharges.holderStudentId, ids), inArray(membershipCharges.studentId, ids))),
-    db.select().from(payments).where(inArray(payments.holderStudentId, ids)),
-    db.select().from(promoCredits).where(inArray(promoCredits.studentId, ids)),
-    // Not date-filtered: buildStatus needs both the viewed day's check-ins and
-    // whether the student has ANY real check-in ever (for the New Member badge).
-    db
-      .select()
-      .from(checkins)
-      .where(and(inArray(checkins.studentId, ids), isNull(checkins.undoneAt))),
-    db.select().from(studentEmails).where(inArray(studentEmails.studentId, ids)),
-  ]);
+  const [membershipRows, membershipChargeRows, paymentRows, promoCreditRows, allCheckinRows] =
+    await Promise.all([
+      // holderStudentId, not studentId — that's who a membership belongs to for app
+      // purposes once it may have been transferred (see services/transfers.ts).
+      db.select().from(memberships).where(inArray(memberships.holderStudentId, ids)),
+      // Both directions: charges I currently hold (mine) AND charges I paid for that are
+      // now held by someone else (surfaced via paidMembershipsForOthers) — see buildStatus.
+      db
+        .select()
+        .from(membershipCharges)
+        .where(or(inArray(membershipCharges.holderStudentId, ids), inArray(membershipCharges.studentId, ids))),
+      db.select().from(payments).where(inArray(payments.holderStudentId, ids)),
+      db.select().from(promoCredits).where(inArray(promoCredits.studentId, ids)),
+      // Not date-filtered: buildStatus needs both the viewed day's check-ins and
+      // whether the student has ANY real check-in ever (for the New Member badge).
+      db
+        .select()
+        .from(checkins)
+        .where(and(inArray(checkins.studentId, ids), isNull(checkins.undoneAt))),
+    ]);
 
   // Names for anyone referenced as a payer/holder who isn't already in this batch (e.g.
   // viewing just Bob's row, but Alice paid for his membership) — needed for
@@ -362,18 +334,7 @@ export async function listStudentStatuses(
   }
 
   const statuses = studentRows.map((s) =>
-    buildStatus(
-      s,
-      waiverRows,
-      membershipRows,
-      membershipChargeRows,
-      paymentRows,
-      promoCreditRows,
-      allCheckinRows,
-      studentEmailRows,
-      nameById,
-      todayStr
-    )
+    buildStatus(s, membershipRows, membershipChargeRows, paymentRows, promoCreditRows, allCheckinRows, nameById, todayStr)
   );
 
   // Not-checked-in-today first (alphabetical), checked-in-today sink to the bottom

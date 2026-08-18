@@ -5,7 +5,6 @@ import {
   setupTestDb,
   resetDb,
   insertStudent,
-  insertWaiver,
   insertMembership,
   insertMembershipCharge,
   insertPayment,
@@ -133,7 +132,6 @@ describe("getStudentTimeline", () => {
 
   it("computes firstRegisteredAt as the earliest touchpoint across all sources", async () => {
     const id = await insertStudent("a@example.com");
-    await insertWaiver(id, { signedAt: new Date("2026-05-01T00:00:00Z") });
     await insertPayment(id, { paidAt: new Date("2026-01-01T00:00:00Z") }); // earliest
     await insertMembership(id, { status: "active", startedAt: new Date("2026-03-01T00:00:00Z") });
 
@@ -150,7 +148,7 @@ describe("getStudentTimeline", () => {
     assert.equal(timeline?.firstRegisteredAt, new Date("2026-01-01T00:00:00Z").toISOString());
   });
 
-  it("firstRegisteredAt is null when the student has no waiver, payment, or membership", async () => {
+  it("firstRegisteredAt is null when the student has no payment or membership", async () => {
     const id = await insertStudent("a@example.com");
     const timeline = await getStudentTimeline(id);
     assert.equal(timeline?.firstRegisteredAt, null);
@@ -158,10 +156,10 @@ describe("getStudentTimeline", () => {
 
   it("firstRegisteredAt ignores a promo credit's grantedAt (a sync-time stamp, not a real-world event)", async () => {
     const id = await insertStudent("a@example.com");
-    // Granted "earlier" than the real waiver signature — if it were considered, it
-    // would incorrectly win as firstRegisteredAt.
+    // Granted "earlier" than the real payment — if it were considered, it would
+    // incorrectly win as firstRegisteredAt.
     await insertPromoCredit(id, { grantedAt: new Date("2026-01-01T00:00:00Z") });
-    await insertWaiver(id, { signedAt: new Date("2026-05-01T00:00:00Z") });
+    await insertPayment(id, { paidAt: new Date("2026-05-01T00:00:00Z") });
 
     const timeline = await getStudentTimeline(id);
     assert.equal(timeline?.firstRegisteredAt, new Date("2026-05-01T00:00:00Z").toISOString());

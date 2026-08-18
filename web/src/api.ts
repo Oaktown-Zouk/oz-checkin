@@ -34,8 +34,6 @@ export interface StudentStatus {
   email: string;
   leadLevel: number | null;
   followLevel: number | null;
-  alternateEmails: string[];
-  waiver: { signed: boolean; signedAt: string | null };
   membership: {
     active: boolean;
     status: string;
@@ -58,11 +56,6 @@ export interface StudentStatus {
   canCheckIn: boolean;
   requiresCreditToCheckIn: boolean;
   everCheckedIn: boolean;
-}
-
-export interface SyncStatus {
-  google_forms: string | null;
-  givebutter: string | null;
 }
 
 export interface TimelineEvent {
@@ -97,7 +90,7 @@ export class ApiError extends Error {}
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Only claim a JSON body when there actually is one — Fastify's default JSON parser
   // rejects an empty body sent with Content-Type: application/json (e.g. a bodyless
-  // POST like triggerSync), so setting this unconditionally broke every no-body call.
+  // POST like undoCheckIn), so setting this unconditionally broke every no-body call.
   const res = await fetch(path, {
     ...init,
     headers: {
@@ -136,13 +129,6 @@ export const api = {
     }),
   undoCheckIn: (checkinId: number) =>
     request<StudentStatus>(`/api/checkins/${checkinId}`, { method: "DELETE" }),
-  syncStatus: () => request<SyncStatus>("/api/sync/status"),
-  triggerSync: () => request<unknown>("/api/sync", { method: "POST" }),
-  mergeStudent: (studentId: number, otherEmail: string) =>
-    request<StudentStatus>(`/api/students/${studentId}/merge`, {
-      method: "POST",
-      body: JSON.stringify({ otherEmail }),
-    }),
   studentTimeline: (studentId: number) =>
     request<StudentTimeline>(`/api/students/${studentId}/timeline`),
   updateLeadLevel: (studentId: number, level: number | null) =>

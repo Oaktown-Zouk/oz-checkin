@@ -1,20 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, UnauthorizedError, type StudentStatus, type SyncStatus } from "./api.js";
+import { api, UnauthorizedError, type StudentStatus } from "./api.js";
 import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return "never";
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-}
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
@@ -103,8 +93,6 @@ export function App() {
   const [query, setQuery] = useState("");
   const [students, setStudents] = useState<StudentStatus[]>([]);
   const [loading, setLoading] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     api
@@ -135,23 +123,10 @@ export function App() {
     return students.filter((s) => s.name.toLowerCase().includes(q));
   }, [students, query]);
 
-  const refreshSyncStatus = useCallback(async () => {
-    try {
-      setSyncStatus(await api.syncStatus());
-    } catch {
-      // non-critical; header just won't show a timestamp
-    }
-  }, []);
-
   // Bumped on every backend-pushed "changed" event (see the SSE effect below). Both the
   // list view and StudentPage react to it independently via their own effects, so
   // whichever is actually on screen stays live without polling.
   const [changeSignal, setChangeSignal] = useState(0);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    refreshSyncStatus();
-  }, [authenticated, changeSignal, refreshSyncStatus]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -210,16 +185,6 @@ export function App() {
     }
   }
 
-  async function handleMerge(studentId: number, otherEmail: string) {
-    try {
-      await api.mergeStudent(studentId, otherEmail);
-      await refreshStudents(effectiveDate);
-    } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
-      throw err;
-    }
-  }
-
   async function handleUpdateLeadLevel(studentId: number, level: number | null) {
     try {
       await api.updateLeadLevel(studentId, level);
@@ -255,16 +220,6 @@ export function App() {
     }
   }
 
-  async function handleRefresh() {
-    setSyncing(true);
-    try {
-      await api.triggerSync();
-      await Promise.all([refreshSyncStatus(), refreshStudents(effectiveDate)]);
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   if (!authChecked) return null;
 
   if (!authenticated) {
@@ -287,15 +242,6 @@ export function App() {
       <header className="app-header">
         <h1>OZ Check-In</h1>
         <div className="header-controls">
-          <div className="sync-info">
-            <span>
-              Forms synced {timeAgo(syncStatus?.google_forms ?? null)} · Givebutter synced{" "}
-              {timeAgo(syncStatus?.givebutter ?? null)}
-            </span>
-            <button className="btn btn-secondary" disabled={syncing} onClick={handleRefresh}>
-              {syncing ? "Refreshing…" : "Refresh now"}
-            </button>
-          </div>
           <EffectiveDateControl value={effectiveAt} onChange={handleEffectiveAtChange} />
         </div>
       </header>
@@ -319,7 +265,6 @@ export function App() {
         isClassDay={classDay}
         onCheckIn={handleCheckIn}
         onUndo={handleUndo}
-        onMerge={handleMerge}
         onOpenStudent={navigateToStudent}
         onUpdateLeadLevel={handleUpdateLeadLevel}
         onUpdateFollowLevel={handleUpdateFollowLevel}
