@@ -1,77 +1,65 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { memberships, payments, membershipCharges } from "../db/schema.js";
+import { listRecords, getRecordOrNull, updateRecord, TABLES } from "../airtable/client.js";
+import type { MemberFields, RecurringPlanFields } from "../airtable/fields.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
-import { findStudentIdByEmail } from "../lib/upsertStudent.js";
 import { normalizeEmail } from "../lib/date.js";
-import { broadcastChange } from "../lib/events.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
-export type TransferKind = "membership" | "payment";
+async function findMemberIdByEmail(rawEmail: string): Promise<string | undefined> {
+  const email = normalizeEmail(rawEmail).replace(/'/g, "\\'");
+  const matches = await listRecords<MemberFields>(TABLES.members, {
+    filterByFormula: `LOWER({Email}) = '${email}'`,
+    fields: ["Email"],
+  });
+  return matches[0]?.id;
+}
 
-// Moves a membership or unredeemed one-time credit from whoever currently holds it to a
-// different student, e.g. "Alice bought two memberships, one was actually for Bob."
-// Only holderStudentId changes — studentId (the raw Givebutter payer) is untouched, so
-// "who actually paid" is preserved for display even after the transfer (see
-// services/studentStatus.ts's managedByName/purchasedByName/paidMembershipsForOthers).
-export async function transferItem(
-  sourceStudentId: number,
-  kind: TransferKind,
-  itemId: number,
+// Membership-only for now, per product decision — Recurring Plans already splits
+// Member (payer, untouched) vs Covers Member (holder), so this is just a record update.
+export async function transferMembership(
+  sourceStudentId: string,
+  planId: string,
   targetEmailRaw: string
 ): Promise<StudentStatus> {
-  const targetEmail = normalizeEmail(targetEmailRaw);
-  const targetStudentId = await findStudentIdByEmail(targetEmail);
-  if (!targetStudentId) throw new NotFoundError(`No student found with email ${targetEmailRaw}`);
-
-  if (kind === "membership") {
-    const [membership] = await db.select().from(memberships).where(eq(memberships.id, itemId));
-    if (!membership) throw new NotFoundError("Membership not found");
-
-    const currentHolderId = membership.holderStudentId ?? membership.studentId;
-    if (currentHolderId !== sourceStudentId) {
-      throw new ConflictError("That membership doesn't belong to this student. Refresh and try again.");
-    }
-    if (targetStudentId === currentHolderId) {
-      throw new ConflictError("That membership already belongs to this student.");
-    }
-
-    db.transaction((tx) => {
-      tx.update(memberships)
-        .set({ holderStudentId: targetStudentId, updatedAt: new Date() })
-        .where(eq(memberships.id, itemId))
-        .run();
-      // Immediate consistency for existing charge history — sync keeps future charges
-      // in sync too (see services/givebutter.ts), but front desk shouldn't have to wait
-      // up to SYNC_INTERVAL_MINUTES to see this transfer reflected.
-      tx.update(membershipCharges)
-        .set({ holderStudentId: targetStudentId, updatedAt: new Date() })
-        .where(eq(membershipCharges.givebutterPlanId, membership.givebutterPlanId))
-        .run();
-    });
-  } else {
-    const [payment] = await db.select().from(payments).where(eq(payments.id, itemId));
-    if (!payment) throw new NotFoundError("Credit not found");
-
-    const currentHolderId = payment.holderStudentId ?? payment.studentId;
-    if (currentHolderId !== sourceStudentId) {
-      throw new ConflictError("That credit doesn't belong to this student. Refresh and try again.");
-    }
-    if (targetStudentId === currentHolderId) {
-      throw new ConflictError("That credit already belongs to this student.");
-    }
-    if (payment.redeemedAt !== null) {
-      throw new ConflictError("That credit has already been redeemed and can't be transferred.");
-    }
-
-    await db
-      .update(payments)
-      .set({ holderStudentId: targetStudentId, updatedAt: new Date() })
-      .where(eq(payments.id, itemId));
+  const targetId = await findMemberIdByEmail(targetEmailRaw);
+  if (!targetId) throw new NotFoundError(`No student found with email ${targetEmailRaw}`);
+  if (targetId === sourceStudentId) {
+    throw new ConflictError("That email already belongs to this student.");
   }
+
+  const plan = await getRecordOrNull<RecurringPlanFields>(TABLES.recurringPlans, planId);
+  if (!plan) throw new NotFoundError("Membership not found");
+
+  const currentHolderId = plan.fields["Covers Member"]?.[0] ?? plan.fields.Member?.[0];
+  if (currentHolderId !== sourceStudentId) {
+    throw new ConflictError("That membership doesn't belong to this student. Refresh and try again.");
+  }
+
+  await updateRecord<RecurringPlanFields>(TABLES.recurringPlans, planId, {
+    "Covers Member": [targetId],
+  });
 
   const updated = await getStudentStatusById(sourceStudentId);
   if (!updated) throw new NotFoundError("Student not found");
-  broadcastChange("transfer");
   return updated;
+}
+
+export interface HeldMembership {
+  id: string;
+  status: string;
+  frequency: string | null;
+  amount: number | null;
+}
+
+export async function heldMemberships(studentId: string): Promise<HeldMembership[]> {
+  const plans = await listRecords<RecurringPlanFields>(TABLES.recurringPlans, {
+    fields: ["Covers Member", "Status", "Frequency", "Amount"],
+  });
+  return plans
+    .filter((p) => p.fields["Covers Member"]?.includes(studentId))
+    .map((p) => ({
+      id: p.id,
+      status: p.fields.Status ?? "unknown",
+      frequency: p.fields.Frequency ?? null,
+      amount: p.fields.Amount ?? null,
+    }));
 }

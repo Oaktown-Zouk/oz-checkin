@@ -1,350 +1,129 @@
-import { and, eq, inArray, isNull, like, or } from "drizzle-orm";
-import { db } from "../db/client.js";
-import {
-  checkins,
-  memberships,
-  membershipCharges,
-  payments,
-  promoCredits,
-  students,
-  type Student,
-} from "../db/schema.js";
-import { today } from "../lib/date.js";
-import { broadcastChange } from "../lib/events.js";
+import { listRecords, getRecordOrNull, updateRecord, TABLES, type AirtableRecord } from "../airtable/client.js";
+import type { MemberFields, CheckinFields, ProgramFields } from "../airtable/fields.js";
+import { today, STUDIO_TIMEZONE } from "../lib/date.js";
 import { NotFoundError } from "../lib/errors.js";
 
-export interface CreditInfo {
-  id: number;
-  paidAt: string;
-  amountCents: number;
-  redeemed: boolean;
-  // Set when this credit was bought by someone else and transferred (see
-  // services/transfers.ts) — e.g. "Alice bought a pass, transferred it to Bob."
-  purchasedByName: string | null;
-}
-
-// A membership charge this student PAID for but that now belongs to a different
-// student's membership (transferred away — see services/transfers.ts). Shown on the
-// payer's page/timeline so a transfer is visible from both sides, not just the
-// recipient's — Givebutter itself has no concept of the transfer, so without this the
-// payer's history would just look like the membership silently vanished.
-export interface PaidForOtherInfo {
-  studentId: number;
-  studentName: string;
-  amountCents: number;
-  paidAt: string;
-}
-
-// A non-Givebutter credit, e.g. the free drop-in every new student is granted on
-// creation (see lib/upsertStudent.ts). Spends through the same check-in flow as a real
-// payment (see services/checkins.ts) but is kept in its own list here — separate from
-// `payments` — since it isn't a real transaction and callers that pick a *specific*
-// credit to redeem (the checkIn `paymentId` param) only ever mean a real payment.
-export interface PromoCreditInfo {
-  id: number;
-  reason: string;
-  grantedAt: string;
-  redeemed: boolean;
-}
-
 export interface CheckInInfo {
-  id: number;
+  id: string;
   checkedInAt: string;
-  checkedInBy: string | null;
-  paymentId: number | null;
-  promoCreditId: number | null;
+  programName: string | null;
+  role: "Lead" | "Follow" | null;
+  needsReview: boolean;
+  reviewReason: string | null;
 }
 
 export interface StudentStatus {
-  id: number;
+  id: string;
   name: string;
   email: string;
-  // Dance level, 1-4, or null if unset — front desk-set, not sourced from a sync (see
-  // routes/students.ts).
   leadLevel: number | null;
   followLevel: number | null;
-  membership: {
-    active: boolean;
-    status: string;
-    frequency: string | null;
-    currentPeriodEnd: string | null;
-    // Most recent charge billed against this plan, regardless of status. Shown
-    // alongside a non-active (e.g. paused) membership so front desk can judge whether
-    // the student already paid for the current month — deliberately not computed
-    // programmatically (see schema.ts on membershipCharges for why).
-    lastPaymentAt: string | null;
-    // Whether THIS check-in should be treated as covered by the membership rather than
-    // spending a credit: true if active, or if paused/etc. but paid within the last
-    // MEMBERSHIP_GRACE_DAYS — pausing doesn't retroactively revoke a month already paid
-    // for. Drives both the credits badge (hidden when covered — see StudentBadges) and
-    // the actual spend decision in services/checkins.ts, from one place, so the two
-    // can't drift out of sync with each other.
-    coversCheckIn: boolean;
-    // Set when someone else pays for this membership (transferred — see
-    // services/transfers.ts), e.g. "Alice bought this membership for Bob."
-    managedByName: string | null;
-  } | null;
-  // ALL memberships this student holds, not just the primary one shown above — a
-  // student can genuinely hold more than one (that's the whole scenario transfers
-  // exist for: someone buys a second membership for someone else). Used by the
-  // transfer picker (see services/transfers.ts) so every held item is choosable, not
-  // just the primary.
-  heldMemberships: { id: number; status: string; frequency: string | null; amountCents: number | null }[];
-  // available/total fold in both real payments and promo credits (e.g. the free
-  // drop-in every new student gets) — front desk just needs "how many can they
-  // spend," not which kind. The breakdown by kind is still exposed separately below
-  // for the (currently server-internal) explicit-credit-selection path in checkins.ts.
-  credits: {
-    available: number;
-    total: number;
-    payments: CreditInfo[];
-    promo: PromoCreditInfo[];
-  } | null;
-  // Membership charges this student paid for that are now held by a different
-  // student's (transferred) membership — see PaidForOtherInfo.
-  paidMembershipsForOthers: PaidForOtherInfo[];
-  // "Today" here means the *viewed* date — callers can look at (and check in against)
-  // a past date via listStudentStatuses'/createCheckIn's `date` param, defaulting to the
-  // real today when omitted. Field names kept as -Today for minimal API churn; the
-  // caller already knows which date it asked for.
+  accessStatus: string;
+  membershipStatus: string;
+  tierName: string | null;
+  classesAllowed: number;
+  // "Remaining" for the viewed date. For live/today, read straight from Airtable's
+  // Remaining Today (Automation C already keeps it correct). For a backdated view,
+  // Airtable's live fields can't represent a past date, so the app computes it itself —
+  // see docs/airtable-schema.md "Backdating".
+  remaining: number;
+  // Current truth, never reconstructed historically — matches the old app's behavior.
+  availableCredits: number;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
-  // Whether a *next* check-in is currently possible: the first check-in of the (viewed)
-  // day is always allowed; any check-in after that requires an unredeemed credit to spend.
-  canCheckIn: boolean;
-  requiresCreditToCheckIn: boolean;
-  // Any real (non-undone) check-in ever, on ANY date — unlike checkedInToday this is not
-  // scoped to the viewed date. Drives the "New Member" welcome badge only; it no longer
-  // gates the free-drop-in promo, since that's now a real credit (see credits.promo)
-  // that's either present and unredeemed or it isn't.
-  everCheckedIn: boolean;
 }
 
-function isMembershipActive(status: string, currentPeriodEnd: Date | null): boolean {
-  if (status.toLowerCase() !== "active") return false;
-  if (currentPeriodEnd && currentPeriodEnd.getTime() < Date.now()) return false;
-  return true;
+export async function fetchProgramNames(): Promise<Map<string, string>> {
+  const programs = await listRecords<ProgramFields>(TABLES.programs, { fields: ["Program Name"] });
+  return new Map(programs.map((p) => [p.id, p.fields["Program Name"] ?? "Unknown"]));
 }
 
-const MEMBERSHIP_GRACE_DAYS = 30;
-
-function membershipCoversCheckIn(active: boolean, lastPaymentAt: Date | null): boolean {
-  if (active) return true;
-  if (!lastPaymentAt) return false;
-  const ageMs = Date.now() - lastPaymentAt.getTime();
-  return ageMs <= MEMBERSHIP_GRACE_DAYS * 24 * 60 * 60 * 1000;
+async function fetchCheckinsForDate(viewedDate: string): Promise<AirtableRecord<CheckinFields>[]> {
+  return listRecords<CheckinFields>(TABLES.checkins, {
+    filterByFormula: `AND(DATETIME_FORMAT(SET_TIMEZONE({Checked In At}, '${STUDIO_TIMEZONE}'), 'YYYY-MM-DD') = '${viewedDate}', {Undone At} = BLANK())`,
+    fields: ["Member", "Checked In At", "Class Level", "Role", "Needs Review", "Review Reason"],
+  });
 }
 
 function buildStatus(
-  student: Student,
-  membershipRows: (typeof memberships.$inferSelect)[],
-  membershipChargeRows: (typeof membershipCharges.$inferSelect)[],
-  paymentRows: (typeof payments.$inferSelect)[],
-  promoCreditRows: (typeof promoCredits.$inferSelect)[],
-  allCheckinRows: (typeof checkins.$inferSelect)[],
-  nameById: Map<number, string>,
-  viewedDate: string
+  member: AirtableRecord<MemberFields>,
+  isLiveToday: boolean,
+  checkinsForMember: AirtableRecord<CheckinFields>[],
+  programNameById: Map<string, string>
 ): StudentStatus {
-  // holderStudentId is who this belongs to for check-in/display purposes — starts equal
-  // to studentId (the raw Givebutter payer) and only diverges after an explicit transfer
-  // (see services/transfers.ts). Falls back to studentId defensively; in practice
-  // holderStudentId is always populated once a row exists.
-  const holderOf = (row: { studentId: number; holderStudentId: number | null }) =>
-    row.holderStudentId ?? row.studentId;
-
-  const studentMemberships = membershipRows.filter((m) => holderOf(m) === student.id);
-  const activeMembership = studentMemberships.find((m) =>
-    isMembershipActive(m.status, m.currentPeriodEnd)
-  );
-  const primaryMembership = activeMembership ?? studentMemberships[0];
-
-  // "My" charges — for lastPaymentAt and the payment timeline — are the ones whose
-  // charge is currently held by me, regardless of who actually paid.
-  const heldMembershipCharges = membershipChargeRows.filter((c) => holderOf(c) === student.id);
-  const primaryMembershipCharges = primaryMembership
-    ? heldMembershipCharges.filter((c) => c.givebutterPlanId === primaryMembership.givebutterPlanId)
-    : [];
-  const lastPaymentAt = primaryMembershipCharges.length
-    ? new Date(Math.max(...primaryMembershipCharges.map((c) => c.paidAt.getTime())))
-    : null;
-  const membershipIsActive = primaryMembership
-    ? isMembershipActive(primaryMembership.status, primaryMembership.currentPeriodEnd)
-    : false;
-  const membershipCovers = primaryMembership
-    ? membershipCoversCheckIn(membershipIsActive, lastPaymentAt)
-    : false;
-  const managedByName =
-    primaryMembership && primaryMembership.studentId !== holderOf(primaryMembership)
-      ? (nameById.get(primaryMembership.studentId) ?? null)
-      : null;
-
-  // Charges I paid for (studentId = me) whose membership is now held by someone else —
-  // the payer's-side view of a transferred membership (see PaidForOtherInfo).
-  const paidForOthersCharges = membershipChargeRows.filter(
-    (c) => c.studentId === student.id && holderOf(c) !== student.id
-  );
-
-  const studentPayments = paymentRows.filter((p) => holderOf(p) === student.id);
-  const unredeemedPayments = studentPayments.filter((p) => p.redeemedAt === null);
-
-  const studentPromoCredits = promoCreditRows.filter((c) => c.studentId === student.id);
-  const unredeemedPromoCredits = studentPromoCredits.filter((c) => c.redeemedAt === null);
-
-  const studentAllCheckins = allCheckinRows.filter((c) => c.studentId === student.id);
-  const studentCheckinsToday = studentAllCheckins.filter((c) => c.date === viewedDate);
-
-  const checkedInToday = studentCheckinsToday.length > 0;
-  const everCheckedIn = studentAllCheckins.length > 0;
-  const creditsAvailable = unredeemedPayments.length + unredeemedPromoCredits.length;
-  const requiresCreditToCheckIn = checkedInToday;
-  const canCheckIn = !checkedInToday || creditsAvailable > 0;
+  const f = member.fields;
+  const classesAllowed = f["Classes Allowed"] ?? 0;
+  const remaining = isLiveToday ? (f["Remaining Today"] ?? classesAllowed) : classesAllowed - checkinsForMember.length;
 
   return {
-    id: student.id,
-    name: student.name,
-    email: student.email,
-    leadLevel: student.leadLevel,
-    followLevel: student.followLevel,
-    membership: primaryMembership
-      ? {
-          active: membershipIsActive,
-          status: primaryMembership.status,
-          frequency: primaryMembership.frequency,
-          currentPeriodEnd: primaryMembership.currentPeriodEnd
-            ? primaryMembership.currentPeriodEnd.toISOString()
-            : null,
-          lastPaymentAt: lastPaymentAt ? lastPaymentAt.toISOString() : null,
-          coversCheckIn: membershipCovers,
-          managedByName,
-        }
-      : null,
-    heldMemberships: studentMemberships.map((m) => ({
-      id: m.id,
-      status: m.status,
-      frequency: m.frequency,
-      amountCents: m.amountCents,
-    })),
-    credits:
-      studentPayments.length > 0 || studentPromoCredits.length > 0
-        ? {
-            available: creditsAvailable,
-            total: studentPayments.length + studentPromoCredits.length,
-            payments: studentPayments
-              .sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime())
-              .map((p) => ({
-                id: p.id,
-                paidAt: p.paidAt.toISOString(),
-                amountCents: p.amountCents,
-                redeemed: p.redeemedAt !== null,
-                purchasedByName:
-                  p.studentId !== holderOf(p) ? (nameById.get(p.studentId) ?? null) : null,
-              })),
-            promo: studentPromoCredits
-              .sort((a, b) => a.grantedAt.getTime() - b.grantedAt.getTime())
-              .map((c) => ({
-                id: c.id,
-                reason: c.reason,
-                grantedAt: c.grantedAt.toISOString(),
-                redeemed: c.redeemedAt !== null,
-              })),
-          }
-        : null,
-    paidMembershipsForOthers: paidForOthersCharges
-      .sort((a, b) => b.paidAt.getTime() - a.paidAt.getTime())
-      .map((c) => ({
-        studentId: holderOf(c),
-        studentName: nameById.get(holderOf(c)) ?? "Unknown",
-        amountCents: c.amountCents,
-        paidAt: c.paidAt.toISOString(),
-      })),
-    checkinsToday: studentCheckinsToday
-      .sort((a, b) => a.checkedInAt.getTime() - b.checkedInAt.getTime())
+    id: member.id,
+    name: f["Full Name"] ?? "Unnamed member",
+    email: f.Email ?? "",
+    leadLevel: f["Lead Level"] ?? null,
+    followLevel: f["Follow Level"] ?? null,
+    accessStatus: f["Access Status"] ?? "Inactive",
+    membershipStatus: f["Membership Status"] ?? "Prospect",
+    tierName: f["Tier Name"] ?? null,
+    classesAllowed,
+    remaining,
+    availableCredits: f["Available Credits"] ?? 0,
+    checkinsToday: checkinsForMember
+      .slice()
+      .sort((a, b) => (a.fields["Checked In At"] ?? "").localeCompare(b.fields["Checked In At"] ?? ""))
       .map((c) => ({
         id: c.id,
-        checkedInAt: c.checkedInAt.toISOString(),
-        checkedInBy: c.checkedInBy,
-        paymentId: c.paymentId,
-        promoCreditId: c.promoCreditId,
+        checkedInAt: c.fields["Checked In At"] ?? "",
+        programName: c.fields["Class Level"]?.[0]
+          ? (programNameById.get(c.fields["Class Level"][0]) ?? null)
+          : null,
+        role: c.fields.Role ?? null,
+        needsReview: c.fields["Needs Review"] ?? false,
+        reviewReason: c.fields["Review Reason"] ?? null,
       })),
-    checkedInToday,
-    canCheckIn,
-    requiresCreditToCheckIn,
-    everCheckedIn,
+    checkedInToday: checkinsForMember.length > 0,
   };
 }
 
-export async function listStudentStatuses(
-  opts: { query?: string; ids?: number[]; date?: string } = {}
-): Promise<StudentStatus[]> {
-  const conditions = [];
-  if (opts.query) conditions.push(like(students.name, `%${opts.query}%`));
-  if (opts.ids) conditions.push(inArray(students.id, opts.ids));
+export async function listStudentStatuses(opts: { date?: string } = {}): Promise<StudentStatus[]> {
+  const viewedDate = opts.date ?? today();
+  const isLiveToday = viewedDate === today();
 
-  const studentRows =
-    conditions.length > 0
-      ? await db
-          .select()
-          .from(students)
-          .where(conditions.length === 1 ? conditions[0] : and(...conditions))
-      : await db.select().from(students);
+  const [members, checkins, programNameById] = await Promise.all([
+    listRecords<MemberFields>(TABLES.members, {
+      fields: [
+        "Full Name",
+        "Email",
+        "Lead Level",
+        "Follow Level",
+        "Access Status",
+        "Membership Status",
+        "Tier Name",
+        "Classes Allowed",
+        "Remaining Today",
+        "Available Credits",
+      ],
+    }),
+    fetchCheckinsForDate(viewedDate),
+    fetchProgramNames(),
+  ]);
 
-  if (studentRows.length === 0) return [];
-
-  const ids = studentRows.map((s) => s.id);
-  const todayStr = opts.date ?? today();
-
-  const [membershipRows, membershipChargeRows, paymentRows, promoCreditRows, allCheckinRows] =
-    await Promise.all([
-      // holderStudentId, not studentId — that's who a membership belongs to for app
-      // purposes once it may have been transferred (see services/transfers.ts).
-      db.select().from(memberships).where(inArray(memberships.holderStudentId, ids)),
-      // Both directions: charges I currently hold (mine) AND charges I paid for that are
-      // now held by someone else (surfaced via paidMembershipsForOthers) — see buildStatus.
-      db
-        .select()
-        .from(membershipCharges)
-        .where(or(inArray(membershipCharges.holderStudentId, ids), inArray(membershipCharges.studentId, ids))),
-      db.select().from(payments).where(inArray(payments.holderStudentId, ids)),
-      db.select().from(promoCredits).where(inArray(promoCredits.studentId, ids)),
-      // Not date-filtered: buildStatus needs both the viewed day's check-ins and
-      // whether the student has ANY real check-in ever (for the New Member badge).
-      db
-        .select()
-        .from(checkins)
-        .where(and(inArray(checkins.studentId, ids), isNull(checkins.undoneAt))),
-    ]);
-
-  // Names for anyone referenced as a payer/holder who isn't already in this batch (e.g.
-  // viewing just Bob's row, but Alice paid for his membership) — needed for
-  // managedByName/purchasedByName/paidMembershipsForOthers.
-  const nameById = new Map<number, string>(studentRows.map((s) => [s.id, s.name]));
-  const missingIds = new Set<number>();
-  for (const m of membershipRows) if (!nameById.has(m.studentId)) missingIds.add(m.studentId);
-  for (const p of paymentRows) if (!nameById.has(p.studentId)) missingIds.add(p.studentId);
-  for (const c of membershipChargeRows) {
-    if (!nameById.has(c.studentId)) missingIds.add(c.studentId);
-    if (c.holderStudentId !== null && !nameById.has(c.holderStudentId)) missingIds.add(c.holderStudentId);
-  }
-  if (missingIds.size > 0) {
-    const extraStudents = await db
-      .select({ id: students.id, name: students.name })
-      .from(students)
-      .where(inArray(students.id, [...missingIds]));
-    for (const s of extraStudents) nameById.set(s.id, s.name);
+  const checkinsByMember = new Map<string, AirtableRecord<CheckinFields>[]>();
+  for (const c of checkins) {
+    const memberId = c.fields.Member?.[0];
+    if (!memberId) continue;
+    const list = checkinsByMember.get(memberId) ?? [];
+    list.push(c);
+    checkinsByMember.set(memberId, list);
   }
 
-  const statuses = studentRows.map((s) =>
-    buildStatus(s, membershipRows, membershipChargeRows, paymentRows, promoCreditRows, allCheckinRows, nameById, todayStr)
+  const statuses = members.map((m) =>
+    buildStatus(m, isLiveToday, checkinsByMember.get(m.id) ?? [], programNameById)
   );
 
-  // Not-checked-in-today first (alphabetical), checked-in-today sink to the bottom
-  // (earliest check-in first).
   statuses.sort((a, b) => {
     if (a.checkedInToday !== b.checkedInToday) return a.checkedInToday ? 1 : -1;
     if (a.checkedInToday && b.checkedInToday) {
-      return (a.checkinsToday[0]?.checkedInAt ?? "").localeCompare(
-        b.checkinsToday[0]?.checkedInAt ?? ""
-      );
+      return (a.checkinsToday[0]?.checkedInAt ?? "").localeCompare(b.checkinsToday[0]?.checkedInAt ?? "");
     }
     return a.name.localeCompare(b.name);
   });
@@ -352,27 +131,35 @@ export async function listStudentStatuses(
   return statuses;
 }
 
-export async function getStudentStatusById(id: number, date?: string): Promise<StudentStatus | null> {
-  const [status] = await listStudentStatuses({ ids: [id], date });
-  return status ?? null;
+export async function getStudentStatusById(id: string, date?: string): Promise<StudentStatus | null> {
+  const viewedDate = date ?? today();
+  const isLiveToday = viewedDate === today();
+
+  const member = await getRecordOrNull<MemberFields>(TABLES.members, id);
+  if (!member) return null;
+
+  const [checkinsForDate, programNameById] = await Promise.all([
+    fetchCheckinsForDate(viewedDate),
+    fetchProgramNames(),
+  ]);
+  const mine = checkinsForDate.filter((c) => c.fields.Member?.includes(id));
+
+  return buildStatus(member, isLiveToday, mine, programNameById);
 }
 
-// level is 1-4 (validated by the caller — see routes/students.ts) or null to unset.
 export async function updateStudentLevel(
-  id: number,
-  field: "leadLevel" | "followLevel",
+  id: string,
+  field: "Lead Level" | "Follow Level",
   level: number | null
 ): Promise<StudentStatus> {
-  const [existing] = await db.select({ id: students.id }).from(students).where(eq(students.id, id));
-  if (!existing) throw new NotFoundError("Student not found");
-
-  await db
-    .update(students)
-    .set({ [field]: level, updatedAt: new Date() })
-    .where(eq(students.id, id));
+  if (!(await getRecordOrNull<MemberFields>(TABLES.members, id))) {
+    throw new NotFoundError("Student not found");
+  }
+  await updateRecord<Record<"Lead Level" | "Follow Level", number | null>>(TABLES.members, id, {
+    [field]: level,
+  } as Record<"Lead Level" | "Follow Level", number | null>);
 
   const updated = await getStudentStatusById(id);
   if (!updated) throw new NotFoundError("Student not found");
-  broadcastChange("levels");
   return updated;
 }

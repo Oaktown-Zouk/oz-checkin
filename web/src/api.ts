@@ -1,82 +1,56 @@
-export interface CreditInfo {
-  id: number;
-  paidAt: string;
-  amountCents: number;
-  redeemed: boolean;
-  purchasedByName: string | null;
-}
-
-export interface PaidForOtherInfo {
-  studentId: number;
-  studentName: string;
-  amountCents: number;
-  paidAt: string;
-}
-
-export interface PromoCreditInfo {
-  id: number;
-  reason: string;
-  grantedAt: string;
-  redeemed: boolean;
-}
-
 export interface CheckInInfo {
-  id: number;
+  id: string;
   checkedInAt: string;
-  checkedInBy: string | null;
-  paymentId: number | null;
-  promoCreditId: number | null;
+  programName: string | null;
+  role: "Lead" | "Follow" | null;
+  needsReview: boolean;
+  reviewReason: string | null;
 }
 
 export interface StudentStatus {
-  id: number;
+  id: string;
   name: string;
   email: string;
   leadLevel: number | null;
   followLevel: number | null;
-  membership: {
-    active: boolean;
-    status: string;
-    frequency: string | null;
-    currentPeriodEnd: string | null;
-    lastPaymentAt: string | null;
-    coversCheckIn: boolean;
-    managedByName: string | null;
-  } | null;
-  heldMemberships: { id: number; status: string; frequency: string | null; amountCents: number | null }[];
-  credits: {
-    available: number;
-    total: number;
-    payments: CreditInfo[];
-    promo: PromoCreditInfo[];
-  } | null;
-  paidMembershipsForOthers: PaidForOtherInfo[];
+  accessStatus: string;
+  membershipStatus: string;
+  tierName: string | null;
+  classesAllowed: number;
+  remaining: number;
+  availableCredits: number;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
-  canCheckIn: boolean;
-  requiresCreditToCheckIn: boolean;
-  everCheckedIn: boolean;
+}
+
+export interface ProgramSummary {
+  id: string;
+  name: string;
+}
+
+export interface HeldMembership {
+  id: string;
+  status: string;
+  frequency: string | null;
+  amount: number | null;
 }
 
 export interface TimelineEvent {
-  type:
-    | "membership_started"
-    | "membership_status"
-    | "membership_payment"
-    | "membership_payment_for_other"
-    | "payment"
-    | "promo_credit"
-    | "checkin";
+  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin";
   at: string;
   label: string;
 }
 
 export interface StudentTimeline {
   status: StudentStatus;
-  firstRegisteredAt: string | null;
-  mostRecentCheckInAt: string | null;
   totalCheckIns: number;
+  mostRecentCheckInAt: string | null;
   events: TimelineEvent[];
+}
+
+export interface CheckInSelection {
+  programId: string;
+  role: "Lead" | "Follow";
 }
 
 export class UnauthorizedError extends Error {
@@ -88,9 +62,9 @@ export class UnauthorizedError extends Error {
 export class ApiError extends Error {}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  // Only claim a JSON body when there actually is one — Fastify's default JSON parser
-  // rejects an empty body sent with Content-Type: application/json (e.g. a bodyless
-  // POST like undoCheckIn), so setting this unconditionally broke every no-body call.
+  // Only claim a JSON body when there actually is one — some JSON parsers reject an
+  // empty body sent with Content-Type: application/json, so setting this
+  // unconditionally would break every no-body call (e.g. undoCheckIn).
   const res = await fetch(path, {
     ...init,
     headers: {
@@ -122,33 +96,35 @@ export const api = {
     if (date) params.set("date", date);
     return request<StudentStatus[]>(`/api/students?${params.toString()}`);
   },
-  checkIn: (studentId: number, paymentId?: number, effectiveAt?: string) =>
+  programsToday: (date?: string) => {
+    const params = new URLSearchParams();
+    if (date) params.set("date", date);
+    return request<ProgramSummary[]>(`/api/programs/today?${params.toString()}`);
+  },
+  checkIn: (studentId: string, selections: CheckInSelection[], effectiveAt?: string) =>
     request<StudentStatus>("/api/checkins", {
       method: "POST",
-      body: JSON.stringify({ studentId, paymentId, effectiveAt }),
+      body: JSON.stringify({ studentId, selections, effectiveAt }),
     }),
-  undoCheckIn: (checkinId: number) =>
+  undoCheckIn: (checkinId: string) =>
     request<StudentStatus>(`/api/checkins/${checkinId}`, { method: "DELETE" }),
-  studentTimeline: (studentId: number) =>
+  studentTimeline: (studentId: string) =>
     request<StudentTimeline>(`/api/students/${studentId}/timeline`),
-  updateLeadLevel: (studentId: number, level: number | null) =>
+  updateLeadLevel: (studentId: string, level: number | null) =>
     request<StudentStatus>(`/api/students/${studentId}/lead-level`, {
       method: "PATCH",
       body: JSON.stringify({ level }),
     }),
-  updateFollowLevel: (studentId: number, level: number | null) =>
+  updateFollowLevel: (studentId: string, level: number | null) =>
     request<StudentStatus>(`/api/students/${studentId}/follow-level`, {
       method: "PATCH",
       body: JSON.stringify({ level }),
     }),
-  transferItem: (
-    sourceStudentId: number,
-    kind: "membership" | "payment",
-    itemId: number,
-    targetEmail: string
-  ) =>
-    request<StudentStatus>(`/api/students/${sourceStudentId}/transfer-item`, {
+  heldMemberships: (studentId: string) =>
+    request<HeldMembership[]>(`/api/students/${studentId}/memberships`),
+  transferMembership: (studentId: string, planId: string, targetEmail: string) =>
+    request<StudentStatus>(`/api/students/${studentId}/transfer-membership`, {
       method: "POST",
-      body: JSON.stringify({ kind, itemId, targetEmail }),
+      body: JSON.stringify({ planId, targetEmail }),
     }),
 };

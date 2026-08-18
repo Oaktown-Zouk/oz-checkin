@@ -21,22 +21,25 @@ describe("today", () => {
     assert.match(today(), /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("matches the current local date", () => {
-    const d = new Date();
-    const expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate()
-    ).padStart(2, "0")}`;
+  it("matches the current Pacific-time date, not the server's local/UTC date", () => {
+    const expected = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
     assert.equal(today(), expected);
   });
 });
 
 describe("dateStringFor", () => {
-  it("formats an arbitrary date as YYYY-MM-DD, zero-padded", () => {
-    assert.equal(dateStringFor(new Date("2026-01-05T09:00:00")), "2026-01-05");
+  // Fixed instants (explicit UTC offsets) so these assertions don't depend on the
+  // machine running the test — dateStringFor must always resolve to Pacific time
+  // regardless of the server's own timezone (see the comment on STUDIO_TIMEZONE).
+  it("formats an arbitrary instant in Pacific time as YYYY-MM-DD, zero-padded", () => {
+    // 2026-01-05T09:00:00-08:00 (PST, UTC-8 in January) == 2026-01-05T17:00:00Z
+    assert.equal(dateStringFor(new Date("2026-01-05T17:00:00Z")), "2026-01-05");
   });
 
-  it("uses the date's own local day, not the day of `today()`", () => {
-    assert.equal(dateStringFor(new Date("2020-03-15T00:00:00")), "2020-03-15");
+  it("rolls back a calendar day for a late-evening Pacific instant already past midnight UTC", () => {
+    // 2026-08-13T20:00:00-07:00 (PDT, UTC-7 in August) == 2026-08-14T03:00:00Z — UTC's
+    // calendar day is already the 14th, but the studio's is still the 13th.
+    assert.equal(dateStringFor(new Date("2026-08-14T03:00:00Z")), "2026-08-13");
   });
 });
 

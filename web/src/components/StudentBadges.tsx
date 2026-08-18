@@ -3,10 +3,6 @@ import type { StudentStatus } from "../api.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
 import { LevelBadge } from "./LevelBadge.js";
 
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
 export function StudentBadges({
   student,
   onUpdateLeadLevel,
@@ -18,16 +14,18 @@ export function StudentBadges({
 }) {
   const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
 
-  const hasMembership = Boolean(student.membership);
-  const hasCredits = Boolean(student.credits);
-  const hasAnyPayment = hasMembership || hasCredits;
-  const creditsAvailable = student.credits?.available ?? 0;
-  const isNewMember = !student.everCheckedIn;
-  // coversCheckIn is computed server-side (active, or paused/etc. but paid within the
-  // last 30 days) and drives the actual check-in spend decision too — see
-  // services/studentStatus.ts. Kept in one place so the badge can't say "covered" while
-  // the real check-in still quietly spends a credit, or vice versa.
-  const membershipCoversCheckIn = student.membership?.coversCheckIn ?? false;
+  // "Active" — a live membership covers check-in, nothing gets spent. "Paid" — no
+  // active membership, but a recent drop-in/check-in means they're not a stranger.
+  // "Inactive" — neither; check-in still works (front desk override), but flags for
+  // review once credits run out too. See docs/airtable-schema.md, Members.Access Status.
+  const accessLabel =
+    student.accessStatus === "Active" ? "Member" : student.accessStatus === "Paid" ? "Paid" : "No access on file";
+  const accessClass =
+    student.accessStatus === "Active" ? "badge-green" : student.accessStatus === "Paid" ? "badge-gray" : "badge-red";
+
+  // Credits only matter once a membership isn't already covering check-in — showing
+  // them alongside an active membership would just be confusing, unused information.
+  const showCredits = student.accessStatus !== "Active";
 
   return (
     <div className="badges">
@@ -60,44 +58,17 @@ export function StudentBadges({
         />
       )}
 
-      {student.membership && (
-        <span
-          className={`badge ${
-            student.membership.active
-              ? "badge-green"
-              : membershipCoversCheckIn
-                ? "badge-gray"
-                : "badge-red"
-          }`}
-        >
-          {student.membership.active
-            ? "Member"
-            : // Showing the last payment date lets front desk judge for themselves whether
-              // it's good for the currently-viewed month, rather than us guessing (too fuzzy).
-              `Member (${student.membership.status}` +
-              (student.membership.lastPaymentAt
-                ? `, paid ${formatShortDate(student.membership.lastPaymentAt)})`
-                : ")")}
-          {// Set when someone else pays for this (transferred — see TransferDialog) —
-          // e.g. "Alice bought this membership for Bob."
-          student.membership.managedByName && ` · paid by ${student.membership.managedByName}`}
-        </span>
-      )}
+      {student.tierName && <span className="badge badge-blue">{student.tierName}</span>}
 
-      {/* Hidden once the membership covers this check-in (active, or paused-but-recently-
-          paid) — the check-in will be counted against the membership, not a credit, so
-          showing a credit count here would just be confusing, unused information. */}
-      {student.credits && !membershipCoversCheckIn && (
-        <span className={`badge ${creditsAvailable > 0 ? "badge-green" : "badge-amber"}`}>
-          {creditsAvailable > 0
-            ? `${creditsAvailable} credit${creditsAvailable === 1 ? "" : "s"} available`
+      <span className={`badge ${accessClass}`}>{accessLabel}</span>
+
+      {showCredits && (
+        <span className={`badge ${student.availableCredits > 0 ? "badge-green" : "badge-amber"}`}>
+          {student.availableCredits > 0
+            ? `${student.availableCredits} credit${student.availableCredits === 1 ? "" : "s"} available`
             : "No credits remaining"}
         </span>
       )}
-
-      {!hasAnyPayment && <span className="badge badge-red">No payment on file</span>}
-
-      {isNewMember && <span className="badge badge-blue">New Member</span>}
     </div>
   );
 }

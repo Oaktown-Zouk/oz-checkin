@@ -1,8 +1,9 @@
 import { useState } from "react";
-import type { StudentStatus } from "../api.js";
+import type { CheckInSelection, StudentStatus } from "../api.js";
 import { RowMenu } from "./RowMenu.js";
 import { TransferDialog } from "./TransferDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
+import { CheckInDialog } from "./CheckInDialog.js";
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -10,58 +11,28 @@ function formatTime(iso: string): string {
 
 export function StudentRow({
   student,
-  isClassDay,
+  effectiveDate,
   onCheckIn,
   onUndo,
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
-  onTransferItem,
+  onTransferMembership,
 }: {
   student: StudentStatus;
-  isClassDay: boolean;
-  onCheckIn: (studentId: number) => Promise<void>;
-  onUndo: (checkinId: number) => Promise<void>;
-  onOpenStudent: (studentId: number) => void;
-  onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
-  onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
-  onTransferItem: (
-    studentId: number,
-    kind: "membership" | "payment",
-    itemId: number,
-    targetEmail: string
-  ) => Promise<void>;
+  effectiveDate?: string;
+  onCheckIn: (studentId: string, selections: CheckInSelection[]) => Promise<void>;
+  onUndo: (checkinId: string) => Promise<void>;
+  onOpenStudent: (studentId: string) => void;
+  onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;
+  onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
+  onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [checkInOpen, setCheckInOpen] = useState(false);
 
-  const hasMembership = Boolean(student.membership);
-  const hasCredits = Boolean(student.credits);
-  const hasAnyPayment = hasMembership || hasCredits;
-  const creditsAvailable = student.credits?.available ?? 0;
-
-  async function handleCheckIn() {
-    // Every new student is granted a real, redeemable free-drop-in credit at account
-    // creation (server-side, see lib/upsertStudent.ts) — it auto-spends through the
-    // normal credit flow just like a purchased pass, so there's nothing special to
-    // confirm here beyond the same warnings any other check-in might raise.
-    const warnings: string[] = [];
-    if (!student.checkedInToday && !hasAnyPayment) warnings.push("no payment on file");
-
-    if (warnings.length > 0) {
-      const ok = window.confirm(`${student.name}: ${warnings.join(" and ")}. Check in anyway?`);
-      if (!ok) return;
-    }
-
-    setBusy(true);
-    try {
-      await onCheckIn(student.id);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleUndo(checkinId: number) {
+  async function handleUndo(checkinId: string) {
     setBusy(true);
     try {
       await onUndo(checkinId);
@@ -95,7 +66,16 @@ export function StudentRow({
       <div className="checkin-status">
         {student.checkinsToday.map((c) => (
           <div key={c.id} className="checkin-time-row">
-            <span>Checked in {formatTime(c.checkedInAt)}</span>
+            <span>
+              {formatTime(c.checkedInAt)}
+              {c.programName && ` · ${c.programName}`}
+              {c.role && ` (${c.role})`}
+              {c.needsReview && (
+                <span className="badge badge-red" title={c.reviewReason ?? undefined}>
+                  Needs review
+                </span>
+              )}
+            </span>
             <button className="link-button" disabled={busy} onClick={() => handleUndo(c.id)}>
               Undo
             </button>
@@ -104,37 +84,25 @@ export function StudentRow({
       </div>
 
       <div className="actions">
-        {!student.checkedInToday && (
-          <button
-            className="btn btn-primary"
-            disabled={busy || !isClassDay}
-            title={isClassDay ? undefined : "OZ only teaches class on Thursdays"}
-            onClick={handleCheckIn}
-          >
-            Check In
-          </button>
-        )}
-        {student.checkedInToday && creditsAvailable > 0 && (
-          <button
-            className="btn btn-secondary"
-            disabled={busy || !isClassDay}
-            title={isClassDay ? undefined : "OZ only teaches class on Thursdays"}
-            onClick={handleCheckIn}
-          >
-            Use another pass ({creditsAvailable} left)
-          </button>
-        )}
-        <RowMenu
-          items={[{ label: "Transfer membership/credit", onClick: () => setTransferOpen(true) }]}
-        />
+        <button className="btn btn-primary" disabled={busy} onClick={() => setCheckInOpen(true)}>
+          {student.checkedInToday ? "Check in to another class" : "Check In"}
+        </button>
+        <RowMenu items={[{ label: "Transfer membership", onClick: () => setTransferOpen(true) }]} />
       </div>
+
+      {checkInOpen && (
+        <CheckInDialog
+          student={student}
+          effectiveDate={effectiveDate}
+          onSubmit={(selections) => onCheckIn(student.id, selections)}
+          onClose={() => setCheckInOpen(false)}
+        />
+      )}
 
       {transferOpen && (
         <TransferDialog
           student={student}
-          onSubmit={(kind, itemId, targetEmail) =>
-            onTransferItem(student.id, kind, itemId, targetEmail)
-          }
+          onSubmit={(planId, targetEmail) => onTransferMembership(student.id, planId, targetEmail)}
           onClose={() => setTransferOpen(false)}
         />
       )}

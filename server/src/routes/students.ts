@@ -1,76 +1,64 @@
-import type { FastifyPluginAsync } from "fastify";
+import { Hono, type Context } from "hono";
 import { requireAuth } from "../lib/auth.js";
 import { listStudentStatuses, updateStudentLevel } from "../services/studentStatus.js";
-import { transferItem } from "../services/transfers.js";
 import { getStudentTimeline } from "../services/studentTimeline.js";
-import { HttpError } from "../lib/errors.js";
+import { transferMembership, heldMemberships } from "../services/transfers.js";
 import { isValidDateString } from "../lib/date.js";
+import { handleError } from "../lib/respond.js";
+
+export const studentRoutes = new Hono();
+studentRoutes.use("*", requireAuth);
+
+studentRoutes.get("/", async (c) => {
+  const date = c.req.query("date");
+  if (date !== undefined && !isValidDateString(date)) {
+    return c.json({ error: "date must be YYYY-MM-DD" }, 400);
+  }
+  return c.json(await listStudentStatuses({ date }));
+});
 
 const VALID_LEVELS = [1, 2, 3, 4];
 
-// null means "unset"; anything else must be one of VALID_LEVELS.
 function isValidLevel(level: unknown): level is number | null {
   return level === null || (typeof level === "number" && VALID_LEVELS.includes(level));
 }
 
-export const studentRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/", { preHandler: requireAuth }, async (req, reply) => {
-    const { q, date } = req.query as { q?: string; date?: string };
-    if (date !== undefined && !isValidDateString(date)) {
-      return reply.code(400).send({ error: "date must be YYYY-MM-DD" });
-    }
-    return listStudentStatuses({ query: q, date });
-  });
+async function handleLevelUpdate(c: Context, field: "Lead Level" | "Follow Level") {
+  const id = c.req.param("id") ?? "";
+  const body = await c.req.json().catch(() => ({}));
+  if (!isValidLevel(body.level)) return c.json({ error: "level must be 1-4 or null" }, 400);
+  try {
+    return c.json(await updateStudentLevel(id, field, body.level));
+  } catch (err) {
+    return handleError(c, err);
+  }
+}
 
-  app.get("/:id/timeline", { preHandler: requireAuth }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const timeline = await getStudentTimeline(Number(id));
-    if (!timeline) return reply.code(404).send({ error: "Student not found" });
-    return timeline;
-  });
+studentRoutes.patch("/:id/lead-level", (c) => handleLevelUpdate(c, "Lead Level"));
+studentRoutes.patch("/:id/follow-level", (c) => handleLevelUpdate(c, "Follow Level"));
 
-  app.patch("/:id/lead-level", { preHandler: requireAuth }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const { level } = req.body as { level?: unknown };
-    if (!isValidLevel(level)) {
-      return reply.code(400).send({ error: "level must be 1-4 or null" });
-    }
-    try {
-      return await updateStudentLevel(Number(id), "leadLevel", level);
-    } catch (err) {
-      if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
-      throw err;
-    }
-  });
+studentRoutes.get("/:id/timeline", async (c) => {
+  const id = c.req.param("id") ?? "";
+  const timeline = await getStudentTimeline(id);
+  if (!timeline) return c.json({ error: "Student not found" }, 404);
+  return c.json(timeline);
+});
 
-  app.patch("/:id/follow-level", { preHandler: requireAuth }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const { level } = req.body as { level?: unknown };
-    if (!isValidLevel(level)) {
-      return reply.code(400).send({ error: "level must be 1-4 or null" });
-    }
-    try {
-      return await updateStudentLevel(Number(id), "followLevel", level);
-    } catch (err) {
-      if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
-      throw err;
-    }
-  });
+studentRoutes.get("/:id/memberships", async (c) => {
+  const id = c.req.param("id") ?? "";
+  return c.json(await heldMemberships(id));
+});
 
-  app.post("/:id/transfer-item", { preHandler: requireAuth }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = req.body as { kind?: string; itemId?: number; targetEmail?: string };
-    if (body?.kind !== "membership" && body?.kind !== "payment") {
-      return reply.code(400).send({ error: "kind must be 'membership' or 'payment'" });
-    }
-    if (!body.itemId || !body?.targetEmail?.trim()) {
-      return reply.code(400).send({ error: "itemId and targetEmail are required" });
-    }
-    try {
-      return await transferItem(Number(id), body.kind, body.itemId, body.targetEmail);
-    } catch (err) {
-      if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
-      throw err;
-    }
-  });
-};
+studentRoutes.post("/:id/transfer-membership", async (c) => {
+  const id = c.req.param("id") ?? "";
+  const body = await c.req.json().catch(() => ({}));
+  const { planId, targetEmail } = body as { planId?: string; targetEmail?: string };
+  if (!planId || !targetEmail?.trim()) {
+    return c.json({ error: "planId and targetEmail are required" }, 400);
+  }
+  try {
+    return c.json(await transferMembership(id, planId, targetEmail));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});

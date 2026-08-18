@@ -15,12 +15,10 @@ function formatDateTime(iso: string): string {
 
 export function StudentPage({
   studentId,
-  changeSignal,
   onBack,
   onUnauthorized,
 }: {
-  studentId: number;
-  changeSignal: number;
+  studentId: string;
   onBack: () => void;
   onUnauthorized: () => void;
 }) {
@@ -46,7 +44,7 @@ export function StudentPage({
 
   useEffect(() => {
     load();
-  }, [load, changeSignal]);
+  }, [load]);
 
   async function handleUpdateLevel(kind: "lead" | "follow", level: number | null) {
     try {
@@ -59,9 +57,9 @@ export function StudentPage({
     }
   }
 
-  async function handleTransferItem(kind: "membership" | "payment", itemId: number, targetEmail: string) {
+  async function handleTransferMembership(planId: string, targetEmail: string) {
     try {
-      await api.transferItem(studentId, kind, itemId, targetEmail);
+      await api.transferMembership(studentId, planId, targetEmail);
       await load();
     } catch (err) {
       if (err instanceof UnauthorizedError) onUnauthorized();
@@ -93,17 +91,11 @@ export function StudentPage({
               className="btn btn-secondary transfer-link"
               onClick={() => setTransferOpen(true)}
             >
-              Transfer membership/credit
+              Transfer membership
             </button>
           </div>
 
           <div className="student-stats">
-            <div className="stat">
-              <div className="stat-label">First registered</div>
-              <div className="stat-value">
-                {timeline.firstRegisteredAt ? formatDate(timeline.firstRegisteredAt) : "—"}
-              </div>
-            </div>
             <div className="stat">
               <div className="stat-label">Most recent check-in</div>
               <div className="stat-value">
@@ -168,7 +160,7 @@ export function StudentPage({
       {transferOpen && timeline && (
         <TransferDialog
           student={timeline.status}
-          onSubmit={handleTransferItem}
+          onSubmit={handleTransferMembership}
           onClose={() => setTransferOpen(false)}
         />
       )}

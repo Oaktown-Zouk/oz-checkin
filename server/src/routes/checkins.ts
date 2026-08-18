@@ -1,41 +1,55 @@
-import type { FastifyPluginAsync } from "fastify";
+import { Hono } from "hono";
 import { requireAuth } from "../lib/auth.js";
-import { createCheckIn, undoCheckIn } from "../services/checkins.js";
-import { HttpError } from "../lib/errors.js";
+import { createCheckIns, undoCheckIn, type CheckInSelection } from "../services/checkins.js";
+import { handleError } from "../lib/respond.js";
 
-export const checkinRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/", { preHandler: requireAuth }, async (req, reply) => {
-    const body = req.body as { studentId: number; paymentId?: number; effectiveAt?: string };
+export const checkinRoutes = new Hono();
+checkinRoutes.use("*", requireAuth);
 
-    let effectiveAt: Date | undefined;
-    if (body.effectiveAt !== undefined) {
-      effectiveAt = new Date(body.effectiveAt);
-      if (Number.isNaN(effectiveAt.getTime())) {
-        return reply.code(400).send({ error: "Invalid effectiveAt" });
-      }
-    }
+function isValidSelections(value: unknown): value is CheckInSelection[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (s) =>
+        s &&
+        typeof s.programId === "string" &&
+        s.programId.length > 0 &&
+        (s.role === "Lead" || s.role === "Follow")
+    )
+  );
+}
 
-    try {
-      return await createCheckIn(body.studentId, {
-        paymentId: body.paymentId,
-        effectiveAt,
-        // Single shared front-desk login for now (see SPEC.md auth section) — nothing
-        // more specific to attribute a check-in to yet.
-        checkedInBy: "front-desk",
-      });
-    } catch (err) {
-      if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
-      throw err;
-    }
-  });
+checkinRoutes.post("/", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { studentId, selections, effectiveAt } = body as {
+    studentId?: string;
+    selections?: unknown;
+    effectiveAt?: string;
+  };
 
-  app.delete("/:id", { preHandler: requireAuth }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    try {
-      return await undoCheckIn(Number(id));
-    } catch (err) {
-      if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message });
-      throw err;
-    }
-  });
-};
+  if (!studentId || !isValidSelections(selections)) {
+    return c.json({ error: "studentId and at least one { programId, role } selection are required" }, 400);
+  }
+
+  let effectiveDate: Date | undefined;
+  if (effectiveAt !== undefined) {
+    effectiveDate = new Date(effectiveAt);
+    if (Number.isNaN(effectiveDate.getTime())) return c.json({ error: "Invalid effectiveAt" }, 400);
+  }
+
+  try {
+    return c.json(await createCheckIns(studentId, selections, { effectiveAt: effectiveDate }));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+checkinRoutes.delete("/:id", async (c) => {
+  const id = c.req.param("id") ?? "";
+  try {
+    return c.json(await undoCheckIn(id));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});

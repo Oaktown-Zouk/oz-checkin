@@ -1,146 +1,130 @@
-import { and, eq, isNull } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { checkins, payments, promoCredits } from "../db/schema.js";
+import {
+  createRecords,
+  updateRecord,
+  listRecords,
+  getRecordOrNull,
+  TABLES,
+  type AirtableRecord,
+} from "../airtable/client.js";
+import type { CheckinFields, CreditFields, MemberFields } from "../airtable/fields.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
-import { dateStringFor } from "../lib/date.js";
-import { broadcastChange } from "../lib/events.js";
+import { dateStringFor, STUDIO_TIMEZONE } from "../lib/date.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
-type CreditPick = { kind: "payment"; id: number } | { kind: "promo"; id: number };
-
-// Auto-selection only — the explicit `paymentId` param stays payments-only (a specific
-// choice among several purchased passes only ever makes sense for real payments; there's
-// at most one promo credit per student, so it never needs picking by id). Both lists are
-// pre-sorted oldest-first, so spending the promo credit ahead of a paid one (when it's
-// older) is the right default — it burns the freebie before eating into what they paid for.
-function pickOldestUnredeemedCredit(status: StudentStatus): CreditPick | null {
-  const paymentCandidate = status.credits?.payments.find((p) => !p.redeemed);
-  const promoCandidate = status.credits?.promo.find((c) => !c.redeemed);
-  if (!paymentCandidate) return promoCandidate ? { kind: "promo", id: promoCandidate.id } : null;
-  if (!promoCandidate) return { kind: "payment", id: paymentCandidate.id };
-  return new Date(paymentCandidate.paidAt).getTime() <= new Date(promoCandidate.grantedAt).getTime()
-    ? { kind: "payment", id: paymentCandidate.id }
-    : { kind: "promo", id: promoCandidate.id };
+export interface CheckInSelection {
+  programId: string;
+  role: "Lead" | "Follow";
 }
 
-export async function createCheckIn(
-  studentId: number,
-  opts: { paymentId?: number; checkedInBy?: string; effectiveAt?: Date } = {}
-): Promise<StudentStatus> {
-  // Front desk can backdate a correction via effectiveAt — both the day-bucket and the
-  // exact timestamp follow it, so "already checked in" / credit-cap logic below is
-  // evaluated against that day, not whatever day it actually is right now.
-  const effectiveAt = opts.effectiveAt ?? new Date();
-  const date = dateStringFor(effectiveAt);
-
-  const status = await getStudentStatusById(studentId, date);
-  if (!status) throw new NotFoundError("Student not found");
-
-  if (status.checkedInToday && !status.canCheckIn) {
-    throw new ConflictError(
-      `Already checked in on ${date} and no unredeemed credits remain to use another pass.`
-    );
-  }
-
-  let paymentIdToRedeem: number | null = null;
-  let promoCreditIdToRedeem: number | null = null;
-
-  if (opts.paymentId !== undefined) {
-    const credit = status.credits?.payments.find((p) => p.id === opts.paymentId);
-    if (!credit) throw new ConflictError("That payment doesn't belong to this student.");
-    if (credit.redeemed) throw new ConflictError("That payment has already been redeemed.");
-    paymentIdToRedeem = opts.paymentId;
-  } else if (status.checkedInToday) {
-    // Additional check-in beyond the first for this day always spends a credit.
-    const pick = pickOldestUnredeemedCredit(status);
-    if (!pick) {
-      throw new ConflictError("No unredeemed credits available to use another pass.");
-    }
-    if (pick.kind === "payment") paymentIdToRedeem = pick.id;
-    else promoCreditIdToRedeem = pick.id;
-  } else if (!status.membership?.coversCheckIn) {
-    // First check-in of the day, no membership covering it (none at all, or paused/etc.
-    // without a payment in the last 30 days): auto-spend oldest credit if any (a real
-    // payment or a promo credit like the new-student free drop-in).
-    const pick = pickOldestUnredeemedCredit(status);
-    if (pick) {
-      if (pick.kind === "payment") paymentIdToRedeem = pick.id;
-      else promoCreditIdToRedeem = pick.id;
-    }
-    // else: no covering membership, no credits — front-desk override, checked in with
-    // no payment link.
-  }
-  // else: membership covers the first check-in of the day; nothing consumed.
-
-  db.transaction((tx) => {
-    const inserted = tx
-      .insert(checkins)
-      .values({
-        studentId,
-        date,
-        checkedInAt: effectiveAt,
-        checkedInBy: opts.checkedInBy ?? null,
-        paymentId: paymentIdToRedeem,
-        promoCreditId: promoCreditIdToRedeem,
-      })
-      .returning()
-      .get();
-
-    if (paymentIdToRedeem !== null) {
-      tx
-        .update(payments)
-        .set({ redeemedAt: effectiveAt, redeemedByCheckinId: inserted.id })
-        .where(eq(payments.id, paymentIdToRedeem))
-        .run();
-    }
-
-    if (promoCreditIdToRedeem !== null) {
-      tx
-        .update(promoCredits)
-        .set({ redeemedAt: effectiveAt, redeemedByCheckinId: inserted.id })
-        .where(eq(promoCredits.id, promoCreditIdToRedeem))
-        .run();
-    }
+async function checkinsForDate(dateStr: string, fields: string[]): Promise<AirtableRecord<CheckinFields>[]> {
+  return listRecords<CheckinFields>(TABLES.checkins, {
+    filterByFormula: `AND(DATETIME_FORMAT(SET_TIMEZONE({Checked In At}, '${STUDIO_TIMEZONE}'), 'YYYY-MM-DD') = '${dateStr}', {Undone At} = BLANK())`,
+    fields,
   });
+}
 
-  const updated = await getStudentStatusById(studentId, date);
+async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): Promise<void> {
+  const credits = await listRecords<CreditFields>(TABLES.credits, {
+    filterByFormula: "{Available} = 1",
+    fields: ["Member", "Granted At"],
+    sort: [{ field: "Granted At", direction: "asc" }],
+  });
+  const candidate = credits.find((c) => (c.fields.Member ?? []).includes(studentId));
+
+  if (candidate) {
+    await updateRecord<CreditFields>(TABLES.credits, candidate.id, {
+      "Consumed At": new Date().toISOString(),
+      "Consumed By Check-in": [checkinId],
+    });
+  } else {
+    await updateRecord<CheckinFields>(TABLES.checkins, checkinId, {
+      "Needs Review": true,
+      "Review Reason": "Beyond tier allowance, no credit available",
+    });
+  }
+}
+
+// Backdated path only — Automation C's same-day guard means it no-ops for these, so
+// the app mirrors its gating logic itself, parameterized by the backdated date instead
+// of literal "today." See docs/airtable-schema.md "Backdating".
+async function gateBackdatedCheckIns(
+  studentId: string,
+  effectiveAt: Date,
+  createdCheckins: AirtableRecord<CheckinFields>[]
+): Promise<void> {
+  const dateStr = dateStringFor(effectiveAt);
+  const createdIds = new Set(createdCheckins.map((c) => c.id));
+
+  const existing = await checkinsForDate(dateStr, ["Member"]);
+  const priorCount = existing.filter(
+    (c) => (c.fields.Member ?? []).includes(studentId) && !createdIds.has(c.id)
+  ).length;
+
+  const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);
+  const classesAllowed = member?.fields["Classes Allowed"] ?? 0;
+
+  // createRecords (batch create) preserves request order, so index+1 is this row's
+  // position among today's check-ins for this student — same semantics as Automation
+  // C's nthToday.
+  for (let i = 0; i < createdCheckins.length; i++) {
+    const nth = priorCount + i + 1;
+    if (nth > classesAllowed) {
+      await consumeOldestCreditOrFlag(studentId, createdCheckins[i].id);
+    }
+  }
+}
+
+export async function createCheckIns(
+  studentId: string,
+  selections: CheckInSelection[],
+  opts: { effectiveAt?: Date } = {}
+): Promise<StudentStatus> {
+  if (selections.length === 0) {
+    throw new ConflictError("At least one program/role selection is required.");
+  }
+
+  const isLive = !opts.effectiveAt;
+  const checkedInAt = opts.effectiveAt ?? new Date();
+
+  const created = await createRecords<CheckinFields>(
+    TABLES.checkins,
+    selections.map((s) => ({
+      Member: [studentId],
+      "Checked In At": checkedInAt.toISOString(),
+      "Class Level": [s.programId],
+      Role: s.role,
+    }))
+  );
+
+  if (!isLive) {
+    await gateBackdatedCheckIns(studentId, checkedInAt, created);
+  }
+  // Live path: Automation C (same-day guarded) handles gating/credit-consumption on
+  // its own once these records land — nothing more to do here.
+
+  const updated = await getStudentStatusById(studentId, isLive ? undefined : dateStringFor(checkedInAt));
   if (!updated) throw new NotFoundError("Student not found");
-  broadcastChange("checkin");
   return updated;
 }
 
-export async function undoCheckIn(checkinId: number): Promise<StudentStatus> {
-  const [checkin] = await db
-    .select()
-    .from(checkins)
-    .where(and(eq(checkins.id, checkinId), isNull(checkins.undoneAt)));
+export async function undoCheckIn(checkinId: string): Promise<StudentStatus> {
+  const checkin = await getRecordOrNull<CheckinFields>(TABLES.checkins, checkinId);
+  if (!checkin) throw new NotFoundError("Check-in not found");
+  if (checkin.fields["Undone At"]) throw new ConflictError("Already undone");
 
-  if (!checkin) throw new NotFoundError("Check-in not found (or already undone)");
+  const memberId = checkin.fields.Member?.[0];
+  if (!memberId) throw new NotFoundError("Student not found");
 
-  db.transaction((tx) => {
-    tx.update(checkins).set({ undoneAt: new Date() }).where(eq(checkins.id, checkinId)).run();
-
-    if (checkin.paymentId !== null) {
-      tx
-        .update(payments)
-        .set({ redeemedAt: null, redeemedByCheckinId: null })
-        .where(eq(payments.id, checkin.paymentId))
-        .run();
-    }
-
-    if (checkin.promoCreditId !== null) {
-      tx
-        .update(promoCredits)
-        .set({ redeemedAt: null, redeemedByCheckinId: null })
-        .where(eq(promoCredits.id, checkin.promoCreditId))
-        .run();
-    }
+  await updateRecord<CheckinFields>(TABLES.checkins, checkinId, {
+    "Undone At": new Date().toISOString(),
   });
+  // Automation D frees any credit this check-in consumed, and the live rollup
+  // (Checked In Today (Live) -> Remaining Today) self-corrects — nothing else to do.
 
-  // Return status for the day the check-in belonged to, not literally today — undoing a
-  // backdated correction should reflect back on that day's view, not "today"'s.
-  const updated = await getStudentStatusById(checkin.studentId, checkin.date);
+  const viewedDate = checkin.fields["Checked In At"]
+    ? dateStringFor(new Date(checkin.fields["Checked In At"]))
+    : undefined;
+  const updated = await getStudentStatusById(memberId, viewedDate);
   if (!updated) throw new NotFoundError("Student not found");
-  broadcastChange("undo");
   return updated;
 }

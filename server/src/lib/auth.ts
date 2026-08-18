@@ -1,7 +1,11 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
+import type { Context, Next } from "hono";
+import { getCookie } from "hono/cookie";
+import { SESSION_COOKIE_NAME, isValidSessionValue } from "./session.js";
 
-export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
-  if (!req.session.get("authenticated")) {
-    reply.code(401).send({ error: "Unauthorized" });
+export async function requireAuth(c: Context, next: Next) {
+  const cookie = getCookie(c, SESSION_COOKIE_NAME);
+  if (!isValidSessionValue(cookie)) {
+    return c.json({ error: "Unauthorized" }, 401);
   }
+  await next();
 }

@@ -1,31 +1,26 @@
-import type { StudentStatus } from "../api.js";
+import type { CheckInSelection, StudentStatus } from "../api.js";
 import { StudentRow } from "./StudentRow.js";
 
 export function StudentList({
   students,
   loading,
-  isClassDay,
+  effectiveDate,
   onCheckIn,
   onUndo,
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
-  onTransferItem,
+  onTransferMembership,
 }: {
   students: StudentStatus[];
   loading: boolean;
-  isClassDay: boolean;
-  onCheckIn: (studentId: number) => Promise<void>;
-  onUndo: (checkinId: number) => Promise<void>;
-  onOpenStudent: (studentId: number) => void;
-  onUpdateLeadLevel: (studentId: number, level: number | null) => Promise<void>;
-  onUpdateFollowLevel: (studentId: number, level: number | null) => Promise<void>;
-  onTransferItem: (
-    studentId: number,
-    kind: "membership" | "payment",
-    itemId: number,
-    targetEmail: string
-  ) => Promise<void>;
+  effectiveDate?: string;
+  onCheckIn: (studentId: string, selections: CheckInSelection[]) => Promise<void>;
+  onUndo: (checkinId: string) => Promise<void>;
+  onOpenStudent: (studentId: string) => void;
+  onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;
+  onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
+  onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
 }) {
   if (loading && students.length === 0) {
     return <p className="empty-state">Loading…</p>;
@@ -40,13 +35,13 @@ export function StudentList({
         <StudentRow
           key={s.id}
           student={s}
-          isClassDay={isClassDay}
+          effectiveDate={effectiveDate}
           onCheckIn={onCheckIn}
           onUndo={onUndo}
           onOpenStudent={onOpenStudent}
           onUpdateLeadLevel={onUpdateLeadLevel}
           onUpdateFollowLevel={onUpdateFollowLevel}
-          onTransferItem={onTransferItem}
+          onTransferMembership={onTransferMembership}
         />
       ))}
     </div>

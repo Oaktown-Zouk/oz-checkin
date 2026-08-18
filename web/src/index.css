@@ -547,15 +547,7 @@ body {
   background: var(--blue);
 }
 
-.timeline-dot-membership_payment {
-  background: var(--blue);
-}
-
-.timeline-dot-membership_payment_for_other {
-  background: var(--purple);
-}
-
-.timeline-dot-promo_credit {
+.timeline-dot-credit_granted {
   background: var(--green);
 }
 
@@ -587,4 +579,44 @@ body {
     grid-template-columns: 1fr;
     justify-items: start;
   }
+}
+
+.program-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.program-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.program-picker-name {
+  font-size: 0.9rem;
+}
+
+.program-picker-roles {
+  display: flex;
+  gap: 6px;
+}
+
+.role-toggle {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: white;
+  color: #111827;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.role-toggle-selected {
+  background: #111827;
+  color: white;
+  border-color: #111827;
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, UnauthorizedError, type StudentStatus } from "./api.js";
+import { api, UnauthorizedError, type CheckInSelection, type StudentStatus } from "./api.js";
 import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
@@ -10,18 +10,12 @@ function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 }
 
-const CLASS_WEEKDAY = 4; // Thursday (0 = Sunday) — the only day OZ teaches class.
-
-function isClassDay(effectiveAt: string): boolean {
-  const viewedDate = effectiveAt ? new Date(effectiveAt) : new Date();
-  return viewedDate.getDay() === CLASS_WEEKDAY;
-}
-
-type Route = { type: "list" } | { type: "student"; id: number };
+type Route = { type: "list" } | { type: "student"; id: string };
 
 function parseRoute(pathname: string): Route {
-  const match = pathname.match(/^\/students\/(\d+)$/);
-  if (match) return { type: "student", id: Number(match[1]) };
+  // Airtable record ids (e.g. "recAbCd1234EfGhIj"), not the old numeric SQLite ids.
+  const match = pathname.match(/^\/students\/([^/]+)$/);
+  if (match) return { type: "student", id: match[1] };
   return { type: "list" };
 }
 
@@ -55,10 +49,6 @@ export function App() {
   // silently snapping to live.
   const [effectiveAt, setEffectiveAt] = useState(() => parseEffectiveAt(window.location.search));
   const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
-  // Class only runs Thursdays — the Check In button is disabled for any other viewed
-  // date (live or backdated), so front desk can't accidentally record a visit on a day
-  // there's no class to attend.
-  const classDay = isClassDay(effectiveAt);
 
   useEffect(() => {
     function onPopState() {
@@ -70,7 +60,7 @@ export function App() {
   }, []);
 
   const navigateToStudent = useCallback(
-    (id: number) => {
+    (id: string) => {
       window.history.pushState(null, "", buildUrl({ type: "student", id }, effectiveAt));
       setRoute({ type: "student", id });
     },
@@ -123,11 +113,6 @@ export function App() {
     return students.filter((s) => s.name.toLowerCase().includes(q));
   }, [students, query]);
 
-  // Bumped on every backend-pushed "changed" event (see the SSE effect below). Both the
-  // list view and StudentPage react to it independently via their own effects, so
-  // whichever is actually on screen stays live without polling.
-  const [changeSignal, setChangeSignal] = useState(0);
-
   useEffect(() => {
     if (!authenticated) return;
     // effectiveDate can change rapidly while adjusting the backdate picker — debounced
@@ -135,39 +120,12 @@ export function App() {
     // longer triggers a fetch at all (see visibleStudents above).
     const handle = setTimeout(() => refreshStudents(effectiveDate), 250);
     return () => clearTimeout(handle);
-  }, [authenticated, effectiveDate, changeSignal, refreshStudents]);
+  }, [authenticated, effectiveDate, refreshStudents]);
 
-  // One persistent Server-Sent Events connection instead of polling on a timer: the
-  // backend pushes a "changed" event after any real write (check-in, undo, merge, sync
-  // landing) so every open tab — useful once there's more than one front-desk device —
-  // picks it up right away. The very first event on every connection (including
-  // reconnects) is the server's per-boot random id; EventSource auto-reconnects on its
-  // own after a network blip or a backend restart, and comparing bootId is how we tell
-  // those apart — same server on reconnect means no reload, a different id means the
-  // process actually restarted, so reload to pick up any new frontend build too.
-  useEffect(() => {
-    if (!authenticated) return;
-
-    let knownBootId: string | null = null;
-    const source = new EventSource("/api/events");
-
-    source.addEventListener("boot", (e) => {
-      const { bootId } = JSON.parse((e as MessageEvent).data);
-      if (knownBootId === null) knownBootId = bootId;
-      else if (bootId !== knownBootId) window.location.reload();
-    });
-
-    source.addEventListener("changed", () => {
-      setChangeSignal((n) => n + 1);
-    });
-
-    return () => source.close();
-  }, [authenticated]);
-
-  async function handleCheckIn(studentId: number) {
+  async function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
     try {
       const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
-      await api.checkIn(studentId, undefined, effectiveIso);
+      await api.checkIn(studentId, selections, effectiveIso);
       await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
@@ -175,7 +133,7 @@ export function App() {
     }
   }
 
-  async function handleUndo(checkinId: number) {
+  async function handleUndo(checkinId: string) {
     try {
       await api.undoCheckIn(checkinId);
       await refreshStudents(effectiveDate);
@@ -185,7 +143,7 @@ export function App() {
     }
   }
 
-  async function handleUpdateLeadLevel(studentId: number, level: number | null) {
+  async function handleUpdateLeadLevel(studentId: string, level: number | null) {
     try {
       await api.updateLeadLevel(studentId, level);
       await refreshStudents(effectiveDate);
@@ -195,7 +153,7 @@ export function App() {
     }
   }
 
-  async function handleUpdateFollowLevel(studentId: number, level: number | null) {
+  async function handleUpdateFollowLevel(studentId: string, level: number | null) {
     try {
       await api.updateFollowLevel(studentId, level);
       await refreshStudents(effectiveDate);
@@ -205,14 +163,9 @@ export function App() {
     }
   }
 
-  async function handleTransferItem(
-    studentId: number,
-    kind: "membership" | "payment",
-    itemId: number,
-    targetEmail: string
-  ) {
+  async function handleTransferMembership(studentId: string, planId: string, targetEmail: string) {
     try {
-      await api.transferItem(studentId, kind, itemId, targetEmail);
+      await api.transferMembership(studentId, planId, targetEmail);
       await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError) setAuthenticated(false);
@@ -228,12 +181,7 @@ export function App() {
 
   if (route.type === "student") {
     return (
-      <StudentPage
-        studentId={route.id}
-        changeSignal={changeSignal}
-        onBack={navigateToList}
-        onUnauthorized={() => setAuthenticated(false)}
-      />
+      <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
     );
   }
 
@@ -242,6 +190,16 @@ export function App() {
       <header className="app-header">
         <h1>OZ Check-In</h1>
         <div className="header-controls">
+          {/* No live cross-device push (see SPEC.md) — front desk refreshes manually if
+              another device's action needs to show up here. */}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={loading}
+            onClick={() => refreshStudents(effectiveDate)}
+          >
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
           <EffectiveDateControl value={effectiveAt} onChange={handleEffectiveAtChange} />
         </div>
       </header>
@@ -262,13 +220,13 @@ export function App() {
       <StudentList
         students={visibleStudents}
         loading={loading}
-        isClassDay={classDay}
+        effectiveDate={effectiveDate}
         onCheckIn={handleCheckIn}
         onUndo={handleUndo}
         onOpenStudent={navigateToStudent}
         onUpdateLeadLevel={handleUpdateLeadLevel}
         onUpdateFollowLevel={handleUpdateFollowLevel}
-        onTransferItem={handleTransferItem}
+        onTransferMembership={handleTransferMembership}
       />
     </div>
   );
