@@ -118,13 +118,18 @@ dialog. Unchanged from the previous version of this app.
 
 - **Program + Role, not a single "Check In" button.** Front desk opens the check-in
   picker, sees that day's active `Programs` (today, or the backdated date if viewing
-  one — see `GET /api/programs/today?date=`), and for each program picks Lead or Follow
-  (one or the other, not both — checking in as both requires two separate rows/
-  submissions). Selecting several programs and submitting creates one `Check-ins`
-  record per selection; each is independently gated (checking into 2 classes when the
-  tier only allows 1/day correctly consumes/flags for the second one).
-- **"Today's active Programs"** = `Status = Active`, today's weekday in `Weekdays`,
-  within `Start Date`/`End Date`, and not in `Skip Dates` (comma-separated `YYYY-MM-DD`).
+  one), and for each program picks Lead or Follow (one or the other, not both —
+  checking in as both requires two separate rows/submissions). Selecting several
+  programs and submitting creates one `Check-ins` record per selection; each is
+  independently gated (checking into 2 classes when the tier only allows 1/day
+  correctly consumes/flags for the second one).
+- **Program schedules are fetched once per session** (`GET /api/programs`, no date
+  param — all `Status = Active` programs with their raw weekday/date-range/skip-date
+  fields), not re-fetched every time the check-in picker opens. "Which programs are
+  active for a given day" (`Status = Active`, that date's weekday in `Weekdays`, within
+  `Start Date`/`End Date`, not in `Skip Dates` — comma-separated `YYYY-MM-DD`) is
+  computed **client-side** against whichever date is currently relevant (live or
+  backdated), so backdating re-filters instantly with no extra round-trip.
 - **Access/credit gating is tier-based**, computed by Airtable (see "Credits system"
   above) — not the old app's "one free check-in per active membership."
 - **Undo preserves history**: `Check-ins.Undone At` gets set rather than deleting the
@@ -182,7 +187,7 @@ not requested yet.
 │     ├─ GET  students/:id/timeline              │
 │     ├─ GET  students/:id/memberships           │
 │     ├─ POST students/:id/transfer-membership   │
-│     ├─ GET  programs/today                     │
+│     ├─ GET  programs                           │
 │     ├─ POST checkins                           │
 │     └─ DELETE checkins/:id                     │
 │              │                                 │
@@ -243,8 +248,10 @@ authenticated session (`requireAuth` middleware — 401 if missing/invalid/expir
   Recurring Plan's `Covers Member` to the student found by `targetEmail`. 400 if
   missing fields; 404 if the plan or target student doesn't exist; 409 if the plan
   doesn't currently belong to `:id` or already belongs to the target.
-- `GET /api/programs/today?date=<YYYY-MM-DD>` — today's (or the given date's) active
-  Programs, for the check-in picker.
+- `GET /api/programs` — all `Status = Active` Programs with their raw weekday/date-
+  range/skip-date fields, for the check-in picker to filter client-side against
+  whichever date is relevant (see "Check-in semantics"). Fetched once per session, not
+  per picker open.
 - `POST /api/checkins` `{ studentId, selections: [{ programId, role }], effectiveAt? }`
   — creates one `Check-ins` record per selection. 400 if `studentId`/`selections`
   missing or malformed, or `effectiveAt` doesn't parse.

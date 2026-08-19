@@ -6,8 +6,6 @@
   "scripts": {
     "dev": "tsx watch --exclude 'data/**' --exclude 'drizzle/**' src/dev.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/dev.js",
-    "start:scratch": "node --env-file=.env.scratch dist/dev.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "migrate:airtable": "tsx src/scripts/migrateToAirtable.ts",

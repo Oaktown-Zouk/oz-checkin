@@ -1,96 +1,119 @@
 # OZ Check-In
 
 Student check-in tool for Oaktown Zouk. See [`SPEC.md`](./SPEC.md) for the full design
-and the reasoning behind it.
+and the reasoning behind it, and [`docs/airtable-schema.md`](./docs/airtable-schema.md)
+for the Airtable schema/field reference.
 
 ```
-server/   Fastify + TypeScript API, SQLite (Drizzle ORM)
-web/      React + Vite front-desk SPA
+server/             Hono API — Netlify Functions in production, runnable standalone
+                     for local dev. Airtable is the system of record; no local database.
+web/                 React + Vite front-desk SPA
+netlify/functions/   The one Netlify Function (wraps the Hono app)
+netlify.toml         Netlify build/functions/publish config
 ```
 
-> **Mid-migration note:** this app is being moved to Airtable (as the system of record,
-> including the Givebutter sync) + Netlify Functions — see `SPEC.md` and the project's
-> transition plan. Google Forms (waivers) and the direct Givebutter sync have already
-> been removed from this codebase; what's described below is the interim state.
-
-In production these run as **one process**: the server serves the built SPA as static
-files. In development they run as two, with Vite proxying `/api` to the server.
+**Airtable is the database.** This app has no local database of its own — it reads and
+writes an Airtable base directly over its REST API. `server/src/db/` (SQLite/Drizzle)
+and `server/src/scripts/migrate*.ts` still exist only as the one-time migration path
+that moved the *old* version of this app's data (which did run on local SQLite) into
+Airtable; they're not part of the running app anymore and are slated for deletion once
+that migration is fully trusted (see `SPEC.md`'s cutover notes).
 
 ## Prerequisites
 
-- Node.js 22.5+ (uses the built-in `node:sqlite` module — see `SPEC.md` for why)
+- Node.js 22.5+
 - npm
+- An Airtable base with the schema this app expects (see `docs/airtable-schema.md`) and
+  a Personal Access Token for it (`schema.bases:read`, `data.records:read`,
+  `data.records:write`)
 
 ## Setup
 
 ```bash
 npm install
 
-cp server/.env.example server/.env
-# edit server/.env — at minimum set SESSION_SECRET and CHECKIN_PASSWORD:
-#   openssl rand -hex 32   # use the output for SESSION_SECRET
-
-npm run db:generate   # generates SQL migration files from the schema (server/drizzle/)
-npm run db:migrate    # applies them, creating server/data/oz-checkin.sqlite
+cp .env.example .env
+# fill in AIRTABLE_PAT, AIRTABLE_BASE_ID, SESSION_SECRET, CHECKIN_PASSWORD
 ```
 
-At this point you can run the app fully locally with **sample data** and no API keys:
+**Two env files exist, both needed, kept in sync manually:**
+- **`.env`** (repo root) — read by `netlify dev`, which has no concept of workspace-
+  specific env files.
+- **`server/.env`** — read by `npm run dev` (the plain `@hono/node-server` path, not
+  going through the Netlify runtime).
+
+Both need the same four variables. `.env.example` (root) and `server/.env.example`
+document them.
+
+## Running locally
+
+**Recommended — the real Netlify runtime:**
 
 ```bash
-npm run seed          # wipes and repopulates the DB with sample students
-npm run dev:server    # terminal 1 — API on :3000
+npm run dev:netlify
+```
+
+Runs the actual Netlify Dev proxy (Vite + the Function together) at
+`http://localhost:8888` — the closest local approximation to production, since it's
+the same routing/runtime Netlify uses when deployed. This is also what's meant by
+"run it for real on my laptop" before deciding to deploy — there's no other local
+"production mode" script; `netlify dev` **is** that mode here.
+
+> `netlify-cli` auto-detects this as an npm-workspaces monorepo and normally prompts to
+> pick one workspace as "the project," which doesn't fit this repo's shape (the real
+> site spans both `server/` and `web/` via the root `netlify.toml`). `dev:netlify` is
+> pre-wired with `--filter web` to skip that prompt — picking `web` still correctly
+> resolves the root `netlify.toml`/`netlify/functions` (config resolution walks
+> upward), and it's a natural fit anyway since `web` is what needs its own dev server
+> (Vite) proxied alongside the Function.
+
+**Faster iteration — standalone, no Netlify runtime:**
+
+```bash
+npm run dev:server    # terminal 1 — API on :3000 (@hono/node-server, auto-restarts)
 npm run dev:web       # terminal 2 — SPA on :5173, proxying /api to :3000
 ```
 
-Open http://localhost:5173, sign in with the `CHECKIN_PASSWORD` you set, and search.
+Skips Netlify's function-bundling step on every change, at the cost of not exercising
+the actual Netlify Functions runtime — reach for `dev:netlify` before trusting a change
+that touches routing/deployment behavior specifically.
 
-There's currently no way to populate real payment/membership data locally other than
-`npm run seed` — the Givebutter sync that used to do this has been removed as part of
-the move to Airtable, which will become the new source of truth for that data (see the
-transition plan). Until that lands, this app runs on whatever's already in
-`server/data/oz-checkin.sqlite` plus manual seeding.
+Either way: open the app (`:8888` or `:5173`), sign in with `CHECKIN_PASSWORD`.
 
-## Running for real
+**Everything both modes talk to is the real Airtable base** — there's no local/seed
+data mode anymore (the old SQLite-backed `npm run seed` is gone along with the
+database it seeded). Use throwaway test records in Airtable directly if you need to
+exercise a flow without touching real students — see the migration scripts and their
+`--apply`-gated dry-run pattern for the general approach this project has used for
+that.
+
+## Testing
 
 ```bash
-npm run build   # builds web/dist, then compiles server to server/dist
-npm start       # runs the single production process, serving both API and SPA
+npm test          # server unit tests (node:test) — currently just lib/date.ts's
+                   # pure functions; the Airtable-backed services have no local fake
+                   # to test against (see below), so they're verified manually/live
+npm run typecheck  # both workspaces + the Netlify function
+npm run build      # both workspaces
 ```
 
-This is one persistent Node process. Running it locally on a front-desk laptop (as
-planned for the first few weeks) works the same way.
+There's no in-memory fake for Airtable's live formulas/automations (the Credits system,
+tier gating, etc. depend on them), so service-level behavior is verified by hand
+against the real base with throwaway records, not automated tests — see `SPEC.md`'s
+"Credits system" section for what's actually being relied on there.
 
-## Testing / manual verification — don't touch the real DB
-
-`server/data/oz-checkin.sqlite` (the path in your real `server/.env`) holds real check-in
-history once this is in use, with no external source of truth to recover it from if
-wiped.
-
-- For anything automatable, use `npm test` — it runs against an isolated in-memory DB
-  (`.env.test`) and never touches a file on disk.
-- For a manual/browser check against realistic data, use `npm run start:scratch` — reads
-  `server/.env.scratch` (separate `DATABASE_PATH`, password, **and port — `:3001`, not
-  `:3000`**) so a live check-in made while poking at the UI lands in a throwaway file,
-  not the real one, and this process can never collide with (or get killed alongside) a
-  real instance on `:3000`.
-- Never run `rm`/reset against the path in the real `server/.env`.
-- The real instance (`npm start`, port `:3000`) should be left running after a change is
-  verified, so it's ready to try immediately at http://localhost:3000 without needing to
-  start it yourself.
-- **`npm run db:migrate` against the real `.env` is not always safe to run casually** —
-  most schema changes are additive (`CREATE`/`ALTER ADD COLUMN`), but a migration can
-  also `DROP` a table/column (e.g. the migration that removed `waivers`/`student_emails`
-  as part of retiring Google Forms and the merge feature) — check what a generated
-  migration actually does before applying it to the real database.
+**TODO:** build or find a module that fakes the Airtable REST API (records + formula
+evaluation) well enough to test `airtable/client.ts`'s callers without hitting the real
+base. Would unlock real `services/*` unit tests instead of hand-verification against
+live data — the main testing gap this project currently has.
 
 ## Useful commands
 
 | Command | What it does |
 |---|---|
-| `npm run dev:server` / `npm run dev:web` | Dev mode, two processes |
-| `npm run watch` | Backend auto-restarts on save (`tsx watch`) + frontend auto-rebuilds on save (`vite build --watch`), together, serving on whichever `PORT`/`DATABASE_PATH` the active env points at — leave it running against the real `.env` instead of manually rebuilding after each change |
-| `npm run build && npm start` | Production mode, one process |
-| `npm run seed` | Reset local DB to sample data (dev only — never run against real check-in history) |
-| `npm run typecheck` | Type-check both workspaces |
-| `npm test` | Run the server unit tests (`node:test`, in-memory DB, dev DB never touched) |
-| `npm run db:generate` | Regenerate migrations after changing `server/src/db/schema.ts` |
+| `npm run dev:netlify` | Real Netlify Dev runtime — recommended for anything beyond quick iteration |
+| `npm run dev:server` / `npm run dev:web` | Two-terminal fast-iteration alternative |
+| `npm run build` | Production build — `web/dist` (static) + compiled `server/dist` (unused by Netlify directly, but keeps the workspace typechecking/buildable standalone) |
+| `npm run typecheck` | Type-check server, web, and the Netlify function |
+| `npm test` | Server unit tests |
+| `npm run migrate:airtable` / `npm run migrate:credits` | One-time historical-data migration scripts (already run against production — see `server/src/scripts/`) — dry-run by default, `--apply` to write |
