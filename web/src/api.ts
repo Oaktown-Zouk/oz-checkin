@@ -23,9 +23,13 @@ export interface StudentStatus {
   checkedInToday: boolean;
 }
 
-export interface ProgramSummary {
+export interface ProgramSchedule {
   id: string;
   name: string;
+  weekdays: string[];
+  startDate: string | null;
+  endDate: string | null;
+  skipDates: string[];
 }
 
 export interface HeldMembership {
@@ -96,11 +100,9 @@ export const api = {
     if (date) params.set("date", date);
     return request<StudentStatus[]>(`/api/students?${params.toString()}`);
   },
-  programsToday: (date?: string) => {
-    const params = new URLSearchParams();
-    if (date) params.set("date", date);
-    return request<ProgramSummary[]>(`/api/programs/today?${params.toString()}`);
-  },
+  // Fetched once on load (see App.tsx), not per check-in dialog open — filtered by
+  // date client-side, see programSchedule.ts.
+  programs: () => request<ProgramSchedule[]>("/api/programs"),
   checkIn: (studentId: string, selections: CheckInSelection[], effectiveAt?: string) =>
     request<StudentStatus>("/api/checkins", {
       method: "POST",

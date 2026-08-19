@@ -1,48 +1,41 @@
 import { listRecords, TABLES } from "../airtable/client.js";
 import type { ProgramFields } from "../airtable/fields.js";
-import { today } from "../lib/date.js";
 
-export interface ProgramSummary {
+export interface ProgramSchedule {
   id: string;
   name: string;
+  weekdays: string[];
+  startDate: string | null;
+  endDate: string | null;
+  skipDates: string[];
 }
 
-const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function weekdayNameFor(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return WEEKDAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+function parseSkipDates(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-function parseSkipDates(raw: string | undefined): Set<string> {
-  if (!raw) return new Set();
-  return new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
-}
-
-// Defaults to today, but accepts an explicit date so the check-in picker shows the
-// right classes when backdating (e.g. adding a forgotten check-in for a past Thursday).
-export async function activePrograms(dateStr: string = today()): Promise<ProgramSummary[]> {
-  const weekday = weekdayNameFor(dateStr);
-
+// Fetched once by the client on load rather than re-fetched every time the check-in
+// picker opens — the weekday/date-range/skip-dates filtering (see
+// web/src/programSchedule.ts) happens client-side against whichever date (live or
+// backdated) is currently relevant, so one fetch covers the whole session.
+export async function listActivePrograms(): Promise<ProgramSchedule[]> {
   const programs = await listRecords<ProgramFields>(TABLES.programs, {
     filterByFormula: "{Status} = 'Active'",
     fields: ["Program Name", "Weekdays", "Start Date", "End Date", "Skip Dates"],
   });
 
   return programs
-    .filter((p) => {
-      const f = p.fields;
-      if (!(f.Weekdays ?? []).includes(weekday)) return false;
-      if (f["Start Date"] && f["Start Date"] > dateStr) return false;
-      if (f["End Date"] && f["End Date"] < dateStr) return false;
-      if (parseSkipDates(f["Skip Dates"]).has(dateStr)) return false;
-      return true;
-    })
-    .map((p) => ({ id: p.id, name: p.fields["Program Name"] ?? "Unnamed program" }))
+    .map((p) => ({
+      id: p.id,
+      name: p.fields["Program Name"] ?? "Unnamed program",
+      weekdays: p.fields.Weekdays ?? [],
+      startDate: p.fields["Start Date"] ?? null,
+      endDate: p.fields["End Date"] ?? null,
+      skipDates: parseSkipDates(p.fields["Skip Dates"]),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

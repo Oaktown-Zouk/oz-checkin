@@ -1,10 +1,11 @@
-import type { CheckInSelection, StudentStatus } from "../api.js";
+import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
 import { StudentRow } from "./StudentRow.js";
 
 export function StudentList({
   students,
   loading,
   effectiveDate,
+  programs,
   onCheckIn,
   onUndo,
   onOpenStudent,
@@ -15,6 +16,7 @@ export function StudentList({
   students: StudentStatus[];
   loading: boolean;
   effectiveDate?: string;
+  programs: ProgramSchedule[];
   onCheckIn: (studentId: string, selections: CheckInSelection[]) => Promise<void>;
   onUndo: (checkinId: string) => Promise<void>;
   onOpenStudent: (studentId: string) => void;
@@ -36,6 +38,7 @@ export function StudentList({
           key={s.id}
           student={s}
           effectiveDate={effectiveDate}
+          programs={programs}
           onCheckIn={onCheckIn}
           onUndo={onUndo}
           onOpenStudent={onOpenStudent}

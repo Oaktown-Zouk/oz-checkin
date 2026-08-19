@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CheckInSelection, StudentStatus } from "../api.js";
+import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
 import { RowMenu } from "./RowMenu.js";
 import { TransferDialog } from "./TransferDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
@@ -12,6 +12,7 @@ function formatTime(iso: string): string {
 export function StudentRow({
   student,
   effectiveDate,
+  programs,
   onCheckIn,
   onUndo,
   onOpenStudent,
@@ -21,6 +22,7 @@ export function StudentRow({
 }: {
   student: StudentStatus;
   effectiveDate?: string;
+  programs: ProgramSchedule[];
   onCheckIn: (studentId: string, selections: CheckInSelection[]) => Promise<void>;
   onUndo: (checkinId: string) => Promise<void>;
   onOpenStudent: (studentId: string) => void;
@@ -94,6 +96,7 @@ export function StudentRow({
         <CheckInDialog
           student={student}
           effectiveDate={effectiveDate}
+          programs={programs}
           onSubmit={(selections) => onCheckIn(student.id, selections)}
           onClose={() => setCheckInOpen(false)}
         />

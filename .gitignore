@@ -4,6 +4,8 @@ dist/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite.bak-*
+server/migration-log-*.json
 .env
 .env.local
 .env.scratch

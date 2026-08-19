@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, UnauthorizedError, type CheckInSelection, type StudentStatus } from "./api.js";
+import { api, UnauthorizedError, type CheckInSelection, type ProgramSchedule, type StudentStatus } from "./api.js";
 import { Login } from "./components/Login.js";
 import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
@@ -83,6 +83,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [students, setStudents] = useState<StudentStatus[]>([]);
   const [loading, setLoading] = useState(false);
+  const [programs, setPrograms] = useState<ProgramSchedule[]>([]);
 
   useEffect(() => {
     api
@@ -91,6 +92,14 @@ export function App() {
       .catch(() => setAuthenticated(false))
       .finally(() => setAuthChecked(true));
   }, []);
+
+  // Fetched once per session, not per check-in dialog open — schedules don't change
+  // mid-session, and re-fetching on every "Check In" click was slow. Filtered by
+  // whichever date is relevant (live or backdated) client-side, see programSchedule.ts.
+  useEffect(() => {
+    if (!authenticated) return;
+    api.programs().then(setPrograms).catch(() => setPrograms([]));
+  }, [authenticated]);
 
   // Fetches the full roster for the viewed date — not scoped by `query`. The search box
   // filters this in memory (see visibleStudents below) instead of round-tripping to the
@@ -221,6 +230,7 @@ export function App() {
         students={visibleStudents}
         loading={loading}
         effectiveDate={effectiveDate}
+        programs={programs}
         onCheckIn={handleCheckIn}
         onUndo={handleUndo}
         onOpenStudent={navigateToStudent}

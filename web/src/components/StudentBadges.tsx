@@ -16,12 +16,18 @@ export function StudentBadges({
 
   // "Active" — a live membership covers check-in, nothing gets spent. "Paid" — no
   // active membership, but a recent drop-in/check-in means they're not a stranger.
-  // "Inactive" — neither; check-in still works (front desk override), but flags for
-  // review once credits run out too. See docs/airtable-schema.md, Members.Access Status.
-  const accessLabel =
-    student.accessStatus === "Active" ? "Member" : student.accessStatus === "Paid" ? "Paid" : "No access on file";
-  const accessClass =
-    student.accessStatus === "Active" ? "badge-green" : student.accessStatus === "Paid" ? "badge-gray" : "badge-red";
+  // "Inactive" gets no badge at all (dropped per product decision) — check-in still
+  // works either way (front desk override), and flags for review once credits run out
+  // too. See docs/airtable-schema.md, Members.Access Status.
+  const accessLabel = student.accessStatus === "Active" ? "Member" : student.accessStatus === "Paid" ? "Paid" : null;
+  const accessClass = student.accessStatus === "Active" ? "badge-green" : "badge-gray";
+
+  // One combined badge ("Member - 1 class") instead of two — the tier only matters
+  // alongside an access label; shown alone (no access label) for an Inactive student
+  // who still nominally has a tier from a lapsed membership.
+  const combinedLabel =
+    accessLabel && student.tierName ? `${accessLabel} - ${student.tierName}` : (accessLabel ?? student.tierName);
+  const combinedClass = accessLabel ? accessClass : "badge-blue";
 
   // Credits only matter once a membership isn't already covering check-in — showing
   // them alongside an active membership would just be confusing, unused information.
@@ -58,9 +64,7 @@ export function StudentBadges({
         />
       )}
 
-      {student.tierName && <span className="badge badge-blue">{student.tierName}</span>}
-
-      <span className={`badge ${accessClass}`}>{accessLabel}</span>
+      {combinedLabel && <span className={`badge ${combinedClass}`}>{combinedLabel}</span>}
 
       {showCredits && (
         <span className={`badge ${student.availableCredits > 0 ? "badge-green" : "badge-amber"}`}>

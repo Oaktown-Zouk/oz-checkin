@@ -10,6 +10,8 @@
     "start:scratch": "node --env-file=.env.scratch dist/dev.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
+    "migrate:airtable": "tsx src/scripts/migrateToAirtable.ts",
+    "migrate:credits": "tsx src/scripts/migrateCreditsToAirtable.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --env-file=.env.test --import tsx --test"
   },

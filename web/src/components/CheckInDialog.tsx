@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
-import { api, type CheckInSelection, type ProgramSummary, type StudentStatus } from "../api.js";
+import { useMemo, useState } from "react";
+import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
+import { activeProgramsForDate, todayInStudioTz } from "../programSchedule.js";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
 export function CheckInDialog({
   student,
   effectiveDate,
+  programs,
   onSubmit,
   onClose,
 }: {
@@ -13,21 +15,20 @@ export function CheckInDialog({
   // The viewed date (YYYY-MM-DD) when backdating, so the picker shows that day's
   // classes rather than today's — undefined means live/today.
   effectiveDate?: string;
+  // Fetched once on load (see App.tsx), not re-fetched here — filtered against the
+  // relevant date below instead of asking the server every time the dialog opens.
+  programs: ProgramSchedule[];
   onSubmit: (selections: CheckInSelection[]) => Promise<void>;
   onClose: () => void;
 }) {
-  const [programs, setPrograms] = useState<ProgramSummary[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [roles, setRoles] = useState<RoleByProgram>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    api
-      .programsToday(effectiveDate)
-      .then(setPrograms)
-      .catch(() => setLoadError("Couldn't load today's classes."));
-  }, [effectiveDate]);
+  const activePrograms = useMemo(
+    () => activeProgramsForDate(programs, effectiveDate ?? todayInStudioTz()),
+    [programs, effectiveDate]
+  );
 
   function toggle(programId: string, role: "Lead" | "Follow") {
     setRoles((prev) => ({ ...prev, [programId]: prev[programId] === role ? undefined : role }));
@@ -67,15 +68,11 @@ export function CheckInDialog({
       <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
         <h2>Check in {student.name}</h2>
 
-        {programs === null && !loadError && <p className="dialog-description">Loading today's classes…</p>}
-        {loadError && <p className="error">{loadError}</p>}
-        {programs && programs.length === 0 && (
-          <p className="dialog-description">No classes scheduled for this day.</p>
-        )}
+        {activePrograms.length === 0 && <p className="dialog-description">No classes scheduled for this day.</p>}
 
-        {programs && programs.length > 0 && (
+        {activePrograms.length > 0 && (
           <div className="program-picker">
-            {programs.map((p) => (
+            {activePrograms.map((p) => (
               <div key={p.id} className="program-picker-row">
                 <span className="program-picker-name">{p.name}</span>
                 <div className="program-picker-roles">
@@ -105,7 +102,7 @@ export function CheckInDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
-          {programs && programs.length > 0 && (
+          {activePrograms.length > 0 && (
             <button
               type="button"
               className="btn btn-primary"
