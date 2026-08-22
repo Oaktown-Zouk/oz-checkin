@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
 import { activeProgramsForDate, todayInStudioTz } from "../programSchedule.js";
+import { MembershipBadge } from "./MembershipBadge.js";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
@@ -78,6 +79,12 @@ export function CheckInDialog({
     <div className="dialog-overlay" onClick={onClose}>
       <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
         <h2>Check in {student.name}</h2>
+
+        {/* Shows remaining classes/credits while picking, so front desk can see at a
+            glance how many the student has left before checking them into more. */}
+        <div className="badges">
+          <MembershipBadge student={student} />
+        </div>
 
         {activePrograms.length === 0 && <p className="dialog-description">No classes scheduled for this day.</p>}
 

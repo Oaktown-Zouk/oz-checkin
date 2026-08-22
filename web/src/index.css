@@ -188,7 +188,8 @@ body {
 }
 
 .badge {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1;
   padding: 3px 8px;
   border-radius: 999px;
   white-space: nowrap;
@@ -217,6 +218,22 @@ body {
 .badge-blue {
   background: var(--blue-bg);
   color: var(--blue);
+}
+
+/* Higher-contrast variant — for the badges carrying the most important info on a row
+   (membership tier, credits remaining). Font size now matches every other badge (see
+   .badge above); this only adds weight/contrast. Pair with a color class below. */
+.badge-prominent {
+  font-weight: 700;
+  color: white;
+}
+
+.badge-prominent.badge-green {
+  background: var(--green);
+}
+
+.badge-prominent.badge-amber {
+  background: var(--amber);
 }
 
 .checkin-status {
@@ -492,10 +509,13 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.15em;
-  height: 1.15em;
+  /* Matches .badge's box height exactly: 0.85rem font-size (line-height: 1) + 3px
+     padding top/bottom = 0.85rem + 6px = 1.225rem. Fixed rem (not em) so it stays a
+     perfect square/circle regardless of any future font-size tweaks. */
+  width: 1.225rem;
+  height: 1.225rem;
   color: white;
-  font-size: 0.85em;
+  font-size: 0.85rem;
   font-weight: 700;
   line-height: 1;
 }
