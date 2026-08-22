@@ -57,9 +57,24 @@ export interface CheckInSelection {
   role: "Lead" | "Follow";
 }
 
+export type Permission =
+  | "View Student Data"
+  | "Write Student Data"
+  | "Create Checkins"
+  | "Undo Checkins"
+  | "Write Memberships";
+
 export class UnauthorizedError extends Error {
   constructor() {
     super("Unauthorized");
+  }
+}
+
+// Valid session, but the account's role isn't allowed on this route (e.g. a
+// Volunteer/Kiosk account hitting the staff-only API surface).
+export class ForbiddenError extends Error {
+  constructor() {
+    super("Forbidden");
   }
 }
 
@@ -78,6 +93,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (res.status === 401) throw new UnauthorizedError();
+  if (res.status === 403) throw new ForbiddenError();
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -89,9 +105,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  session: () => request<{ authenticated: boolean }>("/api/session"),
-  login: (password: string) =>
-    request<{ ok: true }>("/api/login", { method: "POST", body: JSON.stringify({ password }) }),
+  session: () =>
+    request<{
+      authenticated: boolean;
+      email?: string;
+      role?: "Staff" | "Volunteer" | "Kiosk";
+      permissions?: Permission[];
+    }>("/api/session"),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
   // No `q` — the frontend fetches the full roster and filters locally (see App.tsx) so
   // typing in the search box doesn't round-trip to the server on every keystroke.

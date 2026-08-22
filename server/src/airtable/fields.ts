@@ -70,6 +70,29 @@ export interface RecurringPlanFields {
   "Is Paid Access"?: number;
 }
 
+export type UserRole = "Staff" | "Volunteer" | "Kiosk";
+
+export interface UserRoleFields {
+  Email?: string;
+  Role?: string[]; // link -> Role Permissions (one row per role)
+}
+
+export type Permission =
+  | "View Student Data"
+  | "Write Student Data"
+  | "Create Checkins"
+  | "Undo Checkins"
+  | "Write Memberships";
+
+export interface RolePermissionFields {
+  Role?: string; // the role's display name ("Staff"/"Volunteer"/"Kiosk"), not a link
+  "View Student Data"?: boolean;
+  "Write Student Data"?: boolean;
+  "Create Checkins"?: boolean;
+  "Undo Checkins"?: boolean;
+  "Write Memberships"?: boolean;
+}
+
 export interface TransactionFields {
   "Transaction ID"?: string;
   Amount?: number;

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, UnauthorizedError, type CheckInSelection, type ProgramSchedule, type StudentStatus } from "./api.js";
+import {
+  api,
+  UnauthorizedError,
+  ForbiddenError,
+  type CheckInSelection,
+  type Permission,
+  type ProgramSchedule,
+  type StudentStatus,
+} from "./api.js";
+import { PermissionsProvider } from "./permissions.js";
 import { Login } from "./components/Login.js";
+import { Forbidden } from "./components/Forbidden.js";
 import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
@@ -37,6 +47,19 @@ function buildUrl(route: Route, effectiveAt: string): string {
 export function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<Set<Permission>>(new Set());
+  // Set only for a valid session whose role has no View Student Data permission —
+  // distinct from "not logged in" so they see who they're signed in as instead of just
+  // bouncing back to the sign-in screen.
+  const [forbiddenUser, setForbiddenUser] = useState<{ email: string; role: string } | null>(null);
+  const [authError] = useState(() => new URLSearchParams(window.location.search).get("authError"));
+
+  const handleLogout = useCallback(() => {
+    api.logout().finally(() => {
+      window.location.href = "/";
+    });
+  }, []);
 
   // Hand-rolled instead of pulling in a router: the app only ever has two "pages," and
   // this needs to (a) parse the initial URL on load so a direct link or a reload lands
@@ -88,7 +111,15 @@ export function App() {
   useEffect(() => {
     api
       .session()
-      .then((s) => setAuthenticated(s.authenticated))
+      .then((s) => {
+        if (s.authenticated && s.permissions?.includes("View Student Data")) {
+          setAuthenticated(true);
+          setUserEmail(s.email ?? null);
+          setPermissions(new Set(s.permissions));
+        } else if (s.authenticated) {
+          setForbiddenUser({ email: s.email ?? "", role: s.role ?? "" });
+        }
+      })
       .catch(() => setAuthenticated(false))
       .finally(() => setAuthChecked(true));
   }, []);
@@ -110,7 +141,7 @@ export function App() {
       const results = await api.students(date);
       setStudents(results);
     } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
     } finally {
       setLoading(false);
     }
@@ -137,7 +168,7 @@ export function App() {
       await api.checkIn(studentId, selections, effectiveIso);
       await refreshStudents(effectiveDate);
     } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
       else alert(err instanceof Error ? err.message : "Check-in failed");
     }
   }
@@ -147,7 +178,7 @@ export function App() {
       await api.undoCheckIn(checkinId);
       await refreshStudents(effectiveDate);
     } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
       else alert(err instanceof Error ? err.message : "Undo failed");
     }
   }
@@ -157,7 +188,7 @@ export function App() {
       await api.updateLeadLevel(studentId, level);
       await refreshStudents(effectiveDate);
     } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
       throw err;
     }
   }
@@ -167,7 +198,7 @@ export function App() {
       await api.updateFollowLevel(studentId, level);
       await refreshStudents(effectiveDate);
     } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
       throw err;
     }
   }
@@ -177,67 +208,79 @@ export function App() {
       await api.transferMembership(studentId, planId, targetEmail);
       await refreshStudents(effectiveDate);
     } catch (err) {
-      if (err instanceof UnauthorizedError) setAuthenticated(false);
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
       throw err;
     }
   }
 
   if (!authChecked) return null;
 
+  if (forbiddenUser) {
+    return <Forbidden email={forbiddenUser.email} role={forbiddenUser.role} onLogout={handleLogout} />;
+  }
+
   if (!authenticated) {
-    return <Login onSuccess={() => setAuthenticated(true)} />;
+    return <Login authError={authError} />;
   }
 
   if (route.type === "student") {
     return (
-      <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
+      <PermissionsProvider value={permissions}>
+        <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
+      </PermissionsProvider>
     );
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>OZ Check-In</h1>
-        <div className="header-controls">
-          {/* No live cross-device push (see SPEC.md) — front desk refreshes manually if
-              another device's action needs to show up here. */}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={loading}
-            onClick={() => refreshStudents(effectiveDate)}
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-          <EffectiveDateControl value={effectiveAt} onChange={handleEffectiveAtChange} />
-        </div>
-      </header>
+    <PermissionsProvider value={permissions}>
+      <div className="app">
+        <header className="app-header">
+          <h1>OZ Check-In</h1>
+          <div className="header-controls">
+            {/* No live cross-device push (see SPEC.md) — front desk refreshes manually if
+                another device's action needs to show up here. */}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading}
+              onClick={() => refreshStudents(effectiveDate)}
+            >
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
+            <EffectiveDateControl value={effectiveAt} onChange={handleEffectiveAtChange} />
+            {userEmail && <span className="signed-in-as">{userEmail}</span>}
+            <button type="button" className="btn btn-secondary" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
+        </header>
 
-      {effectiveAt && (
-        <div className="effective-date-banner">
-          <span>
-            Viewing and Checking In for <strong>{formatEffectiveBanner(effectiveAt)}</strong>
-          </span>
-          <button type="button" className="btn btn-secondary" onClick={() => handleEffectiveAtChange("")}>
-            Return to live
-          </button>
-        </div>
-      )}
+        {effectiveAt && (
+          <div className="effective-date-banner">
+            <span>
+              Viewing and Checking In for <strong>{formatEffectiveBanner(effectiveAt)}</strong>
+            </span>
+            <button type="button" className="btn btn-secondary" onClick={() => handleEffectiveAtChange("")}>
+              Return to live
+            </button>
+          </div>
+        )}
 
-      <SearchBar value={query} onChange={setQuery} />
+        <SearchBar value={query} onChange={setQuery} />
 
-      <StudentList
-        students={visibleStudents}
-        loading={loading}
-        effectiveDate={effectiveDate}
-        programs={programs}
-        onCheckIn={handleCheckIn}
-        onUndo={handleUndo}
-        onOpenStudent={navigateToStudent}
-        onUpdateLeadLevel={handleUpdateLeadLevel}
-        onUpdateFollowLevel={handleUpdateFollowLevel}
-        onTransferMembership={handleTransferMembership}
-      />
-    </div>
+        <StudentList
+          students={visibleStudents}
+          loading={loading}
+          effectiveDate={effectiveDate}
+          programs={programs}
+          onCheckIn={handleCheckIn}
+          onUndo={handleUndo}
+          onOpenStudent={navigateToStudent}
+          onUpdateLeadLevel={handleUpdateLeadLevel}
+          onUpdateFollowLevel={handleUpdateFollowLevel}
+          onTransferMembership={handleTransferMembership}
+        />
+      </div>
+    </PermissionsProvider>
   );
 }

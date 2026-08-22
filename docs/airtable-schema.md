@@ -157,6 +157,21 @@ showed up; an admin can still open a flagged record's detail page directly if ne
 Automation A grants a "New Member" credit on creation, so a re-synced duplicate can
 pick one up too).
 
+## User Roles (auth, added this session)
+
+`User Roles` (`tblBeLbVbHNZIPIvz`) — maps a Google account email to an app role.
+Fields: `Email` (plain text, primary), `Role` (single select: `Staff` / `Volunteer` /
+`Kiosk`). Not synced from Givebutter; managed by hand — add a row before a new person
+tries to sign in, there's no self-service signup.
+
+Login is Google OAuth (see `SPEC.md`'s "Auth" section): after verifying the account
+with Google, the server looks up its email here (case-insensitive) to decide the
+role for the session cookie. No matching row = no access at all, not just "no role" —
+the callback route redirects to `/?authError=not_authorized` without setting a
+session. All current UX requires `Staff`; `Volunteer`/`Kiosk` exist as roles a session
+can hold (so they don't need to re-auth once pages exist for them) but every route
+built so far 403s them.
+
 ## Last Activity / Recently Active (resolved)
 
 Roster sort order needed a way to sink students who've gone quiet below active ones,

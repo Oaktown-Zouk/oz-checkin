@@ -85,6 +85,11 @@ body {
   flex-wrap: wrap;
 }
 
+.signed-in-as {
+  font-size: 0.8rem;
+  color: var(--gray);
+}
+
 
 .effective-date-control {
   display: flex;
@@ -234,10 +239,12 @@ body {
 }
 
 .btn {
+  display: inline-block;
   padding: 8px 14px;
   border-radius: 8px;
   border: 1px solid transparent;
   font-size: 0.9rem;
+  text-decoration: none;
   cursor: pointer;
 }
 

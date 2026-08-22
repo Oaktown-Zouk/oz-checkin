@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { StudentStatus } from "../api.js";
+import { usePermissions } from "../permissions.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
 import { LevelBadge } from "./LevelBadge.js";
 
@@ -13,6 +14,8 @@ export function StudentBadges({
   onUpdateFollowLevel: (level: number | null) => Promise<void>;
 }) {
   const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
+  const { has } = usePermissions();
+  const canEditLevels = has("Write Student Data");
 
   // "Active" — a live membership covers check-in, nothing gets spent. "Paid" — no
   // active membership, but a recent drop-in/check-in means they're not a stranger.
@@ -36,25 +39,34 @@ export function StudentBadges({
   return (
     <div className="badges">
       <span className="student-levels">
-        <button
-          type="button"
-          className="level-badge"
-          title="Edit lead level"
-          onClick={() => setEditingLevel("lead")}
-        >
-          <LevelBadge level={student.leadLevel} shape="square" />
-        </button>
-        <button
-          type="button"
-          className="level-badge"
-          title="Edit follow level"
-          onClick={() => setEditingLevel("follow")}
-        >
-          <LevelBadge level={student.followLevel} shape="circle" />
-        </button>
+        {canEditLevels ? (
+          <>
+            <button
+              type="button"
+              className="level-badge"
+              title="Edit lead level"
+              onClick={() => setEditingLevel("lead")}
+            >
+              <LevelBadge level={student.leadLevel} shape="square" />
+            </button>
+            <button
+              type="button"
+              className="level-badge"
+              title="Edit follow level"
+              onClick={() => setEditingLevel("follow")}
+            >
+              <LevelBadge level={student.followLevel} shape="circle" />
+            </button>
+          </>
+        ) : (
+          <>
+            <LevelBadge level={student.leadLevel} shape="square" />
+            <LevelBadge level={student.followLevel} shape="circle" />
+          </>
+        )}
       </span>
 
-      {editingLevel && (
+      {canEditLevels && editingLevel && (
         <LevelEditDialog
           title={editingLevel === "lead" ? "Edit Lead Level" : "Edit Follow Level"}
           currentLevel={editingLevel === "lead" ? student.leadLevel : student.followLevel}

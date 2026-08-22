@@ -26,6 +26,13 @@ that migration is fully trusted (see `SPEC.md`'s cutover notes).
 - An Airtable base with the schema this app expects (see `docs/airtable-schema.md`) and
   a Personal Access Token for it (`schema.bases:read`, `data.records:read`,
   `data.records:write`)
+- A Google OAuth client (Google Cloud Console → APIs & Services → Credentials →
+  "Create Credentials" → "OAuth client ID", type "Web application"). Add an
+  "Authorized redirect URI" for every `APP_ORIGIN` this runs under (see `.env.example`):
+  `http://localhost:5173/api/auth/google/callback` (`npm run dev`, two-terminal — note
+  this is the Vite port, not the API's own :3000, since that's the origin the browser
+  actually sees), `http://localhost:8888/api/auth/google/callback` (`netlify dev`), and
+  the production domain once deployed.
 
 ## Setup
 
@@ -33,7 +40,7 @@ that migration is fully trusted (see `SPEC.md`'s cutover notes).
 npm install
 
 cp .env.example .env
-# fill in AIRTABLE_PAT, AIRTABLE_BASE_ID, SESSION_SECRET, CHECKIN_PASSWORD
+# fill in AIRTABLE_PAT, AIRTABLE_BASE_ID, SESSION_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 ```
 
 **Two env files exist, both needed, kept in sync manually:**
@@ -42,8 +49,12 @@ cp .env.example .env
 - **`server/.env`** — read by `npm run dev` (the plain `@hono/node-server` path, not
   going through the Netlify runtime).
 
-Both need the same four variables. `.env.example` (root) and `server/.env.example`
+Both need the same five variables. `.env.example` (root) and `server/.env.example`
 document them.
+
+**Authorizing an account:** logging in only works for accounts with a row in the
+`User Roles` Airtable table (`Email` → `Role`). Add a row there before anyone new tries
+to sign in — there's no self-service signup. See `docs/airtable-schema.md`.
 
 ## Running locally
 
@@ -78,7 +89,8 @@ Skips Netlify's function-bundling step on every change, at the cost of not exerc
 the actual Netlify Functions runtime — reach for `dev:netlify` before trusting a change
 that touches routing/deployment behavior specifically.
 
-Either way: open the app (`:8888` or `:5173`), sign in with `CHECKIN_PASSWORD`.
+Either way: open the app (`:8888` or `:5173`) and sign in with Google — the account
+needs a row in Airtable's `User Roles` table first (see above).
 
 **Everything both modes talk to is the real Airtable base** — there's no local/seed
 data mode anymore (the old SQLite-backed `npm run seed` is gone along with the

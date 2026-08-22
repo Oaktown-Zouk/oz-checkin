@@ -137,4 +137,6 @@ export const TABLES = {
   transactions: "tbl97hoFODKY50QcH",
   credits: "tblCFmQJntHiuMZNN",
   programs: "tblB90zwd3OjKxxDs",
+  userRoles: "tblBeLbVbHNZIPIvz",
+  rolePermissions: "tblYo1awEOvqBGVpR",
 } as const;

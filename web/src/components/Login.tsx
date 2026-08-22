@@ -1,41 +1,19 @@
-import { useState, type FormEvent } from "react";
-import { api } from "../api.js";
+const ERROR_MESSAGES: Record<string, string> = {
+  not_authorized: "That Google account isn't set up for this app. Ask an admin to add you.",
+  oauth_failed: "Sign-in failed. Please try again.",
+};
 
-export function Login({ onSuccess }: { onSuccess: () => void }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await api.login(password);
-      onSuccess();
-    } catch {
-      setError("Incorrect password.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+export function Login({ authError }: { authError: string | null }) {
   return (
     <div className="login-screen">
-      <form className="login-card" onSubmit={handleSubmit}>
+      <div className="login-card">
         <h1>Oaktown Zouk Front Desk</h1>
-        <input
-          type="password"
-          autoFocus
-          placeholder="Front desk password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={submitting || !password}>
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+        {authError && <p className="error">{ERROR_MESSAGES[authError] ?? "Sign-in failed. Please try again."}</p>}
+        {/* Full-page navigation, not a fetch — Google needs to redirect the browser itself. */}
+        <a className="btn btn-primary" href="/api/auth/google/start">
+          Sign in with Google
+        </a>
+      </div>
     </div>
   );
 }

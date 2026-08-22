@@ -1,10 +1,9 @@
 import { Hono } from "hono";
-import { requireAuth } from "../lib/auth.js";
+import { requirePermission } from "../lib/auth.js";
 import { createCheckIns, undoCheckIn, type CheckInSelection } from "../services/checkins.js";
 import { handleError } from "../lib/respond.js";
 
 export const checkinRoutes = new Hono();
-checkinRoutes.use("*", requireAuth);
 
 function isValidSelections(value: unknown): value is CheckInSelection[] {
   return (
@@ -20,7 +19,7 @@ function isValidSelections(value: unknown): value is CheckInSelection[] {
   );
 }
 
-checkinRoutes.post("/", async (c) => {
+checkinRoutes.post("/", requirePermission("Create Checkins"), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { studentId, selections, effectiveAt } = body as {
     studentId?: string;
@@ -45,7 +44,7 @@ checkinRoutes.post("/", async (c) => {
   }
 });
 
-checkinRoutes.delete("/:id", async (c) => {
+checkinRoutes.delete("/:id", requirePermission("Undo Checkins"), async (c) => {
   const id = c.req.param("id") ?? "";
   try {
     return c.json(await undoCheckIn(id));

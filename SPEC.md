@@ -44,7 +44,8 @@ handful of things that are genuinely this app's own business logic.
   credits granted, check-ins) and running stats.
 - **Manual refresh** — no live cross-device push (Netlify Functions can't hold a
   connection open); a "Refresh" button re-fetches the roster.
-- **Single shared-password auth**, stateless signed-cookie session.
+- **Google OAuth login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`) looked up in
+  Airtable, stateless signed-cookie session.
 
 ## Scale & constraints
 
@@ -54,7 +55,8 @@ handful of things that are genuinely this app's own business logic.
   app's Thursday-only check.
 - Runs as Netlify Functions (static SPA + serverless API) — free-tier friendly, no
   always-on process to keep alive, no local database.
-- Solo/small-team operator, shared-password auth (no per-staff accounts yet).
+- Solo/small-team operator, per-account Google OAuth (see "Auth" below) — every account
+  needs an explicit role row in Airtable to get in at all.
 
 ## System of record: Airtable
 
@@ -180,7 +182,7 @@ not requested yet.
 │  Static SPA (React/Vite build) ── served by ──▶│ Netlify CDN
 │                                                 │
 │  Netlify Functions (one Hono app, all routes)  │
-│     ├─ auth (login/logout/session check)       │
+│     ├─ auth (Google OAuth, logout, session)    │
 │     ├─ GET  students                (roster)   │
 │     ├─ PATCH students/:id/lead-level           │
 │     ├─ PATCH students/:id/follow-level         │
@@ -207,9 +209,16 @@ not requested yet.
   `popstate` listener) — no router library, the app only has two "pages" (the roster
   and a student detail page). Built to static files (`web/dist`), served by Netlify's
   CDN.
-- **Auth:** a single shared-password gate (`CHECKIN_PASSWORD` env var), issuing a
-  stateless HMAC-signed session cookie (`server/src/lib/session.ts`) — no server-side
-  session store, which fits a serverless deploy. No per-staff accounts yet.
+- **Auth:** Google OAuth (authorization code flow, `server/src/routes/auth.ts`) — sign-in
+  redirects to Google, the callback exchanges the code server-side and reads the
+  account's email from Google's userinfo endpoint, then looks up that email in
+  Airtable's `User Roles` table (`Email` → `Role`: `Staff`/`Volunteer`/`Kiosk`; no
+  matching row = no access). On success the app mints its own stateless HMAC-signed
+  session cookie carrying `{ email, role }` (`server/src/lib/session.ts`) — no
+  server-side session store (fits serverless) and no re-checking Airtable on every
+  request. Routes are gated by role via `requireRole(...)` (`server/src/lib/auth.ts`);
+  all current UX requires `Staff` — `Volunteer`/`Kiosk` can log in but have no pages
+  built for them yet, and see a "not authorized for this page" screen instead.
 - **No cross-table transactions.** Airtable's API has no multi-table atomic write.
   Where a single logical action touches two records (e.g. a backdated check-in
   consuming a credit), the app writes them sequentially and accepts the rare
@@ -218,19 +227,30 @@ not requested yet.
 - **Local dev env files:** `server/.env` (used by `npm run dev`, the plain
   `@hono/node-server` path) and a root-level `.env` (used by `netlify dev`, which has
   no concept of `server/.env`) both need `AIRTABLE_PAT`, `AIRTABLE_BASE_ID`,
-  `SESSION_SECRET`, `CHECKIN_PASSWORD` — kept in sync manually, see `.env.example` at
-  the repo root.
+  `SESSION_SECRET`, `APP_ORIGIN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — kept in
+  sync manually, see `.env.example` at the repo root. `APP_ORIGIN` is the origin the
+  *browser* sees, not necessarily the origin this process listens on — in two-terminal
+  dev the browser talks to Vite on `:5173`, which proxies `/api` to this process on
+  `:3000`, so `APP_ORIGIN` there is `http://localhost:5173`, not `:3000`. The OAuth
+  client's "Authorized redirect URIs" need one entry per `APP_ORIGIN` value
+  (`<APP_ORIGIN>/api/auth/google/callback`).
 
 ## API
 
-All routes except `/api/login`, `/api/logout`, `/api/session`, and `/health` require an
-authenticated session (`requireAuth` middleware — 401 if missing/invalid/expired).
+All routes except `/api/auth/google/*`, `/api/logout`, `/api/session`, and `/health`
+require a valid session with an allowed role (`requireRole(...)` middleware — 401 if no
+session, 403 if the session's role isn't allowed on that route). Every route built so
+far requires `Staff`.
 
 - `GET /health` — `{ ok: true }`, no auth required.
-- `POST /api/login` `{ password }` — checks against `CHECKIN_PASSWORD`; sets the
-  session cookie. 401 on wrong password.
+- `GET /api/auth/google/start` — redirects to Google's OAuth consent screen. Real
+  browser navigation, not a fetch call.
+- `GET /api/auth/google/callback` — exchanges the auth code, looks up the account's
+  role in `User Roles`, sets the session cookie if found, redirects to `/`. Redirects to
+  `/?authError=not_authorized` (no matching role row) or `/?authError=oauth_failed`
+  (anything else going wrong) instead of setting a cookie.
 - `POST /api/logout` — clears the session cookie.
-- `GET /api/session` — `{ authenticated: boolean }`.
+- `GET /api/session` — `{ authenticated: boolean, email?, role? }`.
 - `GET /api/students?date=<YYYY-MM-DD>` — the full roster with computed status
   (`accessStatus`, `membershipStatus`, `tierName`, `classesAllowed`, `remaining`,
   `availableCredits`, `checkinsToday`, `checkedInToday`). `date` defaults to today; 400

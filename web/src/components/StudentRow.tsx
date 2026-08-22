@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
+import { usePermissions } from "../permissions.js";
 import { RowMenu } from "./RowMenu.js";
 import { TransferDialog } from "./TransferDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
@@ -33,6 +34,11 @@ export function StudentRow({
   const [busy, setBusy] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
+  const { has } = usePermissions();
+  const canCheckIn = has("Create Checkins");
+  const canUndo = has("Undo Checkins");
+  const canTransfer = has("Write Memberships");
+  const menuItems = canTransfer ? [{ label: "Transfer membership", onClick: () => setTransferOpen(true) }] : [];
 
   async function handleUndo(checkinId: string) {
     setBusy(true);
@@ -78,18 +84,22 @@ export function StudentRow({
                 </span>
               )}
             </span>
-            <button className="link-button" disabled={busy} onClick={() => handleUndo(c.id)}>
-              Undo
-            </button>
+            {canUndo && (
+              <button className="link-button" disabled={busy} onClick={() => handleUndo(c.id)}>
+                Undo
+              </button>
+            )}
           </div>
         ))}
       </div>
 
       <div className="actions">
-        <button className="btn btn-primary" disabled={busy} onClick={() => setCheckInOpen(true)}>
-          {student.checkedInToday ? "Check in to another class" : "Check In"}
-        </button>
-        <RowMenu items={[{ label: "Transfer membership", onClick: () => setTransferOpen(true) }]} />
+        {canCheckIn && (
+          <button className="btn btn-primary" disabled={busy} onClick={() => setCheckInOpen(true)}>
+            {student.checkedInToday ? "Check in to another class" : "Check In"}
+          </button>
+        )}
+        {menuItems.length > 0 && <RowMenu items={menuItems} />}
       </div>
 
       {checkInOpen && (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, UnauthorizedError, type StudentTimeline } from "../api.js";
+import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline } from "../api.js";
+import { usePermissions } from "../permissions.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
 import { LevelBadge } from "./LevelBadge.js";
@@ -27,6 +28,9 @@ export function StudentPage({
   const [notFound, setNotFound] = useState(false);
   const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const { has } = usePermissions();
+  const canEditLevels = has("Write Student Data");
+  const canTransfer = has("Write Memberships");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,7 +39,7 @@ export function StudentPage({
       setTimeline(result);
       setNotFound(false);
     } catch (err) {
-      if (err instanceof UnauthorizedError) onUnauthorized();
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
       else if (err instanceof ApiError) setNotFound(true);
     } finally {
       setLoading(false);
@@ -52,7 +56,7 @@ export function StudentPage({
       else await api.updateFollowLevel(studentId, level);
       await load();
     } catch (err) {
-      if (err instanceof UnauthorizedError) onUnauthorized();
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
       throw err;
     }
   }
@@ -62,7 +66,7 @@ export function StudentPage({
       await api.transferMembership(studentId, planId, targetEmail);
       await load();
     } catch (err) {
-      if (err instanceof UnauthorizedError) onUnauthorized();
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
       throw err;
     }
   }
@@ -86,13 +90,15 @@ export function StudentPage({
               onUpdateLeadLevel={(level) => handleUpdateLevel("lead", level)}
               onUpdateFollowLevel={(level) => handleUpdateLevel("follow", level)}
             />
-            <button
-              type="button"
-              className="btn btn-secondary transfer-link"
-              onClick={() => setTransferOpen(true)}
-            >
-              Transfer membership
-            </button>
+            {canTransfer && (
+              <button
+                type="button"
+                className="btn btn-secondary transfer-link"
+                onClick={() => setTransferOpen(true)}
+              >
+                Transfer membership
+              </button>
+            )}
           </div>
 
           <div className="student-stats">
@@ -106,26 +112,36 @@ export function StudentPage({
               <div className="stat-label">Total check-ins</div>
               <div className="stat-value">{timeline.totalCheckIns}</div>
             </div>
-            <button
-              type="button"
-              className="stat stat-clickable"
-              onClick={() => setEditingLevel("lead")}
-            >
-              <div className="stat-label">Lead Level</div>
-              <div className="stat-value">
-                <LevelBadge level={timeline.status.leadLevel} shape="square" />
+            {canEditLevels ? (
+              <button type="button" className="stat stat-clickable" onClick={() => setEditingLevel("lead")}>
+                <div className="stat-label">Lead Level</div>
+                <div className="stat-value">
+                  <LevelBadge level={timeline.status.leadLevel} shape="square" />
+                </div>
+              </button>
+            ) : (
+              <div className="stat">
+                <div className="stat-label">Lead Level</div>
+                <div className="stat-value">
+                  <LevelBadge level={timeline.status.leadLevel} shape="square" />
+                </div>
               </div>
-            </button>
-            <button
-              type="button"
-              className="stat stat-clickable"
-              onClick={() => setEditingLevel("follow")}
-            >
-              <div className="stat-label">Follow Level</div>
-              <div className="stat-value">
-                <LevelBadge level={timeline.status.followLevel} shape="circle" />
+            )}
+            {canEditLevels ? (
+              <button type="button" className="stat stat-clickable" onClick={() => setEditingLevel("follow")}>
+                <div className="stat-label">Follow Level</div>
+                <div className="stat-value">
+                  <LevelBadge level={timeline.status.followLevel} shape="circle" />
+                </div>
+              </button>
+            ) : (
+              <div className="stat">
+                <div className="stat-label">Follow Level</div>
+                <div className="stat-value">
+                  <LevelBadge level={timeline.status.followLevel} shape="circle" />
+                </div>
               </div>
-            </button>
+            )}
           </div>
 
           <h2 className="timeline-heading">Timeline</h2>
@@ -147,7 +163,7 @@ export function StudentPage({
         </>
       )}
 
-      {editingLevel && timeline && (
+      {canEditLevels && editingLevel && timeline && (
         <LevelEditDialog
           title={editingLevel === "lead" ? "Edit Lead Level" : "Edit Follow Level"}
           currentLevel={editingLevel === "lead" ? timeline.status.leadLevel : timeline.status.followLevel}
@@ -157,7 +173,7 @@ export function StudentPage({
         />
       )}
 
-      {transferOpen && timeline && (
+      {canTransfer && transferOpen && timeline && (
         <TransferDialog
           student={timeline.status}
           onSubmit={handleTransferMembership}

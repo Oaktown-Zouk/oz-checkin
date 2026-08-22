@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { requireAuth } from "../lib/auth.js";
+import { requirePermission } from "../lib/auth.js";
 import { listStudentStatuses, updateStudentLevel } from "../services/studentStatus.js";
 import { getStudentTimeline } from "../services/studentTimeline.js";
 import { transferMembership, heldMemberships } from "../services/transfers.js";
@@ -7,9 +7,8 @@ import { isValidDateString } from "../lib/date.js";
 import { handleError } from "../lib/respond.js";
 
 export const studentRoutes = new Hono();
-studentRoutes.use("*", requireAuth);
 
-studentRoutes.get("/", async (c) => {
+studentRoutes.get("/", requirePermission("View Student Data"), async (c) => {
   const date = c.req.query("date");
   if (date !== undefined && !isValidDateString(date)) {
     return c.json({ error: "date must be YYYY-MM-DD" }, 400);
@@ -34,22 +33,26 @@ async function handleLevelUpdate(c: Context, field: "Lead Level" | "Follow Level
   }
 }
 
-studentRoutes.patch("/:id/lead-level", (c) => handleLevelUpdate(c, "Lead Level"));
-studentRoutes.patch("/:id/follow-level", (c) => handleLevelUpdate(c, "Follow Level"));
+studentRoutes.patch("/:id/lead-level", requirePermission("Write Student Data"), (c) =>
+  handleLevelUpdate(c, "Lead Level")
+);
+studentRoutes.patch("/:id/follow-level", requirePermission("Write Student Data"), (c) =>
+  handleLevelUpdate(c, "Follow Level")
+);
 
-studentRoutes.get("/:id/timeline", async (c) => {
+studentRoutes.get("/:id/timeline", requirePermission("View Student Data"), async (c) => {
   const id = c.req.param("id") ?? "";
   const timeline = await getStudentTimeline(id);
   if (!timeline) return c.json({ error: "Student not found" }, 404);
   return c.json(timeline);
 });
 
-studentRoutes.get("/:id/memberships", async (c) => {
+studentRoutes.get("/:id/memberships", requirePermission("View Student Data"), async (c) => {
   const id = c.req.param("id") ?? "";
   return c.json(await heldMemberships(id));
 });
 
-studentRoutes.post("/:id/transfer-membership", async (c) => {
+studentRoutes.post("/:id/transfer-membership", requirePermission("Write Memberships"), async (c) => {
   const id = c.req.param("id") ?? "";
   const body = await c.req.json().catch(() => ({}));
   const { planId, targetEmail } = body as { planId?: string; targetEmail?: string };
