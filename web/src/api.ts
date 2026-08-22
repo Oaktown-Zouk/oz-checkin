@@ -21,6 +21,9 @@ export interface StudentStatus {
   availableCredits: number;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
+  // Programs/roles from this student's most recent check-in occasion, computed once as
+  // part of the roster fetch — see CheckInDialog for how it's used to preselect.
+  lastCheckinSelections: CheckInSelection[];
 }
 
 export interface ProgramSchedule {

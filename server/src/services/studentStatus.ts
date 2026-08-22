@@ -1,6 +1,6 @@
 import { listRecords, getRecordOrNull, updateRecord, TABLES, type AirtableRecord } from "../airtable/client.js";
 import type { MemberFields, CheckinFields, ProgramFields } from "../airtable/fields.js";
-import { today, STUDIO_TIMEZONE } from "../lib/date.js";
+import { today, dateStringFor, STUDIO_TIMEZONE } from "../lib/date.js";
 import { NotFoundError } from "../lib/errors.js";
 
 export interface CheckInInfo {
@@ -10,6 +10,11 @@ export interface CheckInInfo {
   role: "Lead" | "Follow" | null;
   needsReview: boolean;
   reviewReason: string | null;
+}
+
+export interface RecentCheckinSelection {
+  programId: string;
+  role: "Lead" | "Follow";
 }
 
 export interface StudentStatus {
@@ -34,6 +39,15 @@ export interface StudentStatus {
   // Drives roster sort order (see listStudentStatuses) — the 30-day threshold lives in
   // the Airtable formula, not here.
   recentlyActive: boolean;
+  // The programs/roles from this student's most recent check-in occasion, computed once
+  // per roster fetch (see fetchMostRecentCheckinsByMember) rather than per dialog-open.
+  // Not backdating-aware on purpose — always the true most recent visit regardless of
+  // viewed date, per product decision (an Airtable-formula version of this hit a real
+  // platform limit: rollups of dateTime values via MAX() always collapse to date-only
+  // precision, and grouping by date-only risks a UTC-vs-studio-timezone mismatch this
+  // app is otherwise careful about — see lib/date.ts. Doing it here reuses that already-
+  // correct timezone handling instead).
+  lastCheckinSelections: RecentCheckinSelection[];
 }
 
 export async function fetchProgramNames(): Promise<Map<string, string>> {
@@ -48,11 +62,47 @@ async function fetchCheckinsForDate(viewedDate: string): Promise<AirtableRecord<
   });
 }
 
+// No Member filter is possible via Airtable's formula language for a linked field (it
+// only exposes the linked record's primary-field text, not its id), so this scans the
+// whole non-undone Check-ins table once and groups in memory — same tradeoff already
+// made in studentTimeline.ts, just shared across the whole roster instead of per-student.
+async function fetchMostRecentCheckinsByMember(): Promise<Map<string, RecentCheckinSelection[]>> {
+  const all = await listRecords<CheckinFields>(TABLES.checkins, {
+    filterByFormula: "{Undone At} = BLANK()",
+    fields: ["Member", "Checked In At", "Class Level", "Role"],
+  });
+
+  const byMember = new Map<string, AirtableRecord<CheckinFields>[]>();
+  for (const c of all) {
+    const memberId = c.fields.Member?.[0];
+    if (!memberId || !c.fields["Checked In At"]) continue;
+    const list = byMember.get(memberId) ?? [];
+    list.push(c);
+    byMember.set(memberId, list);
+  }
+
+  const result = new Map<string, RecentCheckinSelection[]>();
+  for (const [memberId, memberCheckins] of byMember) {
+    let mostRecentDate: string | null = null;
+    for (const c of memberCheckins) {
+      const d = dateStringFor(new Date(c.fields["Checked In At"]!));
+      if (!mostRecentDate || d > mostRecentDate) mostRecentDate = d;
+    }
+    const selections = memberCheckins
+      .filter((c) => dateStringFor(new Date(c.fields["Checked In At"]!)) === mostRecentDate)
+      .filter((c) => c.fields["Class Level"]?.[0] && c.fields.Role)
+      .map((c) => ({ programId: c.fields["Class Level"]![0], role: c.fields.Role! }));
+    result.set(memberId, selections);
+  }
+  return result;
+}
+
 function buildStatus(
   member: AirtableRecord<MemberFields>,
   isLiveToday: boolean,
   checkinsForMember: AirtableRecord<CheckinFields>[],
-  programNameById: Map<string, string>
+  programNameById: Map<string, string>,
+  lastCheckinSelections: RecentCheckinSelection[]
 ): StudentStatus {
   const f = member.fields;
   const classesAllowed = f["Classes Allowed"] ?? 0;
@@ -85,6 +135,7 @@ function buildStatus(
       })),
     checkedInToday: checkinsForMember.length > 0,
     recentlyActive: !!f["Recently Active"],
+    lastCheckinSelections,
   };
 }
 
@@ -92,7 +143,7 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
   const viewedDate = opts.date ?? today();
   const isLiveToday = viewedDate === today();
 
-  const [members, checkins, programNameById] = await Promise.all([
+  const [members, checkins, programNameById, mostRecentByMember] = await Promise.all([
     listRecords<MemberFields>(TABLES.members, {
       // Excludes records flagged as a stray Givebutter sync duplicate (see
       // airtable/fields.ts) — filtered server-side so the roster never even fetches
@@ -114,6 +165,7 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
     }),
     fetchCheckinsForDate(viewedDate),
     fetchProgramNames(),
+    fetchMostRecentCheckinsByMember(),
   ]);
 
   const checkinsByMember = new Map<string, AirtableRecord<CheckinFields>[]>();
@@ -126,7 +178,13 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
   }
 
   const statuses = members.map((m) =>
-    buildStatus(m, isLiveToday, checkinsByMember.get(m.id) ?? [], programNameById)
+    buildStatus(
+      m,
+      isLiveToday,
+      checkinsByMember.get(m.id) ?? [],
+      programNameById,
+      mostRecentByMember.get(m.id) ?? []
+    )
   );
 
   // Three tiers: recently active < stale (30+ days, or never active) < checked in today.
@@ -151,13 +209,14 @@ export async function getStudentStatusById(id: string, date?: string): Promise<S
   const member = await getRecordOrNull<MemberFields>(TABLES.members, id);
   if (!member) return null;
 
-  const [checkinsForDate, programNameById] = await Promise.all([
+  const [checkinsForDate, programNameById, mostRecentByMember] = await Promise.all([
     fetchCheckinsForDate(viewedDate),
     fetchProgramNames(),
+    fetchMostRecentCheckinsByMember(),
   ]);
   const mine = checkinsForDate.filter((c) => c.fields.Member?.includes(id));
 
-  return buildStatus(member, isLiveToday, mine, programNameById);
+  return buildStatus(member, isLiveToday, mine, programNameById, mostRecentByMember.get(id) ?? []);
 }
 
 export async function updateStudentLevel(

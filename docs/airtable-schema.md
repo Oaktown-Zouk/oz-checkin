@@ -172,6 +172,31 @@ session. All current UX requires `Staff`; `Volunteer`/`Kiosk` exist as roles a s
 can hold (so they don't need to re-auth once pages exist for them) but every route
 built so far 403s them.
 
+## Check-in dialog preselection (resolved)
+
+The check-in dialog preselects whatever programs/roles a student picked on their most
+recent visit (not backdating-aware — always the true most recent visit, regardless of
+which date is being viewed/backdated). Computed server-side, once per roster fetch
+(`services/studentStatus.ts`'s `fetchMostRecentCheckinsByMember`), not per dialog-open —
+an earlier per-student endpoint was replaced with this after it proved slow at the
+front desk (`StudentStatus.lastCheckinSelections`).
+
+**Tried and abandoned: doing this via an Airtable rollup/formula instead of app code.**
+The plan was a `Check-ins."Is Most Recent Check-in"` formula comparing `{Checked In
+At}` against a lookup of the member's `Last Check-in At` rollup, so the app could just
+filter on one boolean field instead of scanning the whole table. Hit a real platform
+limit: **Airtable rollups aggregating dateTime values via `MAX()` always collapse to
+date-only precision** — confirmed with two separate field-creation attempts, including
+one with an explicit `"formula": "MAX(values)"` payload. Working around that by
+grouping on date-only instead of exact timestamp would have needed the *day* extracted
+from the rolled-up value to agree with the day extracted from `{Checked In At}` — but
+the rollup's date-only rendering turned out to be in **UTC**, not the studio's Pacific
+time this app is otherwise careful about (see `lib/date.ts`/`STUDIO_TIMEZONE`), risking
+a real off-by-one-day bug for evening check-ins. Reverted to computing this in the app,
+where the timezone handling is already correct and tested. (The two now-orphaned
+fields from this attempt were deleted by hand in the Airtable UI — the REST API has no
+field-deletion endpoint.)
+
 ## Last Activity / Recently Active (resolved)
 
 Roster sort order needed a way to sink students who've gone quiet below active ones,

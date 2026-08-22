@@ -21,14 +21,25 @@ export function CheckInDialog({
   onSubmit: (selections: CheckInSelection[]) => Promise<void>;
   onClose: () => void;
 }) {
-  const [roles, setRoles] = useState<RoleByProgram>({});
+  const viewedDate = effectiveDate ?? todayInStudioTz();
+
+  const activePrograms = useMemo(() => activeProgramsForDate(programs, viewedDate), [programs, viewedDate]);
+
+  // Preselects whatever the student picked their most recent visit (computed once as
+  // part of the roster fetch — see StudentStatus.lastCheckinSelections — not a fetch
+  // triggered by opening this dialog, and not backdating-aware: always the true most
+  // recent visit regardless of viewedDate). Only applied to programs still on this
+  // day's active schedule; anything else from that visit is silently dropped.
+  const [roles, setRoles] = useState<RoleByProgram>(() => {
+    const activeIds = new Set(activePrograms.map((p) => p.id));
+    const initial: RoleByProgram = {};
+    for (const s of student.lastCheckinSelections) {
+      if (activeIds.has(s.programId)) initial[s.programId] = s.role;
+    }
+    return initial;
+  });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const activePrograms = useMemo(
-    () => activeProgramsForDate(programs, effectiveDate ?? todayInStudioTz()),
-    [programs, effectiveDate]
-  );
 
   function toggle(programId: string, role: "Lead" | "Follow") {
     setRoles((prev) => ({ ...prev, [programId]: prev[programId] === role ? undefined : role }));
