@@ -43,6 +43,7 @@ export interface ProgramFields {
   "Start Date"?: string;
   "End Date"?: string;
   "Skip Dates"?: string;
+  "Start Time"?: string; // "HH:mm", 24-hour zero-padded — sorts correctly as plain text
 }
 
 export interface CreditFields {

@@ -33,6 +33,7 @@ export interface ProgramSchedule {
   startDate: string | null;
   endDate: string | null;
   skipDates: string[];
+  startTime: string | null;
 }
 
 export interface HeldMembership {

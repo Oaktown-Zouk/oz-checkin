@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
 import { activeProgramsForDate, todayInStudioTz } from "../programSchedule.js";
 
@@ -83,27 +83,42 @@ export function CheckInDialog({
 
         {activePrograms.length > 0 && (
           <div className="program-picker">
-            {activePrograms.map((p) => (
-              <div key={p.id} className="program-picker-row">
-                <span className="program-picker-name">{p.name}</span>
-                <div className="program-picker-roles">
-                  <button
-                    type="button"
-                    className={`role-toggle${roles[p.id] === "Lead" ? " role-toggle-selected" : ""}`}
-                    onClick={() => toggle(p.id, "Lead")}
-                  >
-                    Lead
-                  </button>
-                  <button
-                    type="button"
-                    className={`role-toggle${roles[p.id] === "Follow" ? " role-toggle-selected" : ""}`}
-                    onClick={() => toggle(p.id, "Follow")}
-                  >
-                    Follow
-                  </button>
-                </div>
-              </div>
-            ))}
+            {activePrograms.map((p, i) => {
+              // A student can't be in two classes at once — once one program in a
+              // timeslot has a role picked, the others in that same slot are disabled
+              // (not just visually; the toggle handlers below never fire for them).
+              const conflictSelected = activePrograms.some(
+                (other) => other.id !== p.id && other.startTime === p.startTime && roles[other.id]
+              );
+              const showDivider = i > 0 && p.startTime !== activePrograms[i - 1].startTime;
+
+              return (
+                <Fragment key={p.id}>
+                  {showDivider && <hr className="program-picker-divider" />}
+                  <div className={`program-picker-row${conflictSelected ? " program-picker-row-disabled" : ""}`}>
+                    <span className="program-picker-name">{p.name}</span>
+                    <div className="program-picker-roles">
+                      <button
+                        type="button"
+                        className={`role-toggle${roles[p.id] === "Lead" ? " role-toggle-selected" : ""}`}
+                        disabled={conflictSelected}
+                        onClick={() => toggle(p.id, "Lead")}
+                      >
+                        Lead
+                      </button>
+                      <button
+                        type="button"
+                        className={`role-toggle${roles[p.id] === "Follow" ? " role-toggle-selected" : ""}`}
+                        disabled={conflictSelected}
+                        onClick={() => toggle(p.id, "Follow")}
+                      >
+                        Follow
+                      </button>
+                    </div>
+                  </div>
+                </Fragment>
+              );
+            })}
           </div>
         )}
 

@@ -627,3 +627,18 @@ body {
   color: white;
   border-color: #111827;
 }
+
+.role-toggle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.program-picker-row-disabled .program-picker-name {
+  color: var(--gray);
+}
+
+.program-picker-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}

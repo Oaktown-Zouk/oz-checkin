@@ -125,6 +125,19 @@ dialog. Unchanged from the previous version of this app.
   programs and submitting creates one `Check-ins` record per selection; each is
   independently gated (checking into 2 classes when the tier only allows 1/day
   correctly consumes/flags for the second one).
+- **Programs are listed by start time** (`Programs.Start Time`), grouped with a divider
+  between timeslots — classes sharing a slot sort alphabetically within it. Since a
+  student can't be in two classes at once, picking a role for one class in a timeslot
+  grays out and disables the Lead/Follow buttons for every other class in that same
+  slot, until it's deselected again.
+- **Preselected from the student's most recent visit** (`StudentStatus.
+  lastCheckinSelections`, computed once per roster fetch, not per dialog-open) — the
+  programs/roles they picked last time are checked by default, restricted to whichever
+  of those programs are still on today's (or the backdated day's) active schedule.
+  Deliberately not backdating-aware: always the true most recent visit, not "most
+  recent as of the viewed date" — see `docs/airtable-schema.md` for why (an
+  Airtable-formula version of this hit a real platform limit around dateTime rollup
+  precision).
 - **Program schedules are fetched once per session** (`GET /api/programs`, no date
   param — all `Status = Active` programs with their raw weekday/date-range/skip-date
   fields), not re-fetched every time the check-in picker opens. "Which programs are
@@ -250,12 +263,12 @@ far requires `Staff`.
   `/?authError=not_authorized` (no matching role row) or `/?authError=oauth_failed`
   (anything else going wrong) instead of setting a cookie.
 - `POST /api/logout` — clears the session cookie.
-- `GET /api/session` — `{ authenticated: boolean, email?, role? }`.
+- `GET /api/session` — `{ authenticated: boolean, email?, role?, permissions? }`.
 - `GET /api/students?date=<YYYY-MM-DD>` — the full roster with computed status
   (`accessStatus`, `membershipStatus`, `tierName`, `classesAllowed`, `remaining`,
-  `availableCredits`, `checkinsToday`, `checkedInToday`). `date` defaults to today; 400
-  if malformed. No `q` param — the frontend fetches the unfiltered roster once and
-  searches client-side, same as before.
+  `availableCredits`, `checkinsToday`, `checkedInToday`, `lastCheckinSelections` — see
+  "Check-in semantics"). `date` defaults to today; 400 if malformed. No `q` param — the
+  frontend fetches the unfiltered roster once and searches client-side, same as before.
 - `GET /api/students/:id/timeline` — synthesized event feed (membership started/
   status, payments, credits granted, check-ins) plus `totalCheckIns`/
   `mostRecentCheckInAt`. 404 if unknown id.
@@ -269,9 +282,9 @@ far requires `Staff`.
   missing fields; 404 if the plan or target student doesn't exist; 409 if the plan
   doesn't currently belong to `:id` or already belongs to the target.
 - `GET /api/programs` — all `Status = Active` Programs with their raw weekday/date-
-  range/skip-date fields, for the check-in picker to filter client-side against
-  whichever date is relevant (see "Check-in semantics"). Fetched once per session, not
-  per picker open.
+  range/skip-date fields and `startTime` (`Programs.Start Time`, `"HH:mm"`), for the
+  check-in picker to filter and sort client-side against whichever date is relevant
+  (see "Check-in semantics"). Fetched once per session, not per picker open.
 - `POST /api/checkins` `{ studentId, selections: [{ programId, role }], effectiveAt? }`
   — creates one `Check-ins` record per selection. 400 if `studentId`/`selections`
   missing or malformed, or `effectiveAt` doesn't parse.

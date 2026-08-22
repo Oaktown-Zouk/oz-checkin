@@ -8,6 +8,7 @@ export interface ProgramSchedule {
   startDate: string | null;
   endDate: string | null;
   skipDates: string[];
+  startTime: string | null;
 }
 
 function parseSkipDates(raw: string | undefined): string[] {
@@ -25,7 +26,7 @@ function parseSkipDates(raw: string | undefined): string[] {
 export async function listActivePrograms(): Promise<ProgramSchedule[]> {
   const programs = await listRecords<ProgramFields>(TABLES.programs, {
     filterByFormula: "{Status} = 'Active'",
-    fields: ["Program Name", "Weekdays", "Start Date", "End Date", "Skip Dates"],
+    fields: ["Program Name", "Weekdays", "Start Date", "End Date", "Skip Dates", "Start Time"],
   });
 
   return programs
@@ -36,6 +37,9 @@ export async function listActivePrograms(): Promise<ProgramSchedule[]> {
       startDate: p.fields["Start Date"] ?? null,
       endDate: p.fields["End Date"] ?? null,
       skipDates: parseSkipDates(p.fields["Skip Dates"]),
+      startTime: p.fields["Start Time"] ?? null,
     }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    // Chronological (classes at the same time grouped together — see CheckInDialog's
+    // divider), then by name within a time slot.
+    .sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? "") || a.name.localeCompare(b.name));
 }
