@@ -93,6 +93,31 @@ authRoutes.get("/auth/google/callback", async (c) => {
   return c.redirect(config.APP_ORIGIN + "/");
 });
 
+// Escape hatch so an agent (or a developer) can get a real session without a human
+// completing the Google consent screen — reuses the exact same Airtable-backed
+// getAccessForEmail lookup the real callback uses, so it's testing the real
+// role/permission resolution, just skipping the OAuth handshake itself. Only wired up
+// at all (not just guarded inside the handler) when BOTH DEV_LOGIN_ENABLED="true" AND
+// NODE_ENV !== "production" — a single misconfigured var can't turn this on in prod.
+if (config.DEV_LOGIN_ENABLED === "true" && !isProd) {
+  authRoutes.get("/auth/dev-login", async (c) => {
+    const email = c.req.query("email");
+    if (!email) return c.json({ error: "?email= required" }, 400);
+
+    const access = await getAccessForEmail(email);
+    if (!access) return c.json({ error: `No User Roles row for ${email}` }, 404);
+
+    setCookie(c, SESSION_COOKIE_NAME, createSessionValue({ email, role: access.role, permissions: access.permissions }), {
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: isProd,
+      maxAge: SESSION_MAX_AGE_SECONDS,
+    });
+    return c.redirect(config.APP_ORIGIN + "/");
+  });
+}
+
 authRoutes.post("/logout", (c) => {
   deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
   return c.json({ ok: true });

@@ -19,6 +19,10 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1, "GOOGLE_CLIENT_SECRET is required"),
   AIRTABLE_PAT: z.string().min(1, "AIRTABLE_PAT is required"),
   AIRTABLE_BASE_ID: z.string().min(1, "AIRTABLE_BASE_ID is required"),
+  // Opt-in escape hatch for local dev only — see routes/auth.ts's dev-login route.
+  // Requires BOTH this AND NODE_ENV !== "production" to actually activate, so it can't
+  // go live from a single misconfigured var. Unset/anything but "true" = off.
+  DEV_LOGIN_ENABLED: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
