@@ -31,6 +31,9 @@ export interface StudentStatus {
   availableCredits: number;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
+  // Drives roster sort order (see listStudentStatuses) — the 30-day threshold lives in
+  // the Airtable formula, not here.
+  recentlyActive: boolean;
 }
 
 export async function fetchProgramNames(): Promise<Map<string, string>> {
@@ -81,6 +84,7 @@ function buildStatus(
         reviewReason: c.fields["Review Reason"] ?? null,
       })),
     checkedInToday: checkinsForMember.length > 0,
+    recentlyActive: !!f["Recently Active"],
   };
 }
 
@@ -90,6 +94,10 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
 
   const [members, checkins, programNameById] = await Promise.all([
     listRecords<MemberFields>(TABLES.members, {
+      // Excludes records flagged as a stray Givebutter sync duplicate (see
+      // airtable/fields.ts) — filtered server-side so the roster never even fetches
+      // them, not just hides them client-side.
+      filterByFormula: "NOT({Duplicate})",
       fields: [
         "Full Name",
         "Email",
@@ -101,6 +109,7 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
         "Classes Allowed",
         "Remaining Today",
         "Available Credits",
+        "Recently Active",
       ],
     }),
     fetchCheckinsForDate(viewedDate),
@@ -120,8 +129,12 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
     buildStatus(m, isLiveToday, checkinsByMember.get(m.id) ?? [], programNameById)
   );
 
+  // Three tiers: recently active < stale (30+ days, or never active) < checked in today.
+  const tier = (s: StudentStatus) => (s.checkedInToday ? 2 : s.recentlyActive ? 0 : 1);
+
   statuses.sort((a, b) => {
-    if (a.checkedInToday !== b.checkedInToday) return a.checkedInToday ? 1 : -1;
+    const tierDiff = tier(a) - tier(b);
+    if (tierDiff !== 0) return tierDiff;
     if (a.checkedInToday && b.checkedInToday) {
       return (a.checkinsToday[0]?.checkedInAt ?? "").localeCompare(b.checkinsToday[0]?.checkedInAt ?? "");
     }

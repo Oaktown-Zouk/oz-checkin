@@ -138,3 +138,48 @@ to update Covers Member in Recurring Plans"). `Recurring Plans` already has the
 Airtable record update (`Covers Member` → new holder), no schema changes needed.
 Credit transfers (`Credits.Purchased By`) exist in the schema for the same purpose but
 weren't asked for yet — don't build that endpoint unless/until requested.
+
+## Duplicate members (resolved)
+
+Givebutter's own contact-merge tool doesn't actually remove the merged-away contact —
+it keeps existing there and the sync (which just upserts by Contact ID, with no concept
+of "these are the same person") re-creates an Airtable Member for it on a later run,
+even after the stray record is manually deleted (confirmed: happened twice in the same
+session for one contact). Manual deletion doesn't stick; a persistent flag does.
+
+`Members.Duplicate` (checkbox, added this session) — set manually once a duplicate is
+spotted. `services/studentStatus.ts`'s roster query excludes it server-side
+(`filterByFormula: "NOT({Duplicate})"`), so it never even gets fetched, not just hidden
+client-side. Direct-by-id lookups (timeline, level updates) are **not** filtered —
+only the roster list, since that's where the front-desk-facing duplication actually
+showed up; an admin can still open a flagged record's detail page directly if needed
+(e.g. to verify before Givebutter is fixed for real, or to reconcile its stray credit —
+Automation A grants a "New Member" credit on creation, so a re-synced duplicate can
+pick one up too).
+
+## Last Activity / Recently Active (resolved)
+
+Roster sort order needed a way to sink students who've gone quiet below active ones,
+without hardcoding a "30 days" threshold in the app. Built the same way as the rest of
+the base — real Airtable fields the app just reads, so the threshold is tunable in
+Airtable without a code deploy:
+
+- `Check-ins."Checked In At (Valid)"` (formula) — `IF({Undone At}, BLANK(), {Checked
+  In At})`. Excludes undone check-ins from counting as activity.
+- `Members."Last Check-in At"` (rollup) — MAX of `Checked In At (Valid)` across linked
+  Check-ins.
+- `Members."Last Transaction At"` (rollup) — MAX of `Transactions.Transacted At`.
+- `Members."Last Activity"` (formula) — the more recent of the two above:
+  `IF({Last Check-in At} > {Last Transaction At}, {Last Check-in At}, {Last Transaction
+  At})`. **Not** `MAX()` — Airtable's `MAX()` on two date fields coerces the result to
+  a plain number instead of preserving the date type; the `IF`-based comparison avoids
+  that.
+- `Members."Recently Active"` (formula) — `1`/`0`, whether `Last Activity` is within
+  the last 30 days: `IF(AND({Last Activity}, IS_AFTER({Last Activity}, DATEADD(TODAY(),
+  -30, "days"))), 1, 0)`. This is the field the app actually reads
+  (`fields.ts`/`studentStatus.ts`) — the 30-day window lives entirely in this formula.
+
+`services/studentStatus.ts` sorts the roster into three tiers: recently-active-and-not-
+checked-in-today, then stale-and-not-checked-in-today, then checked-in-today (which
+still sinks to the bottom as before). Not currently surfaced in the UI as a badge —
+purely a sort signal for now.

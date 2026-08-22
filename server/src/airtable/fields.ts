@@ -13,6 +13,15 @@ export interface MemberFields {
   "Classes Allowed"?: number;
   "Remaining Today"?: number;
   "Available Credits"?: number;
+  // Set manually when Givebutter's own contact-merge tool doesn't actually remove the
+  // merged-away contact — it keeps re-syncing as a separate record otherwise. Excluded
+  // from the roster (see studentStatus.ts); not a schema-level dedupe, just a hide flag.
+  Duplicate?: boolean;
+  // 1 iff Last Activity (max of last check-in / last transaction, both computed in
+  // Airtable) is within the last 30 days — that threshold lives in the Airtable
+  // formula, not here, so it's tunable without a code deploy. Drives roster sort order
+  // (see listStudentStatuses), not currently displayed.
+  "Recently Active"?: number;
 }
 
 export interface CheckinFields {

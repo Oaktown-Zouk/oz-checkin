@@ -266,7 +266,9 @@ authenticated session (`requireAuth` middleware — 401 if missing/invalid/expir
 - "Check In" opens the Program + Role picker (see "Check-in semantics"); once checked
   in, the button becomes "Check in to another class" and the row shows each check-in's
   time, class, and role, with an Undo link and a `Needs review` flag when applicable.
-- Checked-in-today rows sink to the bottom, grayed out.
+- Checked-in-today rows sink to the bottom, grayed out. Above that, students whose
+  `Members."Recently Active"` (Airtable formula, 30-day window) is false sort below
+  recently-active ones — see `docs/airtable-schema.md`.
 - "Refresh" button, top of page — manual only, no live push (see Architecture).
 - "Backdate check-ins" link in the header (hidden once a backdate is active, replaced
   by the picker) — see "Viewing and correcting past days" above.
