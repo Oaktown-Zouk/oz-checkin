@@ -129,3 +129,4 @@ live data — the main testing gap this project currently has.
 | `npm run typecheck` | Type-check server, web, and the Netlify function |
 | `npm test` | Server unit tests |
 | `npm run migrate:airtable` / `npm run migrate:credits` | One-time historical-data migration scripts (already run against production — see `server/src/scripts/`) — dry-run by default, `--apply` to write |
+| `npm run audit:credits` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |

@@ -22,6 +22,12 @@ export interface MemberFields {
   // formula, not here, so it's tunable without a code deploy. Drives roster sort order
   // (see listStudentStatuses), not currently displayed.
   "Recently Active"?: number;
+  // Link to the matching Tiers row, maintained by an external nightly plans sync (not
+  // part of this app) — see docs/airtable-schema.md, "Missing Tier Rule". Empty when
+  // that sync hasn't (or can't) match this member to a Tier; drives the "treat as a
+  // non-member" badge fallback (see MembershipBadge.tsx) and the credit-consumption
+  // audit script (scripts/auditCreditConsumption.ts).
+  "Tier Rule"?: string[];
 }
 
 export interface CheckinFields {

@@ -9,7 +9,15 @@ export function MembershipBadge({ student }: { student: StudentStatus }) {
   // "Inactive" gets no badge at all (dropped per product decision) — check-in still
   // works either way (front desk override), and flags for review once credits run out
   // too. See docs/airtable-schema.md, Members.Access Status.
-  const isMember = student.accessStatus === "Active";
+  //
+  // Also requires a resolved tierName, not just Access Status = Active — Airtable's
+  // Tier Rule link is maintained by an external nightly sync (see
+  // docs/airtable-schema.md, "Missing Tier Rule") and can lag or never catch up for a
+  // given member (e.g. Access Status flips Active before the sync links a tier, or a
+  // plan amount doesn't match any Tier at all). Rather than show a bare, informationless
+  // "Member" badge in that gap, treat them as a non-member for display purposes and
+  // fall through to credits — that's the actionable info front desk actually needs.
+  const isMember = student.accessStatus === "Active" && !!student.tierName;
   const accessLabel = isMember ? "Member" : student.accessStatus === "Paid" ? "Paid" : null;
   const accessClass = isMember ? "badge-green" : "badge-gray";
 
@@ -19,18 +27,16 @@ export function MembershipBadge({ student }: { student: StudentStatus }) {
   // (capitalized, count first, always singular "Class" regardless of count) to match
   // the "N credits available" pattern below, in a higher-contrast badge — this is the
   // single most important thing on the row.
-  const combinedLabel =
-    isMember && student.tierName
-      ? `${student.tierName.replace(/class(es)?/i, "Class")} Membership`
-      : accessLabel && student.tierName
-        ? `${accessLabel} - ${student.tierName}`
-        : (accessLabel ?? student.tierName);
-  const combinedClass =
-    isMember && student.tierName ? "badge-green badge-prominent" : accessLabel ? accessClass : "badge-blue";
+  const combinedLabel = isMember
+    ? `${student.tierName!.replace(/class(es)?/i, "Class")} Membership`
+    : accessLabel && student.tierName
+      ? `${accessLabel} - ${student.tierName}`
+      : (accessLabel ?? student.tierName);
+  const combinedClass = isMember ? "badge-green badge-prominent" : accessLabel ? accessClass : "badge-blue";
 
   // Credits only matter once a membership isn't already covering check-in — showing
   // them alongside an active membership would just be confusing, unused information.
-  const showCredits = student.accessStatus !== "Active";
+  const showCredits = !isMember;
 
   return (
     <>
