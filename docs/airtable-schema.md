@@ -1,288 +1,193 @@
-# Airtable schema mapping (Phase 0 output)
+# Airtable Schema Reference
 
-Reference for Phase 2 (the Netlify Functions rewrite). Base ID `appn5AoJ7935NUCc5`.
-Covers the tables this app actually reads/writes; `Programs`, `Benefits`, `Perk
-Redemptions`, `Monthly Summary`, and `Sync Log` exist in the base but aren't touched by
-this app directly (Programs is only relevant transitively, via `Sessions`).
+Base ID `appn5AoJ7935NUCc5`. Documents the tables and fields this app reads or writes,
+and the business logic that lives in Airtable formulas/automations rather than in this
+app's code.
 
-**Guiding principle** (per product decision): read Airtable's *computed* fields
-(formula/rollup) directly rather than reimplementing their logic in the server. If a
-formula changes in Airtable (e.g. drop-in expiry window), the app should pick that up
-automatically on the next read, not require a redeploy.
+**Guiding principle:** read Airtable's *computed* fields (formula/rollup) directly
+rather than reimplementing their logic in the server — a formula change in Airtable
+takes effect on the next read, no code deploy needed.
 
-## Old SQLite concept → Airtable
+Tables not covered here (`Sessions`, `Events`, `Benefits`, `Perk Redemptions`,
+`Monthly Summary`, `Sync Log`) exist in the base but aren't read or written by this
+app, except `Sessions`/`Events`' `Attendance Count` rollup — see the bottom of this
+doc. `Check-ins.Class Level` links directly to `Programs`, not a specific dated
+`Session`, so this app never resolves a `Session` instance.
 
-| Old (`server/src/db/schema.ts`) | Airtable | Notes |
-|---|---|---|
-| `students` | `Members` (`tbl90E8ZFxXlZrVkn`) | Email/name/phone already there. `lead_level`/`follow_level` → `Lead Level`/`Follow Level` (plain numbers, already exist). |
-| `student_emails` (merge) | — | Feature dropped. |
-| `waivers` | — | Feature dropped. |
-| `givebutter_contacts` | `Members.Contact ID` | Just a field now, not a separate table. |
-| `memberships` | `Recurring Plans` (`tblRJAL7UjNf9N0WB`) | `holder_student_id` split already exists as `Member` (payer) vs. `Covers Member` (holder). |
-| `membership_charges` | `Transactions` where `Is Recurring` is checked | No separate table — charges and one-time payments share `Transactions`, disambiguated by `Is Recurring` + `Plan ID` presence. |
-| `payments` (one-time credits) | `Transactions` (raw) + `Credits` (redeemable) | See "Credits system" below — `Credits` is the new source of truth for "is this spendable," not a formula on `Transactions`. |
-| `promo_credits` | `Credits` where `Reason = "New Member"` | Same table as purchased credits now — see below. |
-| `checkins` | `Check-ins` (`tblUN06HQtcMIucxK`) | Richer: links to `Session`/`Event`, not just a bare date. Undo sets `Undone At` (added this session) rather than deleting the row — see "Credits system" below. |
-| `sync_state` | — | N/A; Airtable's own sync (Sync Log table) is independent of this app. |
+## Members (`tbl90E8ZFxXlZrVkn`)
 
-## Credits system (built this session, see plan file for design rationale)
+Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
+`Follow Level` (the last two are app-writable, via the level-edit dialogs).
 
-`Credits` (`tblCFmQJntHiuMZNN`): `Member` (holder), `Purchased By` (payer, defaults
-same as Member — mirrors the `Recurring Plans` holder split so a future "transfer a
-credit" action has somewhere to write), `Reason` (`New Member` / `Drop-in Purchase` /
-`Comp`), `Source Transaction` (link → Transactions, set only for `Drop-in Purchase`),
-`Granted At`, `Consumed At` (blank = available), `Consumed By Check-in`, `Available`
-(formula: `IF({Consumed At}, 0, 1)`), `Credit`/`Credit ID` (display formulas).
-
-Three Airtable automations maintain it (built + verified working):
-- **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
-- **B** — `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
-  not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
-- **C** — new `Check-ins` record → if the check-in exceeds `Members.Classes Allowed`,
-  consumes the member's oldest `Available` credit (or sets `Needs Review`/`Review
-  Reason` if none exists). Revised after the initial build — see "Undo" below for its
-  current, final behavior (it no longer writes to `Members` at all).
-
-**The app should not reimplement "is this credit valid" or "how many credits does this
-member have"** — filter `Credits` by `Member` + `Available = 1`, that's it.
-
-### Undo (finalized, resolves the earlier open question)
-
-`Check-ins.Undone At` (dateTime) — the app sets this on undo rather than deleting the
-row, preserving history like the old app did. Everything downstream is now
-self-maintaining, verified end-to-end against live throwaway test data:
-
-- `Check-ins.Is Counted` (formula) — 1 if `Checked In At` is today (studio timezone)
-  and `Undone At` is blank, else 0.
-- `Members.Checked In Today (Live)` (rollup: SUM of `Is Counted`) replaces the old
-  plain `Checked In Today`/`Last Check-in Date` fields, which are now dead (no
-  automation writes them anymore) — safe to delete.
-- `Members.Remaining Today` = `{Classes Allowed} - {Checked In Today (Live)}`.
-- `Credits.Available` keys off whether `Consumed By Check-in` is still linked, **not**
-  `Consumed At` — so even a check-in deleted directly in Airtable (bypassing the app's
-  undo flow entirely) self-heals the credit via Airtable's own link-integrity, with no
-  automation involved. Verified directly: delete a Check-in that had consumed a credit
-  → `Available` flips back to `1` instantly.
-- Automation C (consume): reads `Member.Remaining Today` post-check-in-creation: if
-  negative, consumes the oldest `Available` credit or sets `Needs Review`. No longer
-  touches `Members` at all.
-- Automation D (free on undo): triggers when `Undone At` becomes non-blank; finds the
-  `Credits` record whose `Consumed By Check-in` points at this check-in and clears
-  `Consumed At`/`Consumed By Check-in`.
-
-**Implementation note for Phase 2:** `Check-ins.Checked In At` must be set explicitly
-on every create call — nothing defaults it, and `Check-in ID`/`Is Counted` both error
-(`#ERROR!`) if it's blank. The check-in endpoint must always stamp it.
-
-## Field reference — computed fields to read directly (don't recompute)
-
-**`Members`:**
-- `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"` (has
-  a recent drop-in or recent check-in) / `"Inactive"` / `"Trial"` (seen in real data for
-  new sign-ups; not otherwise special-cased — the app only ever branches on literally
-  `"Active"` vs. everything else, so `Trial` already behaves like `Inactive`: no access-
-  status badge, credits shown instead).
-- `Remaining Today` (formula) — `Classes Allowed - Checked In Today (Live)`, fully live
-  (see "Undo" above) — safe to read at any time, self-corrects on undo or deletion.
-- `Checked In Today (Live)` (rollup) — sum of today's non-undone check-ins. Purely
-  derived; nothing writes to it directly.
-- `Unused Drop-ins` (formula) — legacy, superseded by counting `Credits` where
-  `Available = 1`; likely fine to leave as-is or eventually deprecate, not load-bearing
-  for the new app.
+Computed fields to read directly, never recompute:
+- `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"`
+  (recent drop-in or check-in) / `"Inactive"` / `"Trial"` (new sign-ups). The app only
+  ever branches on literally `"Active"` vs. everything else — `Trial` behaves like
+  `Inactive`: no access-status badge, credits shown instead.
+- `Membership Status` (formula) — `"Active"` / `"Lapsed / Donor"` / `"Prospect"`, a
+  donor-status label distinct from `Access Status`.
 - `Tier Name` / `Classes Allowed` (rollups via `Tier Rule` → `Tiers`) — can be blank
-  even for an `Active` member; see "Missing Tier Rule" below.
-- `Membership Status` (formula) — `"Active"` / `"Lapsed / Donor"` / `"Prospect"` — a
-  donor-status label, distinct from `Access Status`.
-- `Subscription Status` (formula) — human-readable recurring-plan status string.
-- `Checked In Today` / `Last Check-in Date` — **legacy, dead.** Nothing writes to these
-  anymore (Automation C no longer touches them); safe to delete once confirmed nothing
-  else in the base references them.
+  even for an `Active` member; see "Tier Rule gaps" below.
+- `Remaining Today` (formula) — `Classes Allowed - Checked In Today (Live)`. Fully
+  live: self-corrects on undo or on a check-in being deleted directly in Airtable.
+- `Checked In Today (Live)` (rollup) — sum of today's non-undone check-ins.
+- `Available Credits` (rollup) — count of this member's `Credits` where
+  `Available = 1`.
+- `Recently Active` (formula) — `1`/`0` depending on whether `Last Activity` (below)
+  is within the last 30 days. Drives roster sort order (recently-active members sort
+  above stale ones); the 30-day threshold lives entirely in this formula, tunable
+  without a code deploy.
+- `Last Activity` (formula) — the more recent of `Last Check-in At` and
+  `Last Transaction At` (both rollups), via an `IF` comparison rather than `MAX()` —
+  Airtable's `MAX()` on two date fields coerces the result to a plain number, losing
+  the date type.
+- `Duplicate` (checkbox) — set by hand when Givebutter's contact-merge tool leaves a
+  stray record behind (it doesn't actually delete the merged-away contact, so the sync
+  keeps recreating it as a separate Member). The roster query excludes it server-side
+  (`NOT({Duplicate})`), so it's never fetched at all; direct-by-id lookups (timeline,
+  level edits) are not filtered.
+- `Tier Rule` (link → `Tiers`) — maintained by an external nightly plans sync, not
+  this app; see "Tier Rule gaps" below for when it's empty.
 
-**`Recurring Plans`:** `Is Active Membership`, `Is Paid Access` (formulas) — read these
-instead of reimplementing the old `isMembershipActive`/`membershipCoversCheckIn` logic
-from `studentStatus.ts`.
+Legacy/dead, safe to ignore or delete: `Unused Drop-ins` (superseded by counting
+available `Credits`), `Checked In Today` / `Last Check-in Date` (nothing writes to
+these anymore).
 
-**`Transactions`:** `Drop-in Valid` (formula, 14-day expiry) — superseded by `Credits`
-for actual redemption; may still be useful for reporting, not for check-in logic.
+### Tier Rule gaps
 
-**`Sessions`/`Events`:** `Attendance Count` (count of linked `Check-ins`) — read
-directly rather than counting check-ins ourselves.
+A member can show `Access Status = Active` with no resolved `Tier Name`/
+`Classes Allowed` — the external sync that maintains `Tier Rule` can lag behind a
+membership change, or no `Tiers` row may match the member's actual plan amount at all.
+Two things handle this:
 
-## Check-in flow (resolved)
+- **UX fallback** (`web/src/components/MembershipBadge.tsx`) — a member only gets the
+  "N Class Membership" badge when `Access Status = Active` **and** `Tier Name` is
+  resolved. Otherwise they're treated as a non-member for display purposes: no badge,
+  credits shown instead.
+- **`npm run audit:credits`** (`server/src/scripts/auditCreditConsumption.ts`) — since
+  a tier-less member's `Classes Allowed` rolls up to `0`, every one of their check-ins
+  should have consumed a credit or been flagged `Needs Review`. This script finds any
+  that did neither and links the member's oldest unclaimed `Available` credit. It
+  never fabricates a new credit — a genuine price/tier mismatch needs a human decision
+  about what actually happened, not an automatic guess.
 
-`Check-ins` fields relevant to the flow (old `Level`/`Second Class Level` deleted by
-the user, `Class Level` repurposed):
+## Check-ins (`tblUN06HQtcMIucxK`)
+
+- `Member` (link → Members).
+- `Checked In At` (dateTime) — must be set explicitly on every create call; nothing
+  defaults it, and dependent formulas (`Check-in ID`, `Is Counted`) error out if blank.
 - `Class Level` (link → `Programs`, despite the name) — which class this check-in is
-  for. **Direct link to `Programs`, not `Sessions`** — the app does not resolve a
-  specific dated `Session` instance; `Sessions`/`Session` stay unused by this app
-  (Events keeps its own separate flow, untouched here).
-- `Role` (single select: `Lead` / `Follow`, added this session) — which role the
-  member is checking in as for that class. One per check-in row; a member checking
-  into a program as both Lead and Follow would need two check-in rows (matches the UX
-  below — one row per Program, one role choice per row).
+  for.
+- `Role` (single select: `Lead` / `Follow`) — one per row; a member checking into a
+  program as both Lead and Follow needs two check-in rows (matches the check-in UX:
+  one row per Program, one role choice per row).
+- `Undone At` (dateTime) — set by the app on undo instead of deleting the row,
+  preserving history.
+- `Is Counted` (formula) — `1` if `Checked In At` is today (studio timezone) and
+  `Undone At` is blank, else `0`.
+- `Checked In At (Valid)` (formula) — `Checked In At` unless undone, else blank; feeds
+  `Members.Last Check-in At`.
+- `Needs Review` / `Review Reason` — set by Automation C when a check-in exceeds the
+  member's tier allowance and no credit is available to cover it.
+- `Credits` — reverse link, populated once a `Credits` record consumes this check-in.
 
-**UX:** front desk picks a student, then sees today's active `Programs` as a list, each
-row with a Lead/Follow choice (single-select per row, like a radio pair — not a
-freestanding checkbox pair). Multiple programs can be selected at once; submitting
-creates one `Check-ins` record per selected `{Program, Role}` pair. Each created
-Check-in independently runs through Automation C (gating/credit-consumption is
-per-check-in, so checking into 2 programs when the tier only allows 1/day correctly
-consumes/flags for the second one, same as two check-ins on separate visits would).
+The check-in dialog preselects a student's most recent visit's programs/roles by
+scanning non-undone Check-ins app-side (`StudentStatus.lastCheckinSelections`, see
+`services/studentStatus.ts`) — not stored as an Airtable field, and deliberately not
+backdating-aware: always the true most recent visit, regardless of which date is being
+viewed.
 
-**Still to design in Phase 2:** the "today's active Programs" filter — `Status =
-Active`, today's weekday in `Weekdays`, within `Start Date`/`End Date`, and not in
-`Skip Dates` (free text — needs a defined date format to parse reliably; check with the
-user what format `Skip Dates` actually uses before writing this filter).
+## Credits (`tblCFmQJntHiuMZNN`)
 
-## Transfers (resolved)
+`Member` (holder), `Purchased By` (payer — defaults same as Member, kept distinct so a
+future credit-transfer feature has somewhere to write), `Reason` (`New Member` /
+`Drop-in Purchase` / `Comp`), `Source Transaction` (link → Transactions, set only for
+`Drop-in Purchase`), `Granted At`, `Consumed At`, `Consumed By Check-in`, `Available`
+(formula — true iff `Consumed By Check-in` is unlinked, **not** based on
+`Consumed At`, so a credit self-heals if the check-in that consumed it is ever deleted
+directly in Airtable rather than undone through the app).
 
-Confirmed in scope, membership only for now (per user: "I think we just need the api
-to update Covers Member in Recurring Plans"). `Recurring Plans` already has the
-`Member`/`Covers Member` holder split — the transfer endpoint is a straightforward
-Airtable record update (`Covers Member` → new holder), no schema changes needed.
-Credit transfers (`Credits.Purchased By`) exist in the schema for the same purpose but
-weren't asked for yet — don't build that endpoint unless/until requested.
+The app never reimplements "is this credit valid" — it filters `Credits` by `Member` +
+`Available = 1`.
 
-## Duplicate members (resolved)
+Four Airtable automations maintain this table:
+- **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
+- **B** — a `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
+  not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
+- **C** — a new `Check-ins` record → reads `Member.Remaining Today` post-creation; if
+  negative, consumes the member's oldest `Available` credit, or sets `Needs Review`/
+  `Review Reason` if none exists. Doesn't write to `Members` at all.
+- **D** — `Check-ins.Undone At` becomes non-blank → finds the `Credits` record
+  consumed by that check-in and clears `Consumed At`/`Consumed By Check-in`.
 
-Givebutter's own contact-merge tool doesn't actually remove the merged-away contact —
-it keeps existing there and the sync (which just upserts by Contact ID, with no concept
-of "these are the same person") re-creates an Airtable Member for it on a later run,
-even after the stray record is manually deleted (confirmed: happened twice in the same
-session for one contact). Manual deletion doesn't stick; a persistent flag does.
+Automation C only fires for same-day check-ins (Airtable's live fields are hardcoded
+to literal "today"), so **backdated check-in creation is the one place this app
+computes gating itself** — mirroring Automation C's logic, parameterized by the target
+date. Undo needs no such split; Automation D works for any date.
 
-`Members.Duplicate` (checkbox, added this session) — set manually once a duplicate is
-spotted. `services/studentStatus.ts`'s roster query excludes it server-side
-(`filterByFormula: "NOT({Duplicate})"`), so it never even gets fetched, not just hidden
-client-side. Direct-by-id lookups (timeline, level updates) are **not** filtered —
-only the roster list, since that's where the front-desk-facing duplication actually
-showed up; an admin can still open a flagged record's detail page directly if needed
-(e.g. to verify before Givebutter is fixed for real, or to reconcile its stray credit —
-Automation A grants a "New Member" credit on creation, so a re-synced duplicate can
-pick one up too).
+## Programs (`tblB90zwd3OjKxxDs`)
 
-## Missing Tier Rule (known data gap, resolved with a UX fallback)
+`Program Name`, `Status` (`Planned`/`Active`/`Completed`/`Canceled`), `Weekdays`,
+`Start Date`, `End Date`, `Skip Dates` (comma-separated `YYYY-MM-DD`), `Start Time`
+(`"HH:mm"`, 24-hour zero-padded — sorts correctly as plain text).
 
-`Members.Tier Rule` (link → `Tiers`) is maintained by an external nightly plans sync —
-not part of this app, and not something it can trigger or read the logic of. It can
-lag or never resolve for a given member, leaving `Classes Allowed`/`Tier Name` blank
-even though `Access Status` already reads `Active`. Found via a manual sweep
-(2026-08-23) that turned up two real cases with different root causes:
+The app fetches all `Status = Active` programs once per session (`GET /api/programs`)
+and filters/sorts them client-side against whichever date is currently relevant (live
+or backdated) — see `SPEC.md`'s "Check-in semantics" for the exact filter and the
+same-timeslot conflict UI this schedule data drives.
 
-- **Jonathan Liu** — `$165/mo`, plan `Status = paused`. His amount matched the "2
-  classes" Tier exactly, but he was missing from that Tier's `Members` link — most
-  likely the sync hadn't caught up since his plan paused, or skips paused plans.
-  Fixed by manually adding him to the Tier's `Members` link.
-- **Dvij Patel** — `$60/mo`, plan `Status = active`. No `Tiers` row exists at that
-  price point at all (the two real tiers are $95 and $165) — a genuine mismatch, not a
-  timing issue. Turned out he meant to buy a one-time pass but accidentally used the
-  recurring option; his Recurring Plan is left as-is (Givebutter-synced — editing
-  `Status`/`Next Bill Date` in Airtable without also fixing the real subscription in
-  Givebutter risks the next sync reverting it), but two `Drop-in Purchase` credits were
-  manually created from his original transaction and marked consumed by the two
-  check-ins he actually attended.
+## Recurring Plans (`tblRJAL7UjNf9N0WB`)
 
-**UX fallback** (`web/src/components/MembershipBadge.tsx`): a member only gets the
-green "N Class Membership" badge when `Access Status = Active` **and** `Tier Name` is
-resolved. Active-but-tierless is treated as a non-member for display purposes — no
-badge at all, credits shown instead (whatever they actually have available is the
-actionable info front desk needs, not a broken/empty membership label).
+`Member` (payer, refreshed by the Givebutter sync), `Covers Member` (holder, for
+access/display — this split is what makes membership transfers a plain field update),
+`Status`, `Amount`, `Frequency`, `Start Date`, `Next Bill Date`, `Canceled At`,
+`Is Active Membership` / `Is Paid Access` (formulas — read these directly rather than
+reimplementing membership-active logic in the app).
 
-**`server/src/scripts/auditCreditConsumption.ts`** (`npm run audit:credits`) — a
-related, repeatable check: since a tier-less member's `Classes Allowed` rolls up to 0,
-every one of their check-ins should have consumed a credit or been flagged `Needs
-Review`. The script finds any that did neither and links the member's oldest unclaimed
-`Available` credit if one exists (never fabricates one — see the Dvij Patel case
-above for why that's a judgment call, not something to automate). Written after a
-sweep found 5 such check-ins from a batch of Form-submitted trial-class sign-ins whose
-credits sat unlinked, suspected to be an Automation C reliability issue (unconfirmed —
-the automation's script isn't readable via the API, so this can't be root-caused from
-here).
+Synced from Givebutter on a schedule (`Last Synced`) — editing `Status`/
+`Next Bill Date` directly in Airtable without also fixing the real Givebutter
+subscription risks the next sync reverting the change.
 
-## User Roles & Role Permissions (auth)
+## Transactions (`tbl97hoFODKY50QcH`)
 
-Two tables, both managed by hand — neither is synced from Givebutter, and there's no
-self-service signup, so add a row before a new person tries to sign in or gets a new
-role.
+Raw Givebutter charges — one-time and recurring share this table, disambiguated by
+`Is Recurring` + `Plan ID` presence. `Drop-in Valid` (formula, 14-day expiry) is
+superseded by `Credits` for actual redemption; may still be useful for reporting, not
+for check-in logic.
 
-- **`User Roles`** (`tblBeLbVbHNZIPIvz`) — maps a Google account email to a role.
-  Fields: `Email` (plain text, primary), `Role` (**link** → `Role Permissions`, not a
-  select — one row per role, so an admin tunes what a role can do in one place).
-- **`Role Permissions`** (`tblYo1awEOvqBGVpR`) — one row per role (`Staff` /
-  `Volunteer` / `Kiosk`, `Role` plain text primary), with a checkbox per permission:
-  `View Student Data`, `Write Student Data`, `Create Checkins`, `Undo Checkins`,
-  `Write Memberships`. Every route in the app requires exactly one of these (see
-  `SPEC.md`'s "Permissions" section for the full route → permission map). Current
-  grants (as of this writing — check the table directly for the live truth):
+## Tiers (`tblf5kiolgFrtQaIG`)
 
-  | Permission | Staff | Volunteer | Kiosk |
-  |---|---|---|---|
-  | View Student Data | ✅ | ✅ | ✅ |
-  | Write Student Data | ✅ | ✅ | ❌ |
-  | Create Checkins | ✅ | ✅ | ✅ |
-  | Undo Checkins | ✅ | ✅ | ✅ |
-  | Write Memberships | ✅ | ❌ | ❌ |
+`Tier` (name), `Min Monthly Price`, `Classes Per Day`, `Classes Per Week`, `Members`
+(reverse link from `Members.Tier Rule`).
 
-Login is Google OAuth (see `SPEC.md`'s "Auth" section): after verifying the account
-with Google, the server looks up its email in `User Roles` (case-insensitive),
-follows the `Role` link to `Role Permissions`, and bakes both the role name and the
-resolved permission list into the signed session cookie (`services/userAccess.ts`'s
-`getAccessForEmail`) — permission changes take effect on next login, not live,
-matching the tradeoff already made for the role itself. No matching `User Roles` row
-at all = no access — the callback route redirects to `/?authError=not_authorized`
-without setting a session. A row with a role but none of the permissions a given page
-needs still gets a session (so it doesn't need to re-auth once a page exists for it)
-but the relevant routes 403 it, and the frontend shows a "not authorized for this
-page" screen instead of the roster.
+## User Roles (`tblBeLbVbHNZIPIvz`) & Role Permissions (`tblYo1awEOvqBGVpR`)
 
-## Check-in dialog preselection (resolved)
+Both managed by hand — neither is synced from Givebutter, and there's no self-service
+signup, so add a row before a new person tries to sign in or gets a new role.
 
-The check-in dialog preselects whatever programs/roles a student picked on their most
-recent visit (not backdating-aware — always the true most recent visit, regardless of
-which date is being viewed/backdated). Computed server-side, once per roster fetch
-(`services/studentStatus.ts`'s `fetchMostRecentCheckinsByMember`), not per dialog-open —
-an earlier per-student endpoint was replaced with this after it proved slow at the
-front desk (`StudentStatus.lastCheckinSelections`).
+- **`User Roles`** — maps a Google account email to a role. Fields: `Email` (plain
+  text, primary), `Role` (**link** → `Role Permissions`, not a select — one row per
+  role, so an admin tunes what a role can do in one place).
+- **`Role Permissions`** — one row per role (`Staff` / `Volunteer` / `Kiosk`, `Role`
+  plain text primary), with a checkbox per permission: `View Student Data`,
+  `Write Student Data`, `Create Checkins`, `Undo Checkins`, `Write Memberships`. Every
+  route in the app requires exactly one of these — see `SPEC.md`'s "Permissions"
+  section for the full route → permission map. Check the table directly for the
+  live grants.
 
-**Tried and abandoned: doing this via an Airtable rollup/formula instead of app code.**
-The plan was a `Check-ins."Is Most Recent Check-in"` formula comparing `{Checked In
-At}` against a lookup of the member's `Last Check-in At` rollup, so the app could just
-filter on one boolean field instead of scanning the whole table. Hit a real platform
-limit: **Airtable rollups aggregating dateTime values via `MAX()` always collapse to
-date-only precision** — confirmed with two separate field-creation attempts, including
-one with an explicit `"formula": "MAX(values)"` payload. Working around that by
-grouping on date-only instead of exact timestamp would have needed the *day* extracted
-from the rolled-up value to agree with the day extracted from `{Checked In At}` — but
-the rollup's date-only rendering turned out to be in **UTC**, not the studio's Pacific
-time this app is otherwise careful about (see `lib/date.ts`/`STUDIO_TIMEZONE`), risking
-a real off-by-one-day bug for evening check-ins. Reverted to computing this in the app,
-where the timezone handling is already correct and tested. (The two now-orphaned
-fields from this attempt were deleted by hand in the Airtable UI — the REST API has no
-field-deletion endpoint.)
+Login is Google OAuth: after verifying the account with Google, the server looks up
+its email in `User Roles` (case-insensitive), follows the `Role` link to
+`Role Permissions`, and bakes both the role name and the resolved permission list into
+the signed session cookie (`services/userAccess.ts`'s `getAccessForEmail`) —
+permission changes take effect on that account's next login, not live. No matching
+`User Roles` row at all means no access — the callback route redirects to
+`/?authError=not_authorized` without setting a session. A row with a role but none of
+the permissions a given page needs still gets a session (so it doesn't need to
+re-auth once a page exists for it), but the relevant routes 403 it, and the frontend
+shows a "not authorized for this page" screen instead of the roster.
 
-## Last Activity / Recently Active (resolved)
+## Sessions / Events
 
-Roster sort order needed a way to sink students who've gone quiet below active ones,
-without hardcoding a "30 days" threshold in the app. Built the same way as the rest of
-the base — real Airtable fields the app just reads, so the threshold is tunable in
-Airtable without a code deploy:
-
-- `Check-ins."Checked In At (Valid)"` (formula) — `IF({Undone At}, BLANK(), {Checked
-  In At})`. Excludes undone check-ins from counting as activity.
-- `Members."Last Check-in At"` (rollup) — MAX of `Checked In At (Valid)` across linked
-  Check-ins.
-- `Members."Last Transaction At"` (rollup) — MAX of `Transactions.Transacted At`.
-- `Members."Last Activity"` (formula) — the more recent of the two above:
-  `IF({Last Check-in At} > {Last Transaction At}, {Last Check-in At}, {Last Transaction
-  At})`. **Not** `MAX()` — Airtable's `MAX()` on two date fields coerces the result to
-  a plain number instead of preserving the date type; the `IF`-based comparison avoids
-  that.
-- `Members."Recently Active"` (formula) — `1`/`0`, whether `Last Activity` is within
-  the last 30 days: `IF(AND({Last Activity}, IS_AFTER({Last Activity}, DATEADD(TODAY(),
-  -30, "days"))), 1, 0)`. This is the field the app actually reads
-  (`fields.ts`/`studentStatus.ts`) — the 30-day window lives entirely in this formula.
-
-`services/studentStatus.ts` sorts the roster into three tiers: recently-active-and-not-
-checked-in-today, then stale-and-not-checked-in-today, then checked-in-today (which
-still sinks to the bottom as before). Not currently surfaced in the UI as a badge —
-purely a sort signal for now.
+Not used by this app's check-in flow — `Check-ins.Class Level` links directly to
+`Programs`. `Attendance Count` (count of linked `Check-ins`) exists on these tables if
+ever needed for reporting; read it directly rather than counting check-ins.

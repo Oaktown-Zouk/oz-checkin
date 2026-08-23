@@ -30,7 +30,7 @@ export interface StudentStatus {
   // "Remaining" for the viewed date. For live/today, read straight from Airtable's
   // Remaining Today (Automation C already keeps it correct). For a backdated view,
   // Airtable's live fields can't represent a past date, so the app computes it itself —
-  // see docs/airtable-schema.md "Backdating".
+  // see docs/airtable-schema.md, "Credits" (backdated gating).
   remaining: number;
   // Current truth, never reconstructed historically — matches the old app's behavior.
   availableCredits: number;

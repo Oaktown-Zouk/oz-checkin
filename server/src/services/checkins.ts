@@ -46,7 +46,7 @@ async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): 
 
 // Backdated path only — Automation C's same-day guard means it no-ops for these, so
 // the app mirrors its gating logic itself, parameterized by the backdated date instead
-// of literal "today." See docs/airtable-schema.md "Backdating".
+// of literal "today." See docs/airtable-schema.md, "Credits" (backdated gating).
 async function gateBackdatedCheckIns(
   studentId: string,
   effectiveAt: Date,

@@ -12,7 +12,7 @@ export function MembershipBadge({ student }: { student: StudentStatus }) {
   //
   // Also requires a resolved tierName, not just Access Status = Active — Airtable's
   // Tier Rule link is maintained by an external nightly sync (see
-  // docs/airtable-schema.md, "Missing Tier Rule") and can lag or never catch up for a
+  // docs/airtable-schema.md, "Tier Rule gaps") and can lag or never catch up for a
   // given member (e.g. Access Status flips Active before the sync links a tier, or a
   // plan amount doesn't match any Tier at all). Rather than show a bare, informationless
   // "Member" badge in that gap, treat them as a non-member for display purposes and

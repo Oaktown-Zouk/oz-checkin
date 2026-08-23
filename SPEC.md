@@ -135,9 +135,7 @@ dialog. Unchanged from the previous version of this app.
   programs/roles they picked last time are checked by default, restricted to whichever
   of those programs are still on today's (or the backdated day's) active schedule.
   Deliberately not backdating-aware: always the true most recent visit, not "most
-  recent as of the viewed date" — see `docs/airtable-schema.md` for why (an
-  Airtable-formula version of this hit a real platform limit around dateTime rollup
-  precision).
+  recent as of the viewed date."
 - **Program schedules are fetched once per session** (`GET /api/programs`, no date
   param — all `Status = Active` programs with their raw weekday/date-range/skip-date
   fields), not re-fetched every time the check-in picker opens. "Which programs are
@@ -328,7 +326,7 @@ permissions don't include the one that route needs). See "Permissions" above.
 
 - Search bar (name), filters the already-fetched roster client-side.
 - Rows: name · badges (dance levels, then either a membership-tier badge or a
-  credits-remaining badge — never both, see "Missing Tier Rule" in
+  credits-remaining badge — never both, see "Tier Rule gaps" (under Members) in
   `docs/airtable-schema.md` for when a nominal member shows credits instead) · Check
   In button · 3-dot menu. Each of Check In/Undo/level-edit/Transfer only renders for a
   session with the matching permission (see "Permissions" above) — a lower-permission
