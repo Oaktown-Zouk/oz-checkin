@@ -12,8 +12,8 @@ declare module "hono" {
 }
 
 // Every route declares the single permission it needs (see docs/airtable-schema.md,
-// "Role Permissions") rather than a role — roles are just how Airtable groups
-// permissions together, the app itself only ever checks permissions.
+// "User Roles & Role Permissions") rather than a role — roles are just how Airtable
+// groups permissions together, the app itself only ever checks permissions.
 export function requirePermission(permission: Permission) {
   return async function (c: Context, next: Next) {
     const session = readSession(getCookie(c, SESSION_COOKIE_NAME));

@@ -6,6 +6,7 @@ dist/
 *.sqlite-shm
 *.sqlite.bak-*
 server/migration-log-*.json
+server/migration-credits-log-*.json
 .env
 .env.local
 .env.scratch

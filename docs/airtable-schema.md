@@ -38,10 +38,10 @@ Three Airtable automations maintain it (built + verified working):
 - **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
 - **B** — `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
   not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
-- **C** — new `Check-ins` record → script bumps `Members.Checked In Today`/`Last
-  Check-in Date`, stamps `Check-ins.Nth Today`, and if the check-in exceeds
-  `Members.Classes Allowed`, consumes the member's oldest `Available` credit (or sets
-  `Needs Review`/`Review Reason` if none exists).
+- **C** — new `Check-ins` record → if the check-in exceeds `Members.Classes Allowed`,
+  consumes the member's oldest `Available` credit (or sets `Needs Review`/`Review
+  Reason` if none exists). Revised after the initial build — see "Undo" below for its
+  current, final behavior (it no longer writes to `Members` at all).
 
 **The app should not reimplement "is this credit valid" or "how many credits does this
 member have"** — filter `Credits` by `Member` + `Available = 1`, that's it.
@@ -78,7 +78,10 @@ on every create call — nothing defaults it, and `Check-in ID`/`Is Counted` bot
 
 **`Members`:**
 - `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"` (has
-  a recent drop-in or recent check-in) / `"Inactive"`.
+  a recent drop-in or recent check-in) / `"Inactive"` / `"Trial"` (seen in real data for
+  new sign-ups; not otherwise special-cased — the app only ever branches on literally
+  `"Active"` vs. everything else, so `Trial` already behaves like `Inactive`: no access-
+  status badge, credits shown instead).
 - `Remaining Today` (formula) — `Classes Allowed - Checked In Today (Live)`, fully live
   (see "Undo" above) — safe to read at any time, self-corrects on undo or deletion.
 - `Checked In Today (Live)` (rollup) — sum of today's non-undone check-ins. Purely
@@ -86,7 +89,8 @@ on every create call — nothing defaults it, and `Check-in ID`/`Is Counted` bot
 - `Unused Drop-ins` (formula) — legacy, superseded by counting `Credits` where
   `Available = 1`; likely fine to leave as-is or eventually deprecate, not load-bearing
   for the new app.
-- `Tier Name` / `Classes Allowed` (rollups via `Tier Rule` → `Tiers`).
+- `Tier Name` / `Classes Allowed` (rollups via `Tier Rule` → `Tiers`) — can be blank
+  even for an `Active` member; see "Missing Tier Rule" below.
 - `Membership Status` (formula) — `"Active"` / `"Lapsed / Donor"` / `"Prospect"` — a
   donor-status label, distinct from `Access Status`.
 - `Subscription Status` (formula) — human-readable recurring-plan status string.
@@ -157,20 +161,79 @@ showed up; an admin can still open a flagged record's detail page directly if ne
 Automation A grants a "New Member" credit on creation, so a re-synced duplicate can
 pick one up too).
 
-## User Roles (auth, added this session)
+## Missing Tier Rule (known data gap, resolved with a UX fallback)
 
-`User Roles` (`tblBeLbVbHNZIPIvz`) — maps a Google account email to an app role.
-Fields: `Email` (plain text, primary), `Role` (single select: `Staff` / `Volunteer` /
-`Kiosk`). Not synced from Givebutter; managed by hand — add a row before a new person
-tries to sign in, there's no self-service signup.
+`Members.Tier Rule` (link → `Tiers`) is maintained by an external nightly plans sync —
+not part of this app, and not something it can trigger or read the logic of. It can
+lag or never resolve for a given member, leaving `Classes Allowed`/`Tier Name` blank
+even though `Access Status` already reads `Active`. Found via a manual sweep
+(2026-08-23) that turned up two real cases with different root causes:
+
+- **Jonathan Liu** — `$165/mo`, plan `Status = paused`. His amount matched the "2
+  classes" Tier exactly, but he was missing from that Tier's `Members` link — most
+  likely the sync hadn't caught up since his plan paused, or skips paused plans.
+  Fixed by manually adding him to the Tier's `Members` link.
+- **Dvij Patel** — `$60/mo`, plan `Status = active`. No `Tiers` row exists at that
+  price point at all (the two real tiers are $95 and $165) — a genuine mismatch, not a
+  timing issue. Turned out he meant to buy a one-time pass but accidentally used the
+  recurring option; his Recurring Plan is left as-is (Givebutter-synced — editing
+  `Status`/`Next Bill Date` in Airtable without also fixing the real subscription in
+  Givebutter risks the next sync reverting it), but two `Drop-in Purchase` credits were
+  manually created from his original transaction and marked consumed by the two
+  check-ins he actually attended.
+
+**UX fallback** (`web/src/components/MembershipBadge.tsx`): a member only gets the
+green "N Class Membership" badge when `Access Status = Active` **and** `Tier Name` is
+resolved. Active-but-tierless is treated as a non-member for display purposes — no
+badge at all, credits shown instead (whatever they actually have available is the
+actionable info front desk needs, not a broken/empty membership label).
+
+**`server/src/scripts/auditCreditConsumption.ts`** (`npm run audit:credits`) — a
+related, repeatable check: since a tier-less member's `Classes Allowed` rolls up to 0,
+every one of their check-ins should have consumed a credit or been flagged `Needs
+Review`. The script finds any that did neither and links the member's oldest unclaimed
+`Available` credit if one exists (never fabricates one — see the Dvij Patel case
+above for why that's a judgment call, not something to automate). Written after a
+sweep found 5 such check-ins from a batch of Form-submitted trial-class sign-ins whose
+credits sat unlinked, suspected to be an Automation C reliability issue (unconfirmed —
+the automation's script isn't readable via the API, so this can't be root-caused from
+here).
+
+## User Roles & Role Permissions (auth)
+
+Two tables, both managed by hand — neither is synced from Givebutter, and there's no
+self-service signup, so add a row before a new person tries to sign in or gets a new
+role.
+
+- **`User Roles`** (`tblBeLbVbHNZIPIvz`) — maps a Google account email to a role.
+  Fields: `Email` (plain text, primary), `Role` (**link** → `Role Permissions`, not a
+  select — one row per role, so an admin tunes what a role can do in one place).
+- **`Role Permissions`** (`tblYo1awEOvqBGVpR`) — one row per role (`Staff` /
+  `Volunteer` / `Kiosk`, `Role` plain text primary), with a checkbox per permission:
+  `View Student Data`, `Write Student Data`, `Create Checkins`, `Undo Checkins`,
+  `Write Memberships`. Every route in the app requires exactly one of these (see
+  `SPEC.md`'s "Permissions" section for the full route → permission map). Current
+  grants (as of this writing — check the table directly for the live truth):
+
+  | Permission | Staff | Volunteer | Kiosk |
+  |---|---|---|---|
+  | View Student Data | ✅ | ✅ | ✅ |
+  | Write Student Data | ✅ | ✅ | ❌ |
+  | Create Checkins | ✅ | ✅ | ✅ |
+  | Undo Checkins | ✅ | ✅ | ✅ |
+  | Write Memberships | ✅ | ❌ | ❌ |
 
 Login is Google OAuth (see `SPEC.md`'s "Auth" section): after verifying the account
-with Google, the server looks up its email here (case-insensitive) to decide the
-role for the session cookie. No matching row = no access at all, not just "no role" —
-the callback route redirects to `/?authError=not_authorized` without setting a
-session. All current UX requires `Staff`; `Volunteer`/`Kiosk` exist as roles a session
-can hold (so they don't need to re-auth once pages exist for them) but every route
-built so far 403s them.
+with Google, the server looks up its email in `User Roles` (case-insensitive),
+follows the `Role` link to `Role Permissions`, and bakes both the role name and the
+resolved permission list into the signed session cookie (`services/userAccess.ts`'s
+`getAccessForEmail`) — permission changes take effect on next login, not live,
+matching the tradeoff already made for the role itself. No matching `User Roles` row
+at all = no access — the callback route redirects to `/?authError=not_authorized`
+without setting a session. A row with a role but none of the permissions a given page
+needs still gets a session (so it doesn't need to re-auth once a page exists for it)
+but the relevant routes 403 it, and the frontend shows a "not authorized for this
+page" screen instead of the roster.
 
 ## Check-in dialog preselection (resolved)
 

@@ -90,16 +90,6 @@ export async function getRecordOrNull<F = Record<string, unknown>>(
   }
 }
 
-export async function createRecord<F = Record<string, unknown>>(
-  table: string,
-  fields: Partial<F>
-): Promise<AirtableRecord<F>> {
-  return request<AirtableRecord<F>>(`/${encodeTable(table)}`, {
-    method: "POST",
-    body: JSON.stringify({ fields }),
-  });
-}
-
 // Airtable's batch-create endpoint accepts up to 10 records per call — plenty for
 // "check into several classes at once," the only caller that needs more than one.
 export async function createRecords<F = Record<string, unknown>>(
@@ -122,10 +112,6 @@ export async function updateRecord<F = Record<string, unknown>>(
     method: "PATCH",
     body: JSON.stringify({ fields }),
   });
-}
-
-export async function deleteRecord(table: string, id: string): Promise<void> {
-  await request(`/${encodeTable(table)}/${id}`, { method: "DELETE" });
 }
 
 // Table IDs, not names — stable against the user renaming a table in the Airtable UI

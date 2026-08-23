@@ -186,6 +186,29 @@ menu on a row, or a button on the student detail page. Credit transfers
 (`Credits.Purchased By` exists in the schema for the same purpose) aren't built —
 not requested yet.
 
+## Permissions
+
+Access is permission-based, not role-based — a role is just Airtable's way of
+grouping permissions together, and every route/UI action checks a specific
+permission, never a role name directly. Two tables drive this (full detail in
+`docs/airtable-schema.md`):
+
+- **`User Roles`** — Google account email → a linked `Role Permissions` row.
+- **`Role Permissions`** — one row per role (`Staff`/`Volunteer`/`Kiosk`), a checkbox
+  per permission: `View Student Data`, `Write Student Data`, `Create Checkins`,
+  `Undo Checkins`, `Write Memberships`.
+
+Resolved once at login and baked into the session cookie (see "Auth" below) — an
+admin can tune what a role can do in Airtable without a code deploy, but a change
+takes effect on that account's next login, not live. The frontend mirrors the same
+permissions via a `PermissionsProvider` context (`web/src/permissions.ts`), so a role
+missing a permission doesn't just get a 403 from the API — the corresponding button
+never renders in the first place (e.g. no Undo link without `Undo Checkins`, no level-
+edit badges without `Write Student Data`, no Transfer menu item without
+`Write Memberships`). A session with no `View Student Data` can't reach the roster at
+all — the frontend shows a "not authorized for this page" screen naming the signed-in
+account instead.
+
 ## Architecture
 
 ```
@@ -224,14 +247,16 @@ not requested yet.
   CDN.
 - **Auth:** Google OAuth (authorization code flow, `server/src/routes/auth.ts`) — sign-in
   redirects to Google, the callback exchanges the code server-side and reads the
-  account's email from Google's userinfo endpoint, then looks up that email in
-  Airtable's `User Roles` table (`Email` → `Role`: `Staff`/`Volunteer`/`Kiosk`; no
-  matching row = no access). On success the app mints its own stateless HMAC-signed
-  session cookie carrying `{ email, role }` (`server/src/lib/session.ts`) — no
-  server-side session store (fits serverless) and no re-checking Airtable on every
-  request. Routes are gated by role via `requireRole(...)` (`server/src/lib/auth.ts`);
-  all current UX requires `Staff` — `Volunteer`/`Kiosk` can log in but have no pages
-  built for them yet, and see a "not authorized for this page" screen instead.
+  account's email from Google's userinfo endpoint, then resolves it to a role and
+  permission set via Airtable (`services/userAccess.ts`; see "Permissions" below). On
+  success the app mints its own stateless HMAC-signed session cookie carrying
+  `{ email, role, permissions }` (`server/src/lib/session.ts`) — no server-side
+  session store (fits serverless) and no re-checking Airtable on every request.
+  A dev-only escape hatch (`GET /api/auth/dev-login?email=`, gated behind
+  `DEV_LOGIN_ENABLED=true` *and* `NODE_ENV !== "production"`, not just wired up
+  conditionally so a single misconfigured var can't activate it in prod) mints a real
+  session the same way, skipping Google's consent screen — useful for an agent or
+  script to verify UI changes without a human present.
 - **No cross-table transactions.** Airtable's API has no multi-table atomic write.
   Where a single logical action touches two records (e.g. a backdated check-in
   consuming a credit), the app writes them sequentially and accepts the rare
@@ -250,52 +275,64 @@ not requested yet.
 
 ## API
 
-All routes except `/api/auth/google/*`, `/api/logout`, `/api/session`, and `/health`
-require a valid session with an allowed role (`requireRole(...)` middleware — 401 if no
-session, 403 if the session's role isn't allowed on that route). Every route built so
-far requires `Staff`.
+All routes except `/api/auth/*`, `/api/logout`, `/api/session`, and `/health` require
+a valid session holding the specific permission noted below (`requirePermission(...)`
+middleware, `server/src/lib/auth.ts` — 401 if no session, 403 if the session's
+permissions don't include the one that route needs). See "Permissions" above.
 
 - `GET /health` — `{ ok: true }`, no auth required.
 - `GET /api/auth/google/start` — redirects to Google's OAuth consent screen. Real
   browser navigation, not a fetch call.
-- `GET /api/auth/google/callback` — exchanges the auth code, looks up the account's
-  role in `User Roles`, sets the session cookie if found, redirects to `/`. Redirects to
-  `/?authError=not_authorized` (no matching role row) or `/?authError=oauth_failed`
-  (anything else going wrong) instead of setting a cookie.
+- `GET /api/auth/google/callback` — exchanges the auth code, resolves the account's
+  role/permissions via `User Roles`/`Role Permissions`, sets the session cookie if
+  found, redirects to `/`. Redirects to `/?authError=not_authorized` (no matching
+  `User Roles` row) or `/?authError=oauth_failed` (anything else going wrong) instead
+  of setting a cookie.
+- `GET /api/auth/dev-login?email=` — dev-only equivalent of the callback above, minus
+  the Google round-trip. See "Auth" above for its gating.
 - `POST /api/logout` — clears the session cookie.
 - `GET /api/session` — `{ authenticated: boolean, email?, role?, permissions? }`.
-- `GET /api/students?date=<YYYY-MM-DD>` — the full roster with computed status
-  (`accessStatus`, `membershipStatus`, `tierName`, `classesAllowed`, `remaining`,
-  `availableCredits`, `checkinsToday`, `checkedInToday`, `lastCheckinSelections` — see
-  "Check-in semantics"). `date` defaults to today; 400 if malformed. No `q` param — the
-  frontend fetches the unfiltered roster once and searches client-side, same as before.
-- `GET /api/students/:id/timeline` — synthesized event feed (membership started/
-  status, payments, credits granted, check-ins) plus `totalCheckIns`/
-  `mostRecentCheckInAt`. 404 if unknown id.
-- `PATCH /api/students/:id/lead-level` `{ level }` — `level` is `1`–`4` or `null`. 400
-  if invalid.
-- `PATCH /api/students/:id/follow-level` `{ level }` — same shape.
-- `GET /api/students/:id/memberships` — Recurring Plans currently held by this student
-  (for the transfer picker).
-- `POST /api/students/:id/transfer-membership` `{ planId, targetEmail }` — moves that
-  Recurring Plan's `Covers Member` to the student found by `targetEmail`. 400 if
-  missing fields; 404 if the plan or target student doesn't exist; 409 if the plan
-  doesn't currently belong to `:id` or already belongs to the target.
-- `GET /api/programs` — all `Status = Active` Programs with their raw weekday/date-
-  range/skip-date fields and `startTime` (`Programs.Start Time`, `"HH:mm"`), for the
-  check-in picker to filter and sort client-side against whichever date is relevant
-  (see "Check-in semantics"). Fetched once per session, not per picker open.
+- `GET /api/students?date=<YYYY-MM-DD>` — **View Student Data.** The full roster with
+  computed status (`accessStatus`, `membershipStatus`, `tierName`, `classesAllowed`,
+  `remaining`, `availableCredits`, `checkinsToday`, `checkedInToday`,
+  `lastCheckinSelections` — see "Check-in semantics"). `date` defaults to today; 400 if
+  malformed. No `q` param — the frontend fetches the unfiltered roster once and
+  searches client-side, same as before.
+- `GET /api/students/:id/timeline` — **View Student Data.** Synthesized event feed
+  (membership started/status, payments, credits granted, check-ins) plus
+  `totalCheckIns`/`mostRecentCheckInAt`. 404 if unknown id.
+- `PATCH /api/students/:id/lead-level` `{ level }` — **Write Student Data.** `level` is
+  `1`–`4` or `null`. 400 if invalid.
+- `PATCH /api/students/:id/follow-level` `{ level }` — **Write Student Data.** Same
+  shape.
+- `GET /api/students/:id/memberships` — **View Student Data.** Recurring Plans
+  currently held by this student (for the transfer picker).
+- `POST /api/students/:id/transfer-membership` `{ planId, targetEmail }` — **Write
+  Memberships.** Moves that Recurring Plan's `Covers Member` to the student found by
+  `targetEmail`. 400 if missing fields; 404 if the plan or target student doesn't
+  exist; 409 if the plan doesn't currently belong to `:id` or already belongs to the
+  target.
+- `GET /api/programs` — **Create Checkins.** All `Status = Active` Programs with their
+  raw weekday/date-range/skip-date fields and `startTime` (`Programs.Start Time`,
+  `"HH:mm"`), for the check-in picker to filter and sort client-side against whichever
+  date is relevant (see "Check-in semantics"). Fetched once per session, not per
+  picker open. Gated by `Create Checkins` rather than `View Student Data` since it's
+  schedule data, not student data, and it's only ever consumed by the check-in flow.
 - `POST /api/checkins` `{ studentId, selections: [{ programId, role }], effectiveAt? }`
-  — creates one `Check-ins` record per selection. 400 if `studentId`/`selections`
-  missing or malformed, or `effectiveAt` doesn't parse.
-- `DELETE /api/checkins/:id` — sets `Undone At` on that check-in. 404 if unknown; 409
-  if already undone.
+  — **Create Checkins.** Creates one `Check-ins` record per selection. 400 if
+  `studentId`/`selections` missing or malformed, or `effectiveAt` doesn't parse.
+- `DELETE /api/checkins/:id` — **Undo Checkins.** Sets `Undone At` on that check-in.
+  404 if unknown; 409 if already undone.
 
 ## Webpage (front desk view)
 
 - Search bar (name), filters the already-fetched roster client-side.
-- Rows: name · badges (dance levels, tier, access status, credits) · Check In button ·
-  3-dot menu.
+- Rows: name · badges (dance levels, then either a membership-tier badge or a
+  credits-remaining badge — never both, see "Missing Tier Rule" in
+  `docs/airtable-schema.md` for when a nominal member shows credits instead) · Check
+  In button · 3-dot menu. Each of Check In/Undo/level-edit/Transfer only renders for a
+  session with the matching permission (see "Permissions" above) — a lower-permission
+  session simply doesn't see the control, not a disabled version of it.
 - "Check In" opens the Program + Role picker (see "Check-in semantics"); once checked
   in, the button becomes "Check in to another class" and the row shows each check-in's
   time, class, and role, with an Undo link and a `Needs review` flag when applicable.

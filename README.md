@@ -40,7 +40,9 @@ that migration is fully trusted (see `SPEC.md`'s cutover notes).
 npm install
 
 cp .env.example .env
-# fill in AIRTABLE_PAT, AIRTABLE_BASE_ID, SESSION_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+# fill in AIRTABLE_PAT, AIRTABLE_BASE_ID, SESSION_SECRET, APP_ORIGIN, GOOGLE_CLIENT_ID,
+# GOOGLE_CLIENT_SECRET; leave DEV_LOGIN_ENABLED unless you want the dev-login escape
+# hatch (see .env.example's comment on it)
 ```
 
 **Two env files exist, both needed, kept in sync manually:**
@@ -49,12 +51,13 @@ cp .env.example .env
 - **`server/.env`** — read by `npm run dev` (the plain `@hono/node-server` path, not
   going through the Netlify runtime).
 
-Both need the same five variables. `.env.example` (root) and `server/.env.example`
-document them.
+Both need the same six required variables, plus the optional `DEV_LOGIN_ENABLED`.
+`.env.example` (root) and `server/.env.example` document them.
 
 **Authorizing an account:** logging in only works for accounts with a row in the
-`User Roles` Airtable table (`Email` → `Role`). Add a row there before anyone new tries
-to sign in — there's no self-service signup. See `docs/airtable-schema.md`.
+`User Roles` Airtable table (`Email` → a linked `Role Permissions` row, which is what
+actually determines what the account can do — see `docs/airtable-schema.md`). Add a
+row there before anyone new tries to sign in — there's no self-service signup.
 
 ## Running locally
 
