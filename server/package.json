@@ -4,26 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --exclude 'data/**' --exclude 'drizzle/**' src/dev.ts",
+    "dev": "tsx watch src/dev.ts",
     "build": "tsc -p tsconfig.build.json",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "migrate:airtable": "tsx src/scripts/migrateToAirtable.ts",
-    "migrate:credits": "tsx src/scripts/migrateCreditsToAirtable.ts",
     "audit:credits": "tsx src/scripts/auditCreditConsumption.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --env-file=.env.test --import tsx --test"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "drizzle-orm": "1.0.0-rc.4",
     "hono": "^4.6.9",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@hono/node-server": "^1.13.7",
     "@types/node": "^24.0.0",
-    "drizzle-kit": "1.0.0-rc.4",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"
   }

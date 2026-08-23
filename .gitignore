@@ -1,10 +1,5 @@
 node_modules/
 dist/
-*.sqlite
-*.sqlite-journal
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite.bak-*
 server/migration-log-*.json
 server/migration-credits-log-*.json
 .env
@@ -12,7 +7,6 @@ server/migration-credits-log-*.json
 .env.scratch
 web/dist/
 server/dist/
-server/drizzle/meta/
 *.log
 .DS_Store
 

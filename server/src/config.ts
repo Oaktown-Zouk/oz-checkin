@@ -3,10 +3,6 @@ import { z } from "zod";
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
-  // Only read by server/src/db/* now (kept around for the Phase 3 migration script,
-  // which reads historical check-in/level data out of the old SQLite file) — the app
-  // itself talks to Airtable, not this.
-  DATABASE_PATH: z.string().default("./data/oz-checkin.sqlite"),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   // The origin the *browser* actually sees (not necessarily the origin this process
   // listens on) — used to build the OAuth redirect_uri and the post-login redirect.

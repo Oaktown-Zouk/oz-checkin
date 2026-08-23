@@ -13,11 +13,10 @@ netlify.toml         Netlify build/functions/publish config
 ```
 
 **Airtable is the database.** This app has no local database of its own — it reads and
-writes an Airtable base directly over its REST API. `server/src/db/` (SQLite/Drizzle)
-and `server/src/scripts/migrate*.ts` still exist only as the one-time migration path
-that moved the *old* version of this app's data (which did run on local SQLite) into
-Airtable; they're not part of the running app anymore and are slated for deletion once
-that migration is fully trusted (see `SPEC.md`'s cutover notes).
+writes an Airtable base directly over its REST API. An earlier version of this app ran
+on local SQLite; that code (and the one-time migration scripts that moved its data into
+Airtable) has been deleted now that the migration is fully trusted — see git history if
+you need it for reference.
 
 ## Prerequisites
 
@@ -96,11 +95,9 @@ Either way: open the app (`:8888` or `:5173`) and sign in with Google — the ac
 needs a row in Airtable's `User Roles` table first (see above).
 
 **Everything both modes talk to is the real Airtable base** — there's no local/seed
-data mode anymore (the old SQLite-backed `npm run seed` is gone along with the
-database it seeded). Use throwaway test records in Airtable directly if you need to
-exercise a flow without touching real students — see the migration scripts and their
-`--apply`-gated dry-run pattern for the general approach this project has used for
-that.
+data mode. Use throwaway test records in Airtable directly if you need to exercise a
+flow without touching real students — see `server/src/scripts/auditCreditConsumption.ts`
+for the dry-run/`--apply` pattern this project uses for scripts that write data.
 
 ## Testing
 
@@ -131,5 +128,4 @@ live data — the main testing gap this project currently has.
 | `npm run build` | Production build — `web/dist` (static) + compiled `server/dist` (unused by Netlify directly, but keeps the workspace typechecking/buildable standalone) |
 | `npm run typecheck` | Type-check server, web, and the Netlify function |
 | `npm test` | Server unit tests |
-| `npm run migrate:airtable` / `npm run migrate:credits` | One-time historical-data migration scripts (already run against production — see `server/src/scripts/`) — dry-run by default, `--apply` to write |
 | `npm run audit:credits` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |
