@@ -187,12 +187,12 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
     )
   );
 
-  // Three tiers: recently active < stale (30+ days, or never active) < checked in today.
-  const tier = (s: StudentStatus) => (s.checkedInToday ? 2 : s.recentlyActive ? 0 : 1);
+  // Three sort groups: recently active < stale (30+ days, or never active) < checked in today.
+  const displayOrder = (s: StudentStatus) => (s.checkedInToday ? 2 : s.recentlyActive ? 0 : 1);
 
   statuses.sort((a, b) => {
-    const tierDiff = tier(a) - tier(b);
-    if (tierDiff !== 0) return tierDiff;
+    const orderDiff = displayOrder(a) - displayOrder(b);
+    if (orderDiff !== 0) return orderDiff;
     if (a.checkedInToday && b.checkedInToday) {
       return (a.checkinsToday[0]?.checkedInAt ?? "").localeCompare(b.checkinsToday[0]?.checkedInAt ?? "");
     }
