@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline } from "../api.js";
+import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline, type TimelineEvent } from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
@@ -14,6 +14,55 @@ function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
+// One of the four boxes in the stats row — a plain `<div>` normally, or a clickable
+// `<button>` when `onClick` is given (used for Lead/Follow, which open the level-edit
+// dialog; "most recent check-in"/"total check-ins" have nothing to click through to).
+function StatBox({ label, value, onClick }: { label: string; value: React.ReactNode; onClick?: () => void }) {
+  const content = (
+    <>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+    </>
+  );
+  return onClick ? (
+    <button type="button" className="stat stat-clickable" onClick={onClick}>
+      {content}
+    </button>
+  ) : (
+    <div className="stat">{content}</div>
+  );
+}
+
+// The newest-first event feed at the bottom of the page — see api.ts's TimelineEvent
+// for the event types (membership started/status, payments, credits, check-ins).
+function Timeline({ events }: { events: TimelineEvent[] }) {
+  if (events.length === 0) return <p className="empty-state">No events yet.</p>;
+  return (
+    <div className="timeline">
+      {events.map((e, i) => (
+        <div className="timeline-event" key={`${e.type}-${e.at}-${i}`}>
+          <span className={`timeline-dot timeline-dot-${e.type}`} />
+          <div className="timeline-content">
+            <div className="timeline-label">{e.label}</div>
+            <div className="timeline-date">{formatDateTime(e.at)}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The student detail page (`/students/:id`) — reached by clicking a name on the
+// roster. Loads and displays:
+//   - Header: name, email, the same badges as the roster row, and (with
+//     Write Memberships) a "Transfer membership" button.
+//   - Stats row: most recent check-in, total check-ins, and Lead/Follow level (the
+//     level boxes are clickable and open the edit dialog when the session has
+//     Write Student Data).
+//   - A synthesized timeline of membership/payment/credit/check-in events.
+// Actions available from here: edit Lead/Follow level, transfer a membership, and
+// (via onBack) return to the roster — each gated by its own permission, see
+// usePermissions() below.
 export function StudentPage({
   studentId,
   onBack,
@@ -102,64 +151,25 @@ export function StudentPage({
           </div>
 
           <div className="student-stats">
-            <div className="stat">
-              <div className="stat-label">Most recent check-in</div>
-              <div className="stat-value">
-                {timeline.mostRecentCheckInAt ? formatDate(timeline.mostRecentCheckInAt) : "Never"}
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Total check-ins</div>
-              <div className="stat-value">{timeline.totalCheckIns}</div>
-            </div>
-            {canEditLevels ? (
-              <button type="button" className="stat stat-clickable" onClick={() => setEditingLevel("lead")}>
-                <div className="stat-label">Lead Level</div>
-                <div className="stat-value">
-                  <LevelBadge level={timeline.status.leadLevel} shape="square" />
-                </div>
-              </button>
-            ) : (
-              <div className="stat">
-                <div className="stat-label">Lead Level</div>
-                <div className="stat-value">
-                  <LevelBadge level={timeline.status.leadLevel} shape="square" />
-                </div>
-              </div>
-            )}
-            {canEditLevels ? (
-              <button type="button" className="stat stat-clickable" onClick={() => setEditingLevel("follow")}>
-                <div className="stat-label">Follow Level</div>
-                <div className="stat-value">
-                  <LevelBadge level={timeline.status.followLevel} shape="circle" />
-                </div>
-              </button>
-            ) : (
-              <div className="stat">
-                <div className="stat-label">Follow Level</div>
-                <div className="stat-value">
-                  <LevelBadge level={timeline.status.followLevel} shape="circle" />
-                </div>
-              </div>
-            )}
+            <StatBox
+              label="Most recent check-in"
+              value={timeline.mostRecentCheckInAt ? formatDate(timeline.mostRecentCheckInAt) : "Never"}
+            />
+            <StatBox label="Total check-ins" value={timeline.totalCheckIns} />
+            <StatBox
+              label="Lead Level"
+              value={<LevelBadge level={timeline.status.leadLevel} shape="square" />}
+              onClick={canEditLevels ? () => setEditingLevel("lead") : undefined}
+            />
+            <StatBox
+              label="Follow Level"
+              value={<LevelBadge level={timeline.status.followLevel} shape="circle" />}
+              onClick={canEditLevels ? () => setEditingLevel("follow") : undefined}
+            />
           </div>
 
           <h2 className="timeline-heading">Timeline</h2>
-          {timeline.events.length === 0 ? (
-            <p className="empty-state">No events yet.</p>
-          ) : (
-            <div className="timeline">
-              {timeline.events.map((e, i) => (
-                <div className="timeline-event" key={`${e.type}-${e.at}-${i}`}>
-                  <span className={`timeline-dot timeline-dot-${e.type}`} />
-                  <div className="timeline-content">
-                    <div className="timeline-label">{e.label}</div>
-                    <div className="timeline-date">{formatDateTime(e.at)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <Timeline events={timeline.events} />
         </>
       )}
 
