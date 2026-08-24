@@ -47,8 +47,8 @@ export function readSession(raw: string | undefined): SessionPayload | null {
     return null;
   }
   if (typeof payload.email !== "string" || typeof payload.role !== "string") return null;
-  // Rejects cookies minted before `permissions` existed on the payload (e.g. sessions
-  // from before this field was added) instead of crashing downstream on .includes().
+  // A cookie without a permissions array is invalid — reject it here instead of
+  // crashing downstream on .includes().
   if (!Array.isArray(payload.permissions)) return null;
   if (typeof payload.expires !== "number" || Date.now() > payload.expires) return null;
   return payload;

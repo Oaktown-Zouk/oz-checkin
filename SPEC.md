@@ -44,8 +44,11 @@ handful of things that are genuinely this app's own business logic.
   credits granted, check-ins) and running stats.
 - **Manual refresh** — no live cross-device push (Netlify Functions can't hold a
   connection open); a "Refresh" button re-fetches the roster.
-- **Google OAuth login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`) looked up in
-  Airtable, stateless signed-cookie session.
+- **Google OAuth login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/`Admin`)
+  looked up in Airtable, stateless signed-cookie session.
+- **Kiosk mode** (`/kiosk`) — a self-serve check-in station for a tablet: a student
+  scans a QR code (their Givebutter contact id) or types their name, taps Lead/Follow,
+  and walks in with no staff involvement. See "Kiosk mode" below.
 
 ## Scale & constraints
 
@@ -192,9 +195,14 @@ permission, never a role name directly. Two tables drive this (full detail in
 `docs/airtable-schema.md`):
 
 - **`User Roles`** — Google account email → a linked `Role Permissions` row.
-- **`Role Permissions`** — one row per role (`Staff`/`Volunteer`/`Kiosk`), a checkbox
-  per permission: `View Student Data`, `Write Student Data`, `Create Checkins`,
-  `Undo Checkins`, `Write Memberships`.
+- **`Role Permissions`** — one row per role (`Staff`/`Volunteer`/`Kiosk`/`Admin`), a
+  checkbox per permission: `View Student Data`, `Write Student Data`,
+  `Create Checkins`, `Undo Checkins`, `Write Memberships`, `Backdate Kiosk`. `Kiosk`
+  deliberately has neither `View Student Data` nor `Write Student Data` — only
+  `Create Checkins`/`Undo Checkins` — so a kiosk session can never reach the roster at
+  all, not even a read-only view of it (see "Kiosk mode" below). `Backdate Kiosk` is
+  Admin-only and unlocks a "simulate now" date control on `/kiosk`, for testing time-
+  sensitive kiosk behavior (see "Kiosk mode").
 
 Resolved once at login and baked into the session cookie (see "Auth" below) — an
 admin can tune what a role can do in Airtable without a code deploy, but a change
@@ -204,8 +212,9 @@ missing a permission doesn't just get a 403 from the API — the corresponding b
 never renders in the first place (e.g. no Undo link without `Undo Checkins`, no level-
 edit badges without `Write Student Data`, no Transfer menu item without
 `Write Memberships`). A session with no `View Student Data` can't reach the roster at
-all — the frontend shows a "not authorized for this page" screen naming the signed-in
-account instead.
+all: one with `Create Checkins` (i.e. `Kiosk`) is routed to `/kiosk` instead (see
+"Kiosk mode" below); one with neither sees a "not authorized for this page" screen
+naming the signed-in account.
 
 ## Architecture
 
@@ -225,10 +234,12 @@ account instead.
 │     ├─ POST students/:id/transfer-membership   │
 │     ├─ GET  programs                           │
 │     ├─ POST checkins                           │
-│     └─ DELETE checkins/:id                     │
+│     ├─ DELETE checkins/:id                     │
+│     ├─ GET  kiosk/roster                       │
+│     └─ GET  kiosk/students/:id                 │
 │              │                                 │
 │              ▼                                 │
-│         Airtable REST API (system of record)   │
+│    airtable/client.ts (real or mock — below)   │
 └───────────────────────────────────────────────┘
 ```
 
@@ -237,8 +248,12 @@ account instead.
   Functions v2 path-based routing. Locally runs the same way under `netlify dev`, or
   standalone via `@hono/node-server` (`server/src/dev.ts`, `npm run dev`) for quicker
   iteration without the Netlify runtime.
-- **Airtable client:** thin `fetch` wrapper (`server/src/airtable/client.ts`) — pagination,
-  429 retry, no SDK dependency.
+- **Airtable client:** `server/src/airtable/client.ts` is a thin dispatcher, not the
+  HTTP implementation itself — it delegates to `realClient.ts` (the actual `fetch`
+  wrapper: pagination, 429 retry, no SDK dependency) or `mockClient.ts` (an in-memory
+  fake, see "Testing" below) based on `MOCK_AIRTABLE`, gated identically to
+  `DEV_LOGIN_ENABLED` below. Every `services/*.ts` file imports from `client.ts`, never
+  `realClient.ts`/`mockClient.ts` directly, so the swap is invisible to them.
 - **Frontend:** React + Vite SPA, hand-rolled routing (`window.history.pushState` + a
   `popstate` listener) — no router library, the app only has two "pages" (the roster
   and a student detail page). Built to static files (`web/dist`), served by Netlify's
@@ -255,11 +270,11 @@ account instead.
   conditionally so a single misconfigured var can't activate it in prod) mints a real
   session the same way, skipping Google's consent screen — useful for an agent or
   script to verify UI changes without a human present. Restricted to a fixed allowlist
-  of three real `User Roles` test accounts, one per role (`claude-staff@test.com`,
-  `claude-volunteer@test.com`, `claude-kiosk@test.com`) — it can't be used to
-  impersonate an actual staff member even if the env gate above were ever
-  misconfigured. Every attempt (allowed or rejected) is logged to the server/function
-  console.
+  of four real `User Roles` test accounts, one per role (`claude-staff@test.com`,
+  `claude-volunteer@test.com`, `claude-kiosk@test.com`, `claude-admin@test.com`) — it
+  can't be used to impersonate an actual staff member even if the env gate above were
+  ever misconfigured. Every attempt (allowed or rejected) is logged to the
+  server/function console.
 - **No cross-table transactions.** Airtable's API has no multi-table atomic write.
   Where a single logical action touches two records (e.g. a backdated check-in
   consuming a credit), the app writes them sequentially and accepts the rare
@@ -275,6 +290,56 @@ account instead.
   `:3000`, so `APP_ORIGIN` there is `http://localhost:5173`, not `:3000`. The OAuth
   client's "Authorized redirect URIs" need one entry per `APP_ORIGIN` value
   (`<APP_ORIGIN>/api/auth/google/callback`).
+
+## Testing
+
+Three layers, all built on one mock (`server/src/airtable/mockClient.ts`) that stands
+in for Airtable behind the exact interface `services/*.ts` already calls — see
+"Airtable client" above for how it gets swapped in (`MOCK_AIRTABLE=true` *and*
+`NODE_ENV !== "production"`).
+
+**What the mock actually computes**, vs. what's just fixture-static (seed data sets it
+directly, exactly as if Airtable had already resolved it): `Members.Available
+Credits`/`Checked In Today (Live)`/`Remaining Today` and `Credits.Available` are
+computed live from the mock's own Checkins/Credits state (`mockCompute.ts`), because
+the app's own logic depends on them staying consistent with its own mutations.
+Automations C and D (consume/flag on a live check-in, free a credit on undo — see
+"Credits system" above) are simulated as synchronous side effects of
+`createRecords`/`updateRecord`, which is strictly *better* than real Airtable for
+testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
+`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`, and
+`Recurring Plans.Is Active/Paid Access` are deliberately **not** derived (no `Tiers`
+join modeled at all) — the app only ever reads these as opaque, already-resolved
+values, so replicating Airtable's own formulas for them would be real effort for no
+behavior that needs it dynamic. `filterByFormula` strings are
+evaluated by `mockFormula.ts`, a small set of structural matchers for the handful of
+shapes this codebase's own template strings actually produce (not a general parser) —
+an unrecognized shape throws loudly rather than silently mis-filtering.
+
+- **Unit tests** (`npm test`, `node:test`, `server/src/services/*.test.ts`) — fast,
+  isolated, no network. `.env.test` sets `MOCK_AIRTABLE=true` plus dummy
+  `AIRTABLE_PAT`/`AIRTABLE_BASE_ID` (never actually used). Each test calls
+  `resetMockStore({...})` with exactly the fixture it needs.
+- **Sandbox** (`npm run dev:sandbox`) — the real app running against the mock instead
+  of real Airtable, for fast interactive verification with zero risk to real student
+  data. Runs via the plain node server + Vite (`server/src/dev.ts` on `:3000` +
+  Vite on `:5199`), **not** `netlify dev` — Netlify Functions' dev emulation reloads
+  the function module on every invocation (correctly matching real serverless
+  behavior), which wipes an in-memory store between requests. A long-running process
+  doesn't have that problem.
+  `POST /api/dev/reset-mock` (same `MOCK_AIRTABLE=true && !isProd` gating as
+  dev-login) reseeds back to `server/src/airtable/sandboxSeed.ts`'s default fixtures
+  without restarting the server.
+- **E2E** (`npm run test:e2e`, Playwright, `e2e/*.spec.ts`) — a handful of specs
+  driving a real browser against a sandbox Playwright boots itself (`e2e/
+  playwright.config.ts`, two dedicated `webServer` entries on their own ports so a
+  real dev session never collides with the E2E one). `workers: 1` — every spec shares
+  one mock-backed server/store, so parallel workers would let one spec's `beforeEach`
+  reset race another's in-flight assertions. Playwright is pinned to `1.48`: this repo
+  has been developed on macOS 13, and current Playwright releases have dropped
+  Chromium support for it — installing the browser needs
+  `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx playwright install chromium` on
+  that OS specifically.
 
 ## API
 
@@ -326,6 +391,17 @@ permissions don't include the one that route needs). See "Permissions" above.
   `studentId`/`selections` missing or malformed, or `effectiveAt` doesn't parse.
 - `DELETE /api/checkins/:id` — **Undo Checkins.** Sets `Undone At` on that check-in.
   404 if unknown; 409 if already undone.
+- `GET /api/kiosk/roster?date=` — **Create Checkins.** `{ students: [{id, contactId,
+  name, membershipStatus, availableCredits, remaining}] }` — every non-duplicate
+  student (not just eligible ones), fetched once and cached client-side so both name
+  search and QR-scan matching run locally with no per-keystroke/per-scan round trip
+  (see "Kiosk mode" below). `date` is only honored for a session that also holds
+  **Backdate Kiosk**; anyone else passing it gets a 403.
+- `GET /api/kiosk/students/:id?date=` — **Create Checkins.** Full `StudentStatus` by
+  record id — used once a roster-cache match (scan or search tap) picks a specific,
+  currently-eligible student, and to refresh state after each kiosk check-in. 404 if
+  unknown or no longer eligible (re-checked authoritatively, even though the frontend
+  already filtered on its cached snapshot). Same `date` gating as `/roster`.
 
 ## Webpage (front desk view)
 
@@ -366,3 +442,82 @@ clicking a name.
   carries a plan), `credit_granted`, `checkin`.
 - Routing is hand-rolled — a direct load or reload of `/students/:id` lands back on
   that student's page, not the list.
+
+## Kiosk mode
+
+`/kiosk` — a self-serve check-in station meant to be left running unattended on a
+tablet, so a student can check themselves in with no front-desk involvement.
+
+- **Login redirect**: a `Kiosk`-role account (only `Create Checkins`/`Undo Checkins`,
+  no `View Student Data`) is confined to `/kiosk` entirely, not just defaulted there —
+  navigating anywhere else in the app bounces straight back. Staff/Volunteer accounts
+  can also visit `/kiosk` directly (they hold `Create Checkins` too); it's just not
+  their default landing page.
+- **Roster cache**: on load, the page fetches every non-duplicate student once
+  (`GET /api/kiosk/roster`) into local state — id, Contact ID, full name, membership
+  status, available credits, and remaining allowance. Both name search and QR-scan
+  matching run against this local snapshot, not a per-keystroke/per-scan server round
+  trip. Names are shown in full — no more privacy here than other studio-management
+  tools already show on a shared device — but email/tier/badges/full status still
+  aren't in the cache; those only appear once a specific student is resolved by id
+  (`GET /api/kiosk/students/:id`), after a scan match or a search-result tap.
+- **QR scanning**: the page opens the device's front (`user`-facing) camera — the
+  same side as the screen, since the kiosk is a fixed tablet the student walks up to
+  and holds their code up to — and continuously decodes frames with `jsqr` (a
+  bundled, all-JS decoder — chosen over the Chrome-only `BarcodeDetector` API so this
+  works on any tablet/browser). The QR
+  payload is expected to be a student's Givebutter contact id (`Members.Contact ID`),
+  printed on cards handed out to students. A decoded id is matched against the cached
+  roster's `contactId` field locally, instantly, before ever hitting the network.
+- **Name search**: a search bar above the camera feed, filtered client-side against
+  the cached roster's `name` — matches everyone, not just eligible students (see
+  below), so a decline can name the actual reason instead of a blanket "not found."
+- **Eligibility**: something left to spend today — `remaining > 0` or
+  `availableCredits > 0` (`isKioskEligible`, `server/src/services/studentStatus.ts`).
+  Deliberately not gated on an active membership — a drop-in/trial student who only
+  ever bought credits can still self-check-in, same as at the front desk. An
+  ineligible match shows a specific reason — "no active membership/credits" vs. "used
+  up today's classes and credits" — since it's the matched student's own status being
+  shown to them, not another student's. A scan/search that matches *no one at all*
+  shows a generic "please see the front desk" instead.
+  - **Search** decides eligibility from the cached roster snapshot with no round trip
+    — it was just fetched/filtered, so staleness is a non-issue and an instant decline
+    is worth it.
+  - **Scan** always asks the server for current status instead, even if the cached
+    snapshot says ineligible — a QR scan can happen well after the roster was cached
+    (unlike a search tap, which follows right after typing), and the whole point of
+    scanning is to skip typing, so it shouldn't get blocked on a snapshot that might
+    already be stale (e.g. a credit bought or a membership renewed moments ago). The
+    server re-checks eligibility authoritatively either way; a genuine decline falls
+    back to the cached snapshot's reason text.
+- **Check-in dialog** (`KioskCheckInDialog`): large, touch-friendly buttons, one per
+  {class, role} still available today. Tapping a button immediately creates that one
+  check-in (`POST /api/checkins`, the same endpoint the front desk uses) and refetches
+  the student's status — no separate "confirm" step. The header button reads "Cancel"
+  until the student's first successful check-in that visit, then "Done"; both just
+  close the dialog. If the student's allocation runs out (`remaining <= 0 &&
+  availableCredits <= 0`) or every visible class is already checked into, the dialog
+  instead shows "Welcome {name}! / Have a great class" and auto-closes after
+  5 seconds — the explicit Cancel/Done tap has no such delay, since the student already
+  confirmed they're finished in that case.
+- **Visible window (kiosk-only)**: a class stops appearing in the kiosk's picker once
+  `Programs.Start Time + Programs.Visible For` (a duration field, read over the API as
+  a plain number of seconds) has passed — `withinVisibleWindow`,
+  `web/src/programSchedule.ts`. This filter is deliberately kiosk-only: the front
+  desk's `CheckInDialog` still shows every class regardless of time, since staff need
+  to be able to fix or add check-ins after a class ends.
+- Camera access and the decode loop persist for the page's whole lifetime (not
+  re-requested per dialog open/close); an `enabled` flag just pauses whether decoded
+  frames are acted on while a dialog or error message is on screen
+  (`web/src/useQrScanner.ts`).
+- **Testing: simulate now (Admin only)**. A session with **Backdate Kiosk** (only
+  `Admin` has it) sees a small "simulate now" date/time control tucked in a corner of
+  `/kiosk` (reusing the front desk's `EffectiveDateControl`/`BackdateDialog`). Setting
+  it re-fetches the roster and student lookups with `?date=` and re-derives the
+  visible-window check (`withinVisibleWindow`) and check-in timestamp
+  (`POST /api/checkins`'s `effectiveAt`) against that simulated instant instead of the
+  real current time — the whole page behaves as if it were that moment, so a Visible
+  For window or an allowance reset can be tested without waiting for it to actually
+  happen. Both endpoints reject a `date` param from any session lacking
+  `Backdate Kiosk` (403) — a real production kiosk tablet has no way to misrepresent
+  the current time even via a crafted request.

@@ -1,6 +1,7 @@
 export interface CheckInInfo {
   id: string;
   checkedInAt: string;
+  programId: string | null;
   programName: string | null;
   role: "Lead" | "Follow" | null;
   needsReview: boolean;
@@ -11,6 +12,7 @@ export interface StudentStatus {
   id: string;
   name: string;
   email: string;
+  contactId: string | null;
   leadLevel: number | null;
   followLevel: number | null;
   accessStatus: string;
@@ -34,6 +36,7 @@ export interface ProgramSchedule {
   endDate: string | null;
   skipDates: string[];
   startTime: string | null;
+  visibleForSeconds: number | null;
 }
 
 export interface HeldMembership {
@@ -66,7 +69,17 @@ export type Permission =
   | "Write Student Data"
   | "Create Checkins"
   | "Undo Checkins"
-  | "Write Memberships";
+  | "Write Memberships"
+  | "Backdate Kiosk";
+
+export interface KioskRosterEntry {
+  id: string;
+  contactId: string | null;
+  name: string;
+  membershipStatus: string;
+  availableCredits: number;
+  remaining: number;
+}
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -113,7 +126,7 @@ export const api = {
     request<{
       authenticated: boolean;
       email?: string;
-      role?: "Staff" | "Volunteer" | "Kiosk";
+      role?: "Staff" | "Volunteer" | "Kiosk" | "Admin";
       permissions?: Permission[];
     }>("/api/session"),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
@@ -153,4 +166,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ planId, targetEmail }),
     }),
+  // Kiosk mode — fetched once and cached client-side (see KioskPage.tsx) so search
+  // and QR-scan matching both run locally with no per-keystroke/per-scan round trip.
+  // Deliberately a lightweight shape (never the full StudentStatus) — see
+  // services/kiosk.ts's listKioskRoster for why. `date` is only honored server-side
+  // for a session holding Backdate Kiosk (Admin only); anyone else passing it gets a
+  // 403 (caught as ForbiddenError), see routes/kiosk.ts.
+  kioskRoster: (date?: string) => {
+    const params = new URLSearchParams();
+    if (date) params.set("date", date);
+    return request<{ students: KioskRosterEntry[] }>(`/api/kiosk/roster?${params.toString()}`);
+  },
+  kioskStudent: (studentId: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (date) params.set("date", date);
+    return request<StudentStatus>(`/api/kiosk/students/${studentId}?${params.toString()}`);
+  },
 };

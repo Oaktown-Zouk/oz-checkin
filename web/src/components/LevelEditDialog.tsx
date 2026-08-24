@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LevelBadge } from "./LevelBadge.js";
+import { Portal } from "./Portal.js";
 
 const LEVEL_OPTIONS: (number | null)[] = [null, 1, 2, 3, 4];
 
@@ -34,34 +35,36 @@ export function LevelEditDialog({
   }
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
-        <h2>{title}</h2>
-        <div className="level-options">
-          {LEVEL_OPTIONS.map((level) => (
-            <button
-              type="button"
-              key={level ?? "unset"}
-              className={`level-option${selected === level ? " level-option-selected" : ""}`}
-              onClick={() => setSelected(level)}
-            >
-              <span className="level-option-icon">
-                <LevelBadge level={level} shape={shape} />
-              </span>
-              <span className="level-option-label">{level === null ? "Unset" : `Level ${level}`}</span>
+    <Portal>
+      <div className="dialog-overlay" onClick={onClose}>
+        <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
+          <h2>{title}</h2>
+          <div className="level-options">
+            {LEVEL_OPTIONS.map((level) => (
+              <button
+                type="button"
+                key={level ?? "unset"}
+                className={`level-option${selected === level ? " level-option-selected" : ""}`}
+                onClick={() => setSelected(level)}
+              >
+                <span className="level-option-icon">
+                  <LevelBadge level={level} shape={shape} />
+                </span>
+                <span className="level-option-label">{level === null ? "Unset" : `Level ${level}`}</span>
+              </button>
+            ))}
+          </div>
+          {error && <p className="error">{error}</p>}
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+              Cancel
             </button>
-          ))}
-        </div>
-        {error && <p className="error">{error}</p>}
-        <div className="dialog-actions">
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={submitting}>
-            {submitting ? "Saving…" : "Save"}
-          </button>
+            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={submitting}>
+              {submitting ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Portal>
   );
 }

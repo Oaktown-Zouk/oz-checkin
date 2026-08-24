@@ -94,30 +94,43 @@ that touches routing/deployment behavior specifically.
 Either way: open the app (`:8888` or `:5173`) and sign in with Google — the account
 needs a row in Airtable's `User Roles` table first (see above).
 
-**Everything both modes talk to is the real Airtable base** — there's no local/seed
-data mode. Use throwaway test records in Airtable directly if you need to exercise a
-flow without touching real students — see `server/src/scripts/auditCreditConsumption.ts`
-for the dry-run/`--apply` pattern this project uses for scripts that write data.
+Both `dev:netlify` and the two-terminal mode above talk to the **real Airtable base**
+by default — for a local/seed data mode with no risk to real student data, see
+"Sandbox mode" below.
+
+**Sandbox mode** — the real app running against an in-memory mock of Airtable instead
+of the live base:
+
+```bash
+npm run dev:sandbox
+```
+
+Runs the plain node server (`:3000`, `MOCK_AIRTABLE=true`) and Vite (`:5199`)
+together. Sign in via the dev-login escape hatch (e.g.
+`http://localhost:5199/api/auth/dev-login?email=claude-staff@test.com` — see
+`SPEC.md`'s "Auth" section for the full allowlist) rather than real Google OAuth,
+against `server/src/airtable/sandboxSeed.ts`'s fixture students. Hit
+`POST /api/dev/reset-mock` to reseed back to those fixtures without restarting the
+server — useful mid-session if you've mutated the sandbox's state and want a clean
+slate. See `SPEC.md`'s "Testing" section for what the mock does and doesn't compute,
+and why this doesn't run under `netlify dev`.
 
 ## Testing
 
 ```bash
-npm test          # server unit tests (node:test) — currently just lib/date.ts's
-                   # pure functions; the Airtable-backed services have no local fake
-                   # to test against (see below), so they're verified manually/live
-npm run typecheck  # both workspaces + the Netlify function
-npm run build      # both workspaces
+npm test           # server unit tests (node:test), against the mock — fast, no network
+npm run dev:sandbox # then exercise flows by hand against fixture data (see above)
+npm run test:e2e    # Playwright, boots its own sandbox — see SPEC.md's "Testing"
+npm run typecheck   # both workspaces + the Netlify function
+npm run build       # both workspaces
 ```
 
-There's no in-memory fake for Airtable's live formulas/automations (the Credits system,
-tier gating, etc. depend on them), so service-level behavior is verified by hand
-against the real base with throwaway records, not automated tests — see `SPEC.md`'s
-"Credits system" section for what's actually being relied on there.
+One-time setup for `test:e2e`: `npx playwright install chromium` (add
+`PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` if you're on macOS 13 — see `SPEC.md`).
 
-**TODO:** build or find a module that fakes the Airtable REST API (records + formula
-evaluation) well enough to test `airtable/client.ts`'s callers without hitting the real
-base. Would unlock real `services/*` unit tests instead of hand-verification against
-live data — the main testing gap this project currently has.
+`server/src/scripts/auditCreditConsumption.ts` is a separate thing: a one-off/periodic
+maintenance script that runs against the **real** base (dry-run by default,
+`--apply` to write) — not part of the test suite.
 
 ## Useful commands
 
@@ -125,7 +138,9 @@ live data — the main testing gap this project currently has.
 |---|---|
 | `npm run dev:netlify` | Real Netlify Dev runtime — recommended for anything beyond quick iteration |
 | `npm run dev:server` / `npm run dev:web` | Two-terminal fast-iteration alternative |
+| `npm run dev:sandbox` | Two-terminal, but against the in-memory Airtable mock instead of the real base — see "Sandbox mode" above |
 | `npm run build` | Production build — `web/dist` (static) + compiled `server/dist` (unused by Netlify directly, but keeps the workspace typechecking/buildable standalone) |
 | `npm run typecheck` | Type-check server, web, and the Netlify function |
-| `npm test` | Server unit tests |
+| `npm test` | Server unit tests, against the mock |
+| `npm run test:e2e` | Playwright E2E specs, against a sandbox Playwright boots itself |
 | `npm run audit:credits` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |

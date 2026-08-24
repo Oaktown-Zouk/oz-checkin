@@ -6,6 +6,7 @@ import { NotFoundError } from "../lib/errors.js";
 export interface CheckInInfo {
   id: string;
   checkedInAt: string;
+  programId: string | null;
   programName: string | null;
   role: "Lead" | "Follow" | null;
   needsReview: boolean;
@@ -21,6 +22,9 @@ export interface StudentStatus {
   id: string;
   name: string;
   email: string;
+  // Givebutter's contact id, printed on this student's kiosk QR code — see
+  // services/kiosk.ts.
+  contactId: string | null;
   leadLevel: number | null;
   followLevel: number | null;
   accessStatus: string;
@@ -32,7 +36,8 @@ export interface StudentStatus {
   // Airtable's live fields can't represent a past date, so the app computes it itself —
   // see docs/airtable-schema.md, "Credits" (backdated gating).
   remaining: number;
-  // Current truth, never reconstructed historically — matches the old app's behavior.
+  // Always the current count, even for a backdated view — credits aren't
+  // reconstructed for a past date the way `remaining` above is.
   availableCredits: number;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
@@ -112,6 +117,7 @@ function buildStatus(
     id: member.id,
     name: f["Full Name"] ?? "Unnamed member",
     email: f.Email ?? "",
+    contactId: f["Contact ID"] ?? null,
     leadLevel: f["Lead Level"] ?? null,
     followLevel: f["Follow Level"] ?? null,
     accessStatus: f["Access Status"] ?? "Inactive",
@@ -126,6 +132,7 @@ function buildStatus(
       .map((c) => ({
         id: c.id,
         checkedInAt: c.fields["Checked In At"] ?? "",
+        programId: c.fields["Class Level"]?.[0] ?? null,
         programName: c.fields["Class Level"]?.[0]
           ? (programNameById.get(c.fields["Class Level"][0]) ?? null)
           : null,
@@ -152,6 +159,7 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
       fields: [
         "Full Name",
         "Email",
+        "Contact ID",
         "Lead Level",
         "Follow Level",
         "Access Status",

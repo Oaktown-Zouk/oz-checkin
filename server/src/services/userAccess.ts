@@ -7,6 +7,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "Create Checkins",
   "Undo Checkins",
   "Write Memberships",
+  "Backdate Kiosk",
 ];
 
 export interface UserAccess {

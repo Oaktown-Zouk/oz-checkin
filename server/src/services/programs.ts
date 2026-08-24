@@ -9,6 +9,9 @@ export interface ProgramSchedule {
   endDate: string | null;
   skipDates: string[];
   startTime: string | null;
+  // Seconds. Kiosk-only visibility window (Start Time + this) — front desk ignores
+  // it entirely, see web/src/programSchedule.ts's withinVisibleWindow.
+  visibleForSeconds: number | null;
 }
 
 function parseSkipDates(raw: string | undefined): string[] {
@@ -26,7 +29,7 @@ function parseSkipDates(raw: string | undefined): string[] {
 export async function listActivePrograms(): Promise<ProgramSchedule[]> {
   const programs = await listRecords<ProgramFields>(TABLES.programs, {
     filterByFormula: "{Status} = 'Active'",
-    fields: ["Program Name", "Weekdays", "Start Date", "End Date", "Skip Dates", "Start Time"],
+    fields: ["Program Name", "Weekdays", "Start Date", "End Date", "Skip Dates", "Start Time", "Visible For"],
   });
 
   return programs
@@ -38,6 +41,7 @@ export async function listActivePrograms(): Promise<ProgramSchedule[]> {
       endDate: p.fields["End Date"] ?? null,
       skipDates: parseSkipDates(p.fields["Skip Dates"]),
       startTime: p.fields["Start Time"] ?? null,
+      visibleForSeconds: p.fields["Visible For"] ?? null,
     }))
     // Chronological (classes at the same time grouped together — see CheckInDialog's
     // divider), then by name within a time slot.

@@ -6,9 +6,14 @@ server/migration-credits-log-*.json
 .env.local
 .env.scratch
 web/dist/
+web/.vite/
 server/dist/
 *.log
 .DS_Store
 
 # Local Netlify folder
 .netlify
+
+# Playwright E2E output
+test-results/
+playwright-report/

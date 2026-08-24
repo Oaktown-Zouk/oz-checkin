@@ -17,7 +17,10 @@ doc. `Check-ins.Class Level` links directly to `Programs`, not a specific dated
 ## Members (`tbl90E8ZFxXlZrVkn`)
 
 Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
-`Follow Level` (the last two are app-writable, via the level-edit dialogs).
+`Follow Level` (the last two are app-writable, via the level-edit dialogs),
+`Contact ID` (Givebutter's contact id, read-only here — printed on a student's kiosk
+QR code so `/kiosk` can resolve a scan straight to a Member, see
+`server/src/services/kiosk.ts`).
 
 Computed fields to read directly, never recompute:
 - `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"`
@@ -131,12 +134,17 @@ date. Undo needs no such split; Automation D works for any date.
 
 `Program Name`, `Status` (`Planned`/`Active`/`Completed`/`Canceled`), `Weekdays`,
 `Start Date`, `End Date`, `Skip Dates` (comma-separated `YYYY-MM-DD`), `Start Time`
-(`"HH:mm"`, 24-hour zero-padded — sorts correctly as plain text).
+(`"HH:mm"`, 24-hour zero-padded — sorts correctly as plain text), `Visible For`
+(`duration` field, read over the API as a plain number of **seconds**, e.g. `2700` =
+45 min — kiosk-only: `/kiosk` stops showing a class once `Start Time + Visible For`
+has passed, so a class remains available to front desk indefinitely for after-the-fact
+fixes but disappears from the self-serve kiosk once it's clearly over).
 
 The app fetches all `Status = Active` programs once per session (`GET /api/programs`)
 and filters/sorts them client-side against whichever date is currently relevant (live
 or backdated) — see `SPEC.md`'s "Check-in semantics" for the exact filter and the
-same-timeslot conflict UI this schedule data drives.
+same-timeslot conflict UI this schedule data drives, and "Kiosk mode" for the
+additional `Visible For` filter that only applies there.
 
 ## Recurring Plans (`tblRJAL7UjNf9N0WB`)
 
@@ -169,15 +177,21 @@ signup, so add a row before a new person tries to sign in or gets a new role.
 
 - **`User Roles`** — maps a Google account email to a role. Fields: `Email` (plain
   text, primary), `Role` (**link** → `Role Permissions`, not a select — one row per
-  role, so an admin tunes what a role can do in one place). Includes three
-  `claude-{staff,volunteer,kiosk}@test.com` rows, one per role — not real people, the
-  fixed allowlist `GET /api/auth/dev-login` accepts (see `SPEC.md`'s "Auth" section).
-- **`Role Permissions`** — one row per role (`Staff` / `Volunteer` / `Kiosk`, `Role`
-  plain text primary), with a checkbox per permission: `View Student Data`,
-  `Write Student Data`, `Create Checkins`, `Undo Checkins`, `Write Memberships`. Every
-  route in the app requires exactly one of these — see `SPEC.md`'s "Permissions"
-  section for the full route → permission map. Check the table directly for the
-  live grants.
+  role, so an admin tunes what a role can do in one place). Includes four
+  `claude-{staff,volunteer,kiosk,admin}@test.com` rows, one per role — not real people,
+  the fixed allowlist `GET /api/auth/dev-login` accepts (see `SPEC.md`'s "Auth"
+  section).
+- **`Role Permissions`** — one row per role (`Staff` / `Volunteer` / `Kiosk` / `Admin`,
+  `Role` plain text primary), with a checkbox per permission: `View Student Data`,
+  `Write Student Data`, `Create Checkins`, `Undo Checkins`, `Write Memberships`,
+  `Backdate Kiosk`. Every route in the app requires exactly one of these — see
+  `SPEC.md`'s "Permissions" section for the full route → permission map. Check the
+  table directly for the live grants. `Kiosk` is deliberately `Create Checkins` +
+  `Undo Checkins` only — no `View Student Data` — so a kiosk session is routed straight
+  to `/kiosk` and can never reach the roster (see `SPEC.md`'s "Kiosk mode"). `Admin` is
+  the only role with `Backdate Kiosk` — it lets `/kiosk` show a "simulate now" date
+  control for testing, without giving a real production kiosk tablet any way to
+  misrepresent the current time.
 
 Login is Google OAuth: after verifying the account with Google, the server looks up
 its email in `User Roles` (case-insensitive), follows the `Role` link to
