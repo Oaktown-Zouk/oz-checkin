@@ -46,8 +46,9 @@ Computed fields to read directly, never recompute:
   keeps recreating it as a separate Member). The roster query excludes it server-side
   (`NOT({Duplicate})`), so it's never fetched at all; direct-by-id lookups (timeline,
   level edits) are not filtered.
-- `Tier Rule` (link → `Tiers`) — maintained by an external nightly plans sync, not
-  this app; see "Tier Rule gaps" below for when it's empty.
+- `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation that runs when
+  `Membership Amount` is updated, not this app; see "Tier Rule gaps" below for when
+  it's empty.
 
 Legacy/dead, safe to ignore or delete: `Unused Drop-ins` (superseded by counting
 available `Credits`), `Checked In Today` / `Last Check-in Date` (nothing writes to
@@ -56,9 +57,10 @@ these anymore).
 ### Tier Rule gaps
 
 A member can show `Access Status = Active` with no resolved `Tier Name`/
-`Classes Allowed` — the external sync that maintains `Tier Rule` can lag behind a
-membership change, or no `Tiers` row may match the member's actual plan amount at all.
-Two things handle this:
+`Classes Allowed` — the automation that maintains `Tier Rule` triggers off
+`Membership Amount` being updated, so it can miss a member (e.g. if the amount was
+only ever set, never changed after), or no `Tiers` row may match the member's actual
+plan amount at all. Two things handle this:
 
 - **UX fallback** (`web/src/components/MembershipBadge.tsx`) — a member only gets the
   "N Class Membership" badge when `Access Status = Active` **and** `Tier Name` is

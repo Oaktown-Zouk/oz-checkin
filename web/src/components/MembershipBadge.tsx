@@ -11,12 +11,12 @@ export function MembershipBadge({ student }: { student: StudentStatus }) {
   // too. See docs/airtable-schema.md, Members.Access Status.
   //
   // Also requires a resolved tierName, not just Access Status = Active — Airtable's
-  // Tier Rule link is maintained by an external nightly sync (see
-  // docs/airtable-schema.md, "Tier Rule gaps") and can lag or never catch up for a
-  // given member (e.g. Access Status flips Active before the sync links a tier, or a
-  // plan amount doesn't match any Tier at all). Rather than show a bare, informationless
-  // "Member" badge in that gap, treat them as a non-member for display purposes and
-  // fall through to credits — that's the actionable info front desk actually needs.
+  // Tier Rule link is maintained by an automation that runs when Membership Amount is
+  // updated (see docs/airtable-schema.md, "Tier Rule gaps"), which can miss a member
+  // (e.g. the amount was only ever set, never changed after) or have no Tier to match
+  // at all. Rather than show a bare, informationless "Member" badge in that gap, treat
+  // them as a non-member for display purposes and fall through to credits — that's
+  // the actionable info front desk actually needs.
   const isMember = student.accessStatus === "Active" && !!student.tierName;
   const accessLabel = isMember ? "Member" : student.accessStatus === "Paid" ? "Paid" : null;
   const accessClass = isMember ? "badge-green" : "badge-gray";
