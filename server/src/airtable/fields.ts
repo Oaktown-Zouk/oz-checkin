@@ -29,6 +29,9 @@ export interface MemberFields {
   // non-member" badge fallback (see MembershipBadge.tsx) and the credit-consumption
   // audit script (scripts/auditCreditConsumption.ts).
   "Tier Rule"?: string[];
+  // Givebutter's contact id — printed on a student's kiosk QR code, so kiosk mode can
+  // resolve a scan straight to a Member (see services/kiosk.ts).
+  "Contact ID"?: string;
 }
 
 export interface CheckinFields {
@@ -51,6 +54,11 @@ export interface ProgramFields {
   "End Date"?: string;
   "Skip Dates"?: string;
   "Start Time"?: string; // "HH:mm", 24-hour zero-padded — sorts correctly as plain text
+  // Duration field, read as a plain number of seconds (e.g. 2700 = 45 min). Kiosk-only
+  // visibility window: a class stops showing up in the kiosk picker once
+  // Start Time + Visible For has passed — front desk deliberately ignores this, see
+  // web/src/programSchedule.ts's withinVisibleWindow.
+  "Visible For"?: number;
 }
 
 export interface CreditFields {
@@ -78,7 +86,7 @@ export interface RecurringPlanFields {
   "Is Paid Access"?: number;
 }
 
-export type UserRole = "Staff" | "Volunteer" | "Kiosk";
+export type UserRole = "Staff" | "Volunteer" | "Kiosk" | "Admin";
 
 export interface UserRoleFields {
   Email?: string;
@@ -90,15 +98,21 @@ export type Permission =
   | "Write Student Data"
   | "Create Checkins"
   | "Undo Checkins"
-  | "Write Memberships";
+  | "Write Memberships"
+  // Lets a session pass ?date= to the kiosk-only read endpoints (roster, student
+  // lookup) to simulate "now" for testing — e.g. checking a Visible For window
+  // without waiting for a real class time. Granted to Admin only; a real Kiosk-role
+  // session must never see or use this. See SPEC.md's "Kiosk mode".
+  | "Backdate Kiosk";
 
 export interface RolePermissionFields {
-  Role?: string; // the role's display name ("Staff"/"Volunteer"/"Kiosk"), not a link
+  Role?: string; // the role's display name ("Staff"/"Volunteer"/"Kiosk"/"Admin"), not a link
   "View Student Data"?: boolean;
   "Write Student Data"?: boolean;
   "Create Checkins"?: boolean;
   "Undo Checkins"?: boolean;
   "Write Memberships"?: boolean;
+  "Backdate Kiosk"?: boolean;
 }
 
 export interface TransactionFields {

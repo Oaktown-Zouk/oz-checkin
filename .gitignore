@@ -6,6 +6,7 @@ server/migration-credits-log-*.json
 .env.local
 .env.scratch
 web/dist/
+web/.vite/
 server/dist/
 *.log
 .DS_Store

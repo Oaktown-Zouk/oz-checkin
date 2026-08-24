@@ -97,7 +97,12 @@ authRoutes.get("/auth/google/callback", async (c) => {
 // dev-login can be exercised against every permission tier — not "any account with a
 // User Roles row," which would let this impersonate an actual staff member if
 // DEV_LOGIN_ENABLED were ever accidentally left on somewhere a real user could reach it.
-const DEV_LOGIN_ALLOWED_EMAILS = new Set(["claude-staff@test.com", "claude-volunteer@test.com", "claude-kiosk@test.com"]);
+const DEV_LOGIN_ALLOWED_EMAILS = new Set([
+  "claude-staff@test.com",
+  "claude-volunteer@test.com",
+  "claude-kiosk@test.com",
+  "claude-admin@test.com",
+]);
 
 // Printed to the server/function log (not Airtable) — enough to notice this route being
 // used at all, without building a persistent audit table for a dev-only escape hatch.

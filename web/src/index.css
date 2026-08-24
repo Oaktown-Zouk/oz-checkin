@@ -21,7 +21,7 @@
 
 body {
   margin: 0;
-  background: #fafafa;
+  background: #edf5f4;
   color: #111827;
 }
 
@@ -693,4 +693,222 @@ body {
   border: none;
   border-top: 1px solid var(--border);
   margin: 2px 0;
+}
+
+/* Kiosk mode — deliberately much larger than the front-desk dialog above (big touch
+   targets, minimal chrome), since this is meant to be tapped by a student on a tablet
+   with no staff assistance. */
+.kiosk-dialog-card {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.kiosk-dialog-title {
+  margin: 0;
+  font-size: 1.8rem;
+  text-align: center;
+}
+
+.kiosk-program-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.kiosk-program-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.kiosk-program-name {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.kiosk-role-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.kiosk-role-btn {
+  min-width: 120px;
+  padding: 20px 24px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: white;
+  color: #111827;
+  cursor: pointer;
+}
+
+.kiosk-role-btn-done {
+  background: var(--green-bg);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.kiosk-role-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.kiosk-close-btn {
+  margin-top: 8px;
+  padding: 16px 32px;
+  font-size: 1.1rem;
+}
+
+.kiosk-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px;
+  gap: 16px;
+}
+
+/* Admin-only (Backdate Kiosk permission) testing control — tucked into a corner so it
+   stays out of the way of the actual self-serve flow real students use. */
+.kiosk-backdate-control {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  font-size: 1rem;
+  opacity: 0.7;
+  z-index: 10;
+}
+
+.kiosk-banner {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  border-radius: 12px;
+}
+
+.kiosk-heading {
+  margin: 0;
+  font-size: 2rem;
+  text-align: center;
+}
+
+/* Wraps "Scan QR Code" + the camera feed + the search bar as one group. Fixed
+   margin-top rather than true viewport-centering — this runs on one known kiosk
+   tablet, not a range of screen sizes, so a flat offset is simpler and just as good. */
+.kiosk-main {
+  width: 100%;
+  /* .kiosk-page already puts a 16px flex gap above this, so 184 + 16 = 200px total
+     between the "Self Check-In" heading and this block. */
+  margin-top: 184px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.kiosk-camera-label {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.kiosk-search-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+}
+
+.kiosk-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.kiosk-search-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 14px 16px;
+  font-size: 1.05rem;
+  cursor: pointer;
+  color: #111827;
+}
+
+.kiosk-search-result:hover {
+  background: var(--gray-bg);
+}
+
+.kiosk-camera-wrap {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kiosk-video {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 16px;
+  background: #111827;
+  object-fit: cover;
+}
+
+.kiosk-camera-error {
+  color: var(--gray);
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+/* Loading/decline states shown inside the same dialog shell as the real check-in
+   card (.kiosk-dialog-card) — a plain centered message, no form controls. */
+.kiosk-dialog-message {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 600;
+  min-height: 120px;
+}
+
+.kiosk-dialog-message p {
+  white-space: pre-line;
+}
+
+.kiosk-welcome {
+  background: white;
+  border-radius: 16px;
+  padding: 64px 48px;
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }

@@ -1,7 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
-import { activeProgramsForDate, todayInStudioTz } from "../programSchedule.js";
+import { activeProgramsForDate, hasConflictingSelection, todayInStudioTz } from "../programSchedule.js";
 import { MembershipBadge } from "./MembershipBadge.js";
+import { Portal } from "./Portal.js";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
@@ -76,77 +77,77 @@ export function CheckInDialog({
   }
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
-        <h2>Check in {student.name}</h2>
+    <Portal>
+      <div className="dialog-overlay" onClick={onClose}>
+        <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
+          <h2>Check in {student.name}</h2>
 
-        {/* Shows remaining classes/credits while picking, so front desk can see at a
-            glance how many the student has left before checking them into more. */}
-        <div className="badges">
-          <MembershipBadge student={student} />
-        </div>
-
-        {activePrograms.length === 0 && <p className="dialog-description">No classes scheduled for this day.</p>}
-
-        {activePrograms.length > 0 && (
-          <div className="program-picker">
-            {activePrograms.map((p, i) => {
-              // A student can't be in two classes at once — once one program in a
-              // timeslot has a role picked, the others in that same slot are disabled
-              // (not just visually; the toggle handlers below never fire for them).
-              const conflictSelected = activePrograms.some(
-                (other) => other.id !== p.id && other.startTime === p.startTime && roles[other.id]
-              );
-              const showDivider = i > 0 && p.startTime !== activePrograms[i - 1].startTime;
-
-              return (
-                <Fragment key={p.id}>
-                  {showDivider && <hr className="program-picker-divider" />}
-                  <div className={`program-picker-row${conflictSelected ? " program-picker-row-disabled" : ""}`}>
-                    <span className="program-picker-name">{p.name}</span>
-                    <div className="program-picker-roles">
-                      <button
-                        type="button"
-                        className={`role-toggle${roles[p.id] === "Lead" ? " role-toggle-selected" : ""}`}
-                        disabled={conflictSelected}
-                        onClick={() => toggle(p.id, "Lead")}
-                      >
-                        Lead
-                      </button>
-                      <button
-                        type="button"
-                        className={`role-toggle${roles[p.id] === "Follow" ? " role-toggle-selected" : ""}`}
-                        disabled={conflictSelected}
-                        onClick={() => toggle(p.id, "Follow")}
-                      >
-                        Follow
-                      </button>
-                    </div>
-                  </div>
-                </Fragment>
-              );
-            })}
+          {/* Shows remaining classes/credits while picking, so front desk can see at a
+              glance how many the student has left before checking them into more. */}
+          <div className="badges">
+            <MembershipBadge student={student} />
           </div>
-        )}
 
-        {submitError && <p className="error">{submitError}</p>}
+          {activePrograms.length === 0 && <p className="dialog-description">No classes scheduled for this day.</p>}
 
-        <div className="dialog-actions">
-          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
-            Cancel
-          </button>
           {activePrograms.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleSubmit}
-              disabled={submitting || selections.length === 0}
-            >
-              {submitting ? "Checking in…" : `Check in (${selections.length})`}
-            </button>
+            <div className="program-picker">
+              {activePrograms.map((p, i) => {
+                // A student can't be in two classes at once — once one program in a
+                // timeslot has a role picked, the others in that same slot are disabled
+                // (not just visually; the toggle handlers below never fire for them).
+                const conflictSelected = hasConflictingSelection(activePrograms, p.id, (id) => !!roles[id]);
+                const showDivider = i > 0 && p.startTime !== activePrograms[i - 1].startTime;
+
+                return (
+                  <Fragment key={p.id}>
+                    {showDivider && <hr className="program-picker-divider" />}
+                    <div className={`program-picker-row${conflictSelected ? " program-picker-row-disabled" : ""}`}>
+                      <span className="program-picker-name">{p.name}</span>
+                      <div className="program-picker-roles">
+                        <button
+                          type="button"
+                          className={`role-toggle${roles[p.id] === "Lead" ? " role-toggle-selected" : ""}`}
+                          disabled={conflictSelected}
+                          onClick={() => toggle(p.id, "Lead")}
+                        >
+                          Lead
+                        </button>
+                        <button
+                          type="button"
+                          className={`role-toggle${roles[p.id] === "Follow" ? " role-toggle-selected" : ""}`}
+                          disabled={conflictSelected}
+                          onClick={() => toggle(p.id, "Follow")}
+                        >
+                          Follow
+                        </button>
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+            </div>
           )}
+
+          {submitError && <p className="error">{submitError}</p>}
+
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            {activePrograms.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSubmit}
+                disabled={submitting || selections.length === 0}
+              >
+                {submitting ? "Checking in…" : `Check in (${selections.length})`}
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </Portal>
   );
 }

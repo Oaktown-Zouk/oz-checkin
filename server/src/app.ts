@@ -3,6 +3,7 @@ import { authRoutes } from "./routes/auth.js";
 import { studentRoutes } from "./routes/students.js";
 import { checkinRoutes } from "./routes/checkins.js";
 import { programRoutes } from "./routes/programs.js";
+import { kioskRoutes } from "./routes/kiosk.js";
 
 export const app = new Hono();
 
@@ -11,5 +12,6 @@ app.route("/api", authRoutes);
 app.route("/api/students", studentRoutes);
 app.route("/api/checkins", checkinRoutes);
 app.route("/api/programs", programRoutes);
+app.route("/api/kiosk", kioskRoutes);
 
 export default app;

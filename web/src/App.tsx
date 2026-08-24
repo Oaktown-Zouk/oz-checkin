@@ -15,14 +15,16 @@ import { SearchBar } from "./components/SearchBar.js";
 import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
+import { KioskPage } from "./components/KioskPage.js";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 }
 
-type Route = { type: "list" } | { type: "student"; id: string };
+type Route = { type: "list" } | { type: "student"; id: string } | { type: "kiosk" };
 
 function parseRoute(pathname: string): Route {
+  if (pathname === "/kiosk") return { type: "kiosk" };
   // Airtable record ids (e.g. "recAbCd1234EfGhIj"), not the old numeric SQLite ids.
   const match = pathname.match(/^\/students\/([^/]+)$/);
   if (match) return { type: "student", id: match[1] };
@@ -49,9 +51,13 @@ export function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<Set<Permission>>(new Set());
-  // Set only for a valid session whose role has no View Student Data permission —
-  // distinct from "not logged in" so they see who they're signed in as instead of just
-  // bouncing back to the sign-in screen.
+  // A session with Create Checkins but not View Student Data (i.e. the Kiosk role) —
+  // restricted to /kiosk entirely, never the roster. Distinct from `authenticated`,
+  // which still means "has View Student Data" exactly as before.
+  const [kioskOnly, setKioskOnly] = useState(false);
+  // Set only for a valid session with neither of the above — distinct from "not
+  // logged in" so they see who they're signed in as instead of just bouncing back to
+  // the sign-in screen.
   const [forbiddenUser, setForbiddenUser] = useState<{ email: string; role: string } | null>(null);
   const [authError] = useState(() => new URLSearchParams(window.location.search).get("authError"));
 
@@ -116,6 +122,9 @@ export function App() {
           setAuthenticated(true);
           setUserEmail(s.email ?? null);
           setPermissions(new Set(s.permissions));
+        } else if (s.authenticated && s.permissions?.includes("Create Checkins")) {
+          setKioskOnly(true);
+          setPermissions(new Set(s.permissions));
         } else if (s.authenticated) {
           setForbiddenUser({ email: s.email ?? "", role: s.role ?? "" });
         }
@@ -128,9 +137,23 @@ export function App() {
   // mid-session, and re-fetching on every "Check In" click was slow. Filtered by
   // whichever date is relevant (live or backdated) client-side, see programSchedule.ts.
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated && !kioskOnly) return;
     api.programs().then(setPrograms).catch(() => setPrograms([]));
-  }, [authenticated]);
+  }, [authenticated, kioskOnly]);
+
+  // Cosmetic: keeps the URL bar honest for kiosk-only sessions that land here via a
+  // route other than /kiosk (e.g. a fresh login, which parses whatever path Google's
+  // redirect happened to land on).
+  useEffect(() => {
+    if (kioskOnly && window.location.pathname !== "/kiosk") {
+      window.history.replaceState(null, "", "/kiosk");
+    }
+  }, [kioskOnly]);
+
+  const handleKioskUnauthorized = useCallback(() => {
+    setKioskOnly(false);
+    setAuthenticated(false);
+  }, []);
 
   // Fetches the full roster for the viewed date — not scoped by `query`. The search box
   // filters this in memory (see visibleStudents below) instead of round-tripping to the
@@ -217,6 +240,18 @@ export function App() {
 
   if (forbiddenUser) {
     return <Forbidden email={forbiddenUser.email} role={forbiddenUser.role} onLogout={handleLogout} />;
+  }
+
+  // Kiosk-only sessions always land here, regardless of route — see the URL-fixing
+  // effect above. Staff/Volunteer accounts (who also hold Create Checkins) may visit
+  // /kiosk directly too; `authenticated` here guards against an unauthenticated
+  // visitor hitting /kiosk before login, since `route.type` alone doesn't imply auth.
+  if (kioskOnly || (route.type === "kiosk" && authenticated)) {
+    return (
+      <PermissionsProvider value={permissions}>
+        <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} />
+      </PermissionsProvider>
+    );
   }
 
   if (!authenticated) {
