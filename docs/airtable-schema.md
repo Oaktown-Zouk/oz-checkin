@@ -167,7 +167,9 @@ signup, so add a row before a new person tries to sign in or gets a new role.
 
 - **`User Roles`** — maps a Google account email to a role. Fields: `Email` (plain
   text, primary), `Role` (**link** → `Role Permissions`, not a select — one row per
-  role, so an admin tunes what a role can do in one place).
+  role, so an admin tunes what a role can do in one place). Includes three
+  `claude-{staff,volunteer,kiosk}@test.com` rows, one per role — not real people, the
+  fixed allowlist `GET /api/auth/dev-login` accepts (see `SPEC.md`'s "Auth" section).
 - **`Role Permissions`** — one row per role (`Staff` / `Volunteer` / `Kiosk`, `Role`
   plain text primary), with a checkbox per permission: `View Student Data`,
   `Write Student Data`, `Create Checkins`, `Undo Checkins`, `Write Memberships`. Every

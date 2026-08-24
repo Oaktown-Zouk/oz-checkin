@@ -254,7 +254,12 @@ account instead.
   `DEV_LOGIN_ENABLED=true` *and* `NODE_ENV !== "production"`, not just wired up
   conditionally so a single misconfigured var can't activate it in prod) mints a real
   session the same way, skipping Google's consent screen — useful for an agent or
-  script to verify UI changes without a human present.
+  script to verify UI changes without a human present. Restricted to a fixed allowlist
+  of three real `User Roles` test accounts, one per role (`claude-staff@test.com`,
+  `claude-volunteer@test.com`, `claude-kiosk@test.com`) — it can't be used to
+  impersonate an actual staff member even if the env gate above were ever
+  misconfigured. Every attempt (allowed or rejected) is logged to the server/function
+  console.
 - **No cross-table transactions.** Airtable's API has no multi-table atomic write.
   Where a single logical action touches two records (e.g. a backdated check-in
   consuming a credit), the app writes them sequentially and accepts the rare

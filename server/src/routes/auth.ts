@@ -93,6 +93,18 @@ authRoutes.get("/auth/google/callback", async (c) => {
   return c.redirect(config.APP_ORIGIN + "/");
 });
 
+// A fixed set of real User Roles rows created specifically for this, one per role, so
+// dev-login can be exercised against every permission tier — not "any account with a
+// User Roles row," which would let this impersonate an actual staff member if
+// DEV_LOGIN_ENABLED were ever accidentally left on somewhere a real user could reach it.
+const DEV_LOGIN_ALLOWED_EMAILS = new Set(["claude-staff@test.com", "claude-volunteer@test.com", "claude-kiosk@test.com"]);
+
+// Printed to the server/function log (not Airtable) — enough to notice this route being
+// used at all, without building a persistent audit table for a dev-only escape hatch.
+function logDevLoginAttempt(outcome: string, email: string, detail?: string) {
+  console.log(`[dev-login] ${outcome} email=${email}${detail ? ` ${detail}` : ""} at=${new Date().toISOString()}`);
+}
+
 // Escape hatch so an agent (or a developer) can get a real session without a human
 // completing the Google consent screen — reuses the exact same Airtable-backed
 // getAccessForEmail lookup the real callback uses, so it's testing the real
@@ -104,10 +116,20 @@ if (config.DEV_LOGIN_ENABLED === "true" && !isProd) {
     const email = c.req.query("email");
     if (!email) return c.json({ error: "?email= required" }, 400);
 
-    const access = await getAccessForEmail(email);
-    if (!access) return c.json({ error: `No User Roles row for ${email}` }, 404);
+    const normalized = email.trim().toLowerCase();
+    if (!DEV_LOGIN_ALLOWED_EMAILS.has(normalized)) {
+      logDevLoginAttempt("REJECTED (not allowlisted)", email);
+      return c.json({ error: "This email isn't allowed to use dev-login" }, 403);
+    }
 
-    setCookie(c, SESSION_COOKIE_NAME, createSessionValue({ email, role: access.role, permissions: access.permissions }), {
+    const access = await getAccessForEmail(normalized);
+    if (!access) {
+      logDevLoginAttempt("REJECTED (no User Roles row)", email);
+      return c.json({ error: `No User Roles row for ${email}` }, 404);
+    }
+
+    logDevLoginAttempt("SUCCESS", email, `role=${access.role}`);
+    setCookie(c, SESSION_COOKIE_NAME, createSessionValue({ email: normalized, role: access.role, permissions: access.permissions }), {
       path: "/",
       httpOnly: true,
       sameSite: "Lax",
