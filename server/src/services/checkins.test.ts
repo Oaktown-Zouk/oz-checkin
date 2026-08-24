@@ -76,31 +76,99 @@ describe("createCheckIns (live, no effectiveAt)", () => {
 });
 
 describe("createCheckIns (backdated)", () => {
-  it("mirrors live gating for the target date, not literal today", async () => {
-    seedMember({ "Classes Allowed": 1 });
-    const pastDate = new Date("2020-06-01T18:00:00.000Z");
+  const PAST_DATE = new Date("2020-06-01T18:00:00.000Z"); // dateStringFor -> "2020-06-01"
+  const OTHER_PAST_DATE = new Date("2019-01-01T18:00:00.000Z");
 
+  it("within allowance for the target date: no credit touched, nothing flagged", async () => {
+    seedMember({ "Classes Allowed": 1 });
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
+    assert.equal(status.checkinsToday.length, 1);
+    assert.equal(status.checkinsToday[0].needsReview, false);
+    assert.equal(status.availableCredits, 0);
+  });
+
+  it("over allowance for the target date with a credit available: consumes it (mirrors Automation C)", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
+      [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
+      [TABLES.credits]: [{ id: "recCredit1", fields: { Member: [MEMBER], "Granted At": "2025-01-01T00:00:00.000Z" } }],
+    });
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
+    assert.equal(status.checkinsToday[0].needsReview, false);
+    assert.equal(status.availableCredits, 0);
+  });
+
+  it("mirrors gating for the target date, not literal today, across a multi-selection batch", async () => {
+    seedMember({ "Classes Allowed": 1 });
     const status = await createCheckIns(
       MEMBER,
       [
         { programId: PROGRAM, role: "Lead" },
         { programId: PROGRAM_2, role: "Follow" },
       ],
-      { effectiveAt: pastDate }
+      { effectiveAt: PAST_DATE }
     );
-
     // Viewed against that backdated date: 2nd selection crosses the 1-class allowance.
     assert.equal(status.checkinsToday.length, 2);
+    assert.equal(status.checkinsToday[0].needsReview, false);
     assert.equal(status.checkinsToday[1].needsReview, true);
+  });
+
+  it("counts a prior check-in already on that same backdated date, from an earlier separate call", async () => {
+    seedMember({ "Classes Allowed": 1 });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
+    // A second, separate backdated call for the *same* date — priorCount must include
+    // the first call's check-in, not just whatever's in this call's own batch.
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }], { effectiveAt: PAST_DATE });
+    assert.equal(status.checkinsToday.length, 2);
+    assert.equal(status.checkinsToday[1].needsReview, true);
+  });
+
+  it("a prior check-in on that date can push the very first selection of a new batch over the line", async () => {
+    seedMember({ "Classes Allowed": 1 });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }], { effectiveAt: PAST_DATE });
+    // Unlike the live-path "two selections in one call" test, this is a 1-item batch
+    // whose *only* selection is the one that crosses the line — nth = prior(1) + 1 = 2.
+    assert.equal(status.checkinsToday[1].needsReview, true);
+  });
+
+  it("doesn't count a prior check-in on a *different* backdated date", async () => {
+    seedMember({ "Classes Allowed": 1 });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: OTHER_PAST_DATE });
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }], { effectiveAt: PAST_DATE });
+    assert.equal(status.checkinsToday.length, 1); // only PAST_DATE's, not OTHER_PAST_DATE's
+    assert.equal(status.checkinsToday[0].needsReview, false); // 1st on this date, within allowance
+  });
+
+  it("doesn't count a prior check-in on that date that's since been undone", async () => {
+    seedMember({ "Classes Allowed": 1 });
+    const first = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
+    await undoCheckIn(first.checkinsToday[0].id);
+
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }], { effectiveAt: PAST_DATE });
+    // Would incorrectly flag this as the 2nd-of-1-allowed if the undone check-in were
+    // still being counted toward priorCount.
+    assert.equal(status.checkinsToday.length, 1); // undone one excluded from the view entirely
+    assert.equal(status.checkinsToday[0].needsReview, false);
   });
 
   it("never touches today's live gating for an unrelated same-day check-in", async () => {
     seedMember({ "Classes Allowed": 1 });
     // A backdated check-in for a past date shouldn't affect what "today" looks like.
-    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: new Date("2020-01-01T18:00:00Z") });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
     const liveStatus = await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }]);
     assert.equal(liveStatus.remaining, 0); // today's own first check-in, full allowance still available until this one
     assert.equal(liveStatus.checkinsToday.length, 1); // only today's, not the 2020 one
+  });
+
+  it("the returned status reflects the backdated date's view, computed by count rather than the live Remaining Today field", async () => {
+    seedMember({ "Classes Allowed": 2 });
+    const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
+    // studentStatus.ts's backdated branch: classesAllowed - checkinsForMember.length,
+    // not the live-only computed "Remaining Today" field the mock derives for today.
+    assert.equal(status.remaining, 1);
+    assert.equal(status.checkedInToday, true);
   });
 });
 
