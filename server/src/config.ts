@@ -19,6 +19,10 @@ const envSchema = z.object({
   // Requires BOTH this AND NODE_ENV !== "production" to actually activate, so it can't
   // go live from a single misconfigured var. Unset/anything but "true" = off.
   DEV_LOGIN_ENABLED: z.string().optional(),
+  // Runs the app against an in-memory mock of Airtable instead of the real base — see
+  // airtable/client.ts. Same NODE_ENV !== "production" gating as DEV_LOGIN_ENABLED,
+  // for the same reason: a single misconfigured var must never fake out production.
+  MOCK_AIRTABLE: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

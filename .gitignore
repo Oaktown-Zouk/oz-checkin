@@ -13,3 +13,7 @@ server/dist/
 
 # Local Netlify folder
 .netlify
+
+# Playwright E2E output
+test-results/
+playwright-report/
