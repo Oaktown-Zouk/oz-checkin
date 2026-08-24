@@ -16,6 +16,7 @@ import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
+import { KioskLogin } from "./components/KioskLogin.js";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
@@ -252,6 +253,14 @@ export function App() {
         <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} />
       </PermissionsProvider>
     );
+  }
+
+  // Visiting /kiosk while signed out shows the password form instead of the Google
+  // button — kiosk tablets are shared, unattended devices with no Google account on
+  // them (see routes/auth.ts's /auth/kiosk-login). Every other unauthenticated route
+  // still falls through to the generic Google login below.
+  if (route.type === "kiosk" && !authenticated) {
+    return <KioskLogin />;
   }
 
   if (!authenticated) {

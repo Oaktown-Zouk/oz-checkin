@@ -109,7 +109,9 @@ Runs the plain node server (`:3000`, `MOCK_AIRTABLE=true`) and Vite (`:5199`)
 together. Sign in via the dev-login escape hatch (e.g.
 `http://localhost:5199/api/auth/dev-login?email=claude-staff@test.com` — see
 `SPEC.md`'s "Auth" section for the full allowlist) rather than real Google OAuth,
-against `server/src/airtable/sandboxSeed.ts`'s fixture students. Hit
+against `server/src/airtable/sandboxSeed.ts`'s fixture students. To try the kiosk
+password login instead, visit `/kiosk` while signed out and use
+`sandboxSeed.ts`'s `KIOSK_PASSWORD_LOGIN` fixture credentials. Hit
 `POST /api/dev/reset-mock` to reseed back to those fixtures without restarting the
 server — useful mid-session if you've mutated the sandbox's state and want a clean
 slate. See `SPEC.md`'s "Testing" section for what the mock does and doesn't compute,
@@ -144,3 +146,4 @@ maintenance script that runs against the **real** base (dry-run by default,
 | `npm test` | Server unit tests, against the mock |
 | `npm run test:e2e` | Playwright E2E specs, against a sandbox Playwright boots itself |
 | `npm run audit:credits` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |
+| `npx tsx server/src/scripts/setKioskPassword.ts <identifier> <newPassword>` (run from `server/`) | Sets/rotates the shared kiosk-tablet login password — see `SPEC.md`'s "Auth" section. No in-app UI for this; it's a deliberate, rare operation. |

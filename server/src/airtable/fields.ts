@@ -91,6 +91,7 @@ export type UserRole = "Staff" | "Volunteer" | "Kiosk" | "Admin";
 export interface UserRoleFields {
   Email?: string;
   Role?: string[]; // link -> Role Permissions (one row per role)
+  "Password Hash"?: string; // set only on password-login (kiosk) rows, never OAuth ones
 }
 
 export type Permission =

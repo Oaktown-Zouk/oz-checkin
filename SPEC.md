@@ -194,7 +194,10 @@ grouping permissions together, and every route/UI action checks a specific
 permission, never a role name directly. Two tables drive this (full detail in
 `docs/airtable-schema.md`):
 
-- **`User Roles`** — Google account email → a linked `Role Permissions` row.
+- **`User Roles`** — an identifier (a Google account email for OAuth rows, or a plain
+  chosen identifier for a kiosk password-login row) → a linked `Role Permissions` row.
+  A row optionally carries `Password Hash` too, only ever set on password-login rows
+  (see "Auth" below) — never on an OAuth row, which authenticates via Google instead.
 - **`Role Permissions`** — one row per role (`Staff`/`Volunteer`/`Kiosk`/`Admin`), a
   checkbox per permission: `View Student Data`, `Write Student Data`,
   `Create Checkins`, `Undo Checkins`, `Write Memberships`, `Backdate Kiosk`. `Kiosk`
@@ -225,7 +228,8 @@ naming the signed-in account.
 │  Static SPA (React/Vite build) ── served by ──▶│ Netlify CDN
 │                                                 │
 │  Netlify Functions (one Hono app, all routes)  │
-│     ├─ auth (Google OAuth, logout, session)    │
+│     ├─ auth (Google OAuth, kiosk password,     │
+│     │        logout, session)                  │
 │     ├─ GET  students                (roster)   │
 │     ├─ PATCH students/:id/lead-level           │
 │     ├─ PATCH students/:id/follow-level         │
@@ -265,16 +269,36 @@ naming the signed-in account.
   success the app mints its own stateless HMAC-signed session cookie carrying
   `{ email, role, permissions }` (`server/src/lib/session.ts`) — no server-side
   session store (fits serverless) and no re-checking Airtable on every request.
-  A dev-only escape hatch (`GET /api/auth/dev-login?email=`, gated behind
-  `DEV_LOGIN_ENABLED=true` *and* `NODE_ENV !== "production"`, not just wired up
-  conditionally so a single misconfigured var can't activate it in prod) mints a real
-  session the same way, skipping Google's consent screen — useful for an agent or
-  script to verify UI changes without a human present. Restricted to a fixed allowlist
-  of four real `User Roles` test accounts, one per role (`claude-staff@test.com`,
-  `claude-volunteer@test.com`, `claude-kiosk@test.com`, `claude-admin@test.com`) — it
-  can't be used to impersonate an actual staff member even if the env gate above were
-  ever misconfigured. Every attempt (allowed or rejected) is logged to the
-  server/function console.
+  `mintSession` (`routes/auth.ts`) is the one place that cookie gets set, shared by
+  every login path below.
+  - **Kiosk password login** (`POST /api/auth/kiosk-login { identifier, password }`):
+    kiosk tablets are unattended, shared devices — putting a real staff member's
+    Google account on one is a bad fit, so `Kiosk`-role sessions can alternatively
+    authenticate with one shared identifier/password instead (`KioskLogin.tsx`, shown
+    at `/kiosk` when signed out — see "Kiosk mode"). The password is hashed with
+    Node's built-in `crypto.scrypt` (`server/src/lib/password.ts` — OWASP's #2-ranked
+    algorithm for password storage, chosen over adding a `bcrypt`/`argon2` dependency)
+    and stored in a `User Roles.Password Hash` field alongside the normal `Email`/
+    `Role` columns — a password-login row is just a `User Roles` row with that field
+    set, resolved via `getPasswordAuthForIdentifier` (`services/userAccess.ts`). Login
+    failures (unknown identifier or wrong password) return the same generic error
+    either way — no user enumeration. No app-level rate limiting: verification always
+    requires a live Airtable lookup (never cached), and Airtable's own 5 req/sec-per-
+    base cap (`airtable/realClient.ts`) already throttles guess throughput, as long as
+    the password itself is a real passphrase rather than a short PIN. Set/rotated via
+    `npx tsx src/scripts/setKioskPassword.ts <identifier> <newPassword>` — no in-app
+    UI for it, matching the "rare, deliberate operation" pattern already used for
+    `audit:credits`.
+  - **Dev login** (`GET /api/auth/dev-login?email=`, gated behind
+    `DEV_LOGIN_ENABLED=true` *and* `NODE_ENV !== "production"`, not just wired up
+    conditionally so a single misconfigured var can't activate it in prod) mints a real
+    session the same way, skipping Google's consent screen — useful for an agent or
+    script to verify UI changes without a human present. Restricted to a fixed allowlist
+    of four real `User Roles` test accounts, one per role (`claude-staff@test.com`,
+    `claude-volunteer@test.com`, `claude-kiosk@test.com`, `claude-admin@test.com`) — it
+    can't be used to impersonate an actual staff member even if the env gate above were
+    ever misconfigured. Every attempt (allowed or rejected) is logged to the
+    server/function console.
 - **No cross-table transactions.** Airtable's API has no multi-table atomic write.
   Where a single logical action touches two records (e.g. a backdated check-in
   consuming a credit), the app writes them sequentially and accepts the rare
@@ -472,34 +496,41 @@ tablet, so a student can check themselves in with no front-desk involvement.
 - **Name search**: a search bar above the camera feed, filtered client-side against
   the cached roster's `name` — matches everyone, not just eligible students (see
   below), so a decline can name the actual reason instead of a blanket "not found."
+- **Loading feedback**: a scan match or a search-result tap opens a loading dialog
+  instantly (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
+  `GET /api/kiosk/students/:id` round trip that resolves it completes — there's never
+  a silent gap between "the student was recognized" and something appearing on
+  screen.
 - **Eligibility**: something left to spend today — `remaining > 0` or
-  `availableCredits > 0` (`isKioskEligible`, `server/src/services/studentStatus.ts`).
-  Deliberately not gated on an active membership — a drop-in/trial student who only
-  ever bought credits can still self-check-in, same as at the front desk. An
-  ineligible match shows a specific reason — "no active membership/credits" vs. "used
-  up today's classes and credits" — since it's the matched student's own status being
+  `availableCredits > 0` (`isEligible`, `KioskPage.tsx`). Deliberately not gated on an
+  active membership — a drop-in/trial student who only ever bought credits can still
+  self-check-in, same as at the front desk. Both a scan match and a search-result tap
+  resolve the same way — always a fresh `GET /api/kiosk/students/:id` call, never a
+  decision made off the cached roster snapshot — since that snapshot can go stale
+  between when it was fetched and when a student is actually resolved (e.g. a credit
+  bought or a membership renewed moments ago), and that endpoint isn't
+  eligibility-gated (see `routes/kiosk.ts`), so it always returns the student's full,
+  current status either way. An ineligible result shows a specific reason built
+  client-side from that status (`ineligibleReason`) — "already checked in for X today"
+  if they have a check-in today, else "no active membership/credits" vs. "used up
+  today's classes and credits" — since it's the matched student's own status being
   shown to them, not another student's. A scan/search that matches *no one at all*
-  shows a generic "please see the front desk" instead.
-  - **Search** decides eligibility from the cached roster snapshot with no round trip
-    — it was just fetched/filtered, so staleness is a non-issue and an instant decline
-    is worth it.
-  - **Scan** always asks the server for current status instead, even if the cached
-    snapshot says ineligible — a QR scan can happen well after the roster was cached
-    (unlike a search tap, which follows right after typing), and the whole point of
-    scanning is to skip typing, so it shouldn't get blocked on a snapshot that might
-    already be stale (e.g. a credit bought or a membership renewed moments ago). The
-    server re-checks eligibility authoritatively either way; a genuine decline falls
-    back to the cached snapshot's reason text.
+  shows a generic "please see the front desk" instead. Every decline auto-closes after
+  5 seconds with no user action required.
 - **Check-in dialog** (`KioskCheckInDialog`): large, touch-friendly buttons, one per
   {class, role} still available today. Tapping a button immediately creates that one
-  check-in (`POST /api/checkins`, the same endpoint the front desk uses) and refetches
-  the student's status — no separate "confirm" step. The header button reads "Cancel"
-  until the student's first successful check-in that visit, then "Done"; both just
-  close the dialog. If the student's allocation runs out (`remaining <= 0 &&
+  check-in (`POST /api/checkins`, the same endpoint the front desk uses) and updates
+  from that response's own returned status directly — no separate "confirm" step, and
+  no follow-up fetch (which would be eligibility-gated and could 404 right after the
+  tap that used up the student's last credit/allowance). The header button reads
+  "Cancel" until the student's first successful check-in that visit, then "Done"; both
+  just close the dialog. If the student's allocation runs out (`remaining <= 0 &&
   availableCredits <= 0`) or every visible class is already checked into, the dialog
-  instead shows "Welcome {name}! / Have a great class" and auto-closes after
+  instead shows "Welcome {name}! / Have a great class!" and auto-closes after
   5 seconds — the explicit Cancel/Done tap has no such delay, since the student already
   confirmed they're finished in that case.
+- **Password login**: `/kiosk` while signed out shows a plain identifier/password
+  form (`KioskLogin.tsx`) instead of the Google button — see "Auth" below.
 - **Visible window (kiosk-only)**: a class stops appearing in the kiosk's picker once
   `Programs.Start Time + Programs.Visible For` (a duration field, read over the API as
   a plain number of seconds) has passed — `withinVisibleWindow`,

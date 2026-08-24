@@ -175,9 +175,13 @@ for check-in logic.
 Both managed by hand — neither is synced from Givebutter, and there's no self-service
 signup, so add a row before a new person tries to sign in or gets a new role.
 
-- **`User Roles`** — maps a Google account email to a role. Fields: `Email` (plain
-  text, primary), `Role` (**link** → `Role Permissions`, not a select — one row per
-  role, so an admin tunes what a role can do in one place). Includes four
+- **`User Roles`** — maps an identifier to a role. Fields: `Email` (plain text,
+  primary — a Google account email for an OAuth row, or a plain chosen identifier for
+  a kiosk password-login row), `Role` (**link** → `Role Permissions`, not a select —
+  one row per role, so an admin tunes what a role can do in one place), `Password
+  Hash` (plain text, optional — set only on password-login rows via
+  `npx tsx src/scripts/setKioskPassword.ts`, never by hand, and never set on an OAuth
+  row; see `SPEC.md`'s "Auth" section). Includes four
   `claude-{staff,volunteer,kiosk,admin}@test.com` rows, one per role — not real people,
   the fixed allowlist `GET /api/auth/dev-login` accepts (see `SPEC.md`'s "Auth"
   section).
@@ -193,11 +197,13 @@ signup, so add a row before a new person tries to sign in or gets a new role.
   control for testing, without giving a real production kiosk tablet any way to
   misrepresent the current time.
 
-Login is Google OAuth: after verifying the account with Google, the server looks up
-its email in `User Roles` (case-insensitive), follows the `Role` link to
-`Role Permissions`, and bakes both the role name and the resolved permission list into
-the signed session cookie (`services/userAccess.ts`'s `getAccessForEmail`) —
-permission changes take effect on that account's next login, not live. No matching
+Login is Google OAuth for Staff/Volunteer/Admin, or a shared password for Kiosk
+tablets: after verifying the account with Google (or the password against the row's
+`Password Hash`, for a kiosk login), the server looks up the identifier in
+`User Roles` (case-insensitive), follows the `Role` link to `Role Permissions`, and
+bakes both the role name and the resolved permission list into the signed session
+cookie (`services/userAccess.ts`'s `getAccessForEmail`/`getPasswordAuthForIdentifier`)
+— permission changes take effect on that account's next login, not live. No matching
 `User Roles` row at all means no access — the callback route redirects to
 `/?authError=not_authorized` without setting a session. A row with a role but none of
 the permissions a given page needs still gets a session (so it doesn't need to

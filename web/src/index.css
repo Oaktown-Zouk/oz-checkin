@@ -52,6 +52,12 @@ body {
   font-size: 1rem;
 }
 
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .error {
   color: var(--red);
   font-size: 0.9rem;

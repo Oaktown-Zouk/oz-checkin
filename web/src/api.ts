@@ -182,4 +182,9 @@ export const api = {
     if (date) params.set("date", date);
     return request<StudentStatus>(`/api/kiosk/students/${studentId}?${params.toString()}`);
   },
+  kioskLogin: (identifier: string, password: string) =>
+    request<{ ok: true }>("/api/auth/kiosk-login", {
+      method: "POST",
+      body: JSON.stringify({ identifier, password }),
+    }),
 };
