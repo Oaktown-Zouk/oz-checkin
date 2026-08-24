@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
+// The "⋮" dropdown at the end of each roster row (see StudentRow.tsx) — a generic
+// overflow menu for row-level actions that don't warrant their own button. Currently
+// just "Transfer membership"; closes itself on an outside click.
 export function RowMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
