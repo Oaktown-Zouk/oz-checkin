@@ -461,9 +461,11 @@ tablet, so a student can check themselves in with no front-desk involvement.
   tools already show on a shared device — but email/tier/badges/full status still
   aren't in the cache; those only appear once a specific student is resolved by id
   (`GET /api/kiosk/students/:id`), after a scan match or a search-result tap.
-- **QR scanning**: the page opens the device's rear camera (`getUserMedia`) and
-  continuously decodes frames with `jsqr` (a bundled, all-JS decoder — chosen over the
-  Chrome-only `BarcodeDetector` API so this works on any tablet/browser). The QR
+- **QR scanning**: the page opens the device's front (`user`-facing) camera — the
+  same side as the screen, since the kiosk is a fixed tablet the student walks up to
+  and holds their code up to — and continuously decodes frames with `jsqr` (a
+  bundled, all-JS decoder — chosen over the Chrome-only `BarcodeDetector` API so this
+  works on any tablet/browser). The QR
   payload is expected to be a student's Givebutter contact id (`Members.Contact ID`),
   printed on cards handed out to students. A decoded id is matched against the cached
   roster's `contactId` field locally, instantly, before ever hitting the network.

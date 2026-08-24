@@ -49,7 +49,10 @@ export function useQrScanner({ enabled, onDetect }: { enabled: boolean; onDetect
     }
 
     navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "environment" } })
+      // "user" (front-facing) camera — the kiosk is a fixed tablet the student walks
+      // up to and holds their QR code up to, on the same side as the screen. The rear
+      // ("environment") camera would face away from them.
+      .getUserMedia({ video: { facingMode: "user" } })
       .then((s) => {
         if (cancelled) {
           s.getTracks().forEach((t) => t.stop());
