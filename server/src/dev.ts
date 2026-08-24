@@ -1,5 +1,5 @@
-// Local dev entrypoint, standing in for Netlify's function runtime (wired up in Phase
-// 2's later step via netlify dev) — the same Hono `app` runs under both.
+// Local dev entrypoint, standing in for Netlify's function runtime — the same Hono
+// `app` runs under both this and `netlify dev`.
 import { serve } from "@hono/node-server";
 import { config } from "./config.js";
 import app from "./app.js";

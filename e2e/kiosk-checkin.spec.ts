@@ -18,8 +18,7 @@ test("kiosk-role login redirects to /kiosk, and a self-check-in updates instantl
   await expect(page.getByRole("heading", { name: "Active Amy" })).toBeVisible();
   await page.locator(".kiosk-program-row", { hasText: "Zouk L1" }).getByRole("button", { name: "Lead" }).click();
 
-  // This is the exact flow that used to 404 (see KioskCheckInDialog's eligibility-
-  // gate fix) — the dialog must reflect the fresh state, not error out or go stale.
+  // The dialog must reflect the fresh state after a tap, not go stale.
   await expect(page.locator(".kiosk-program-row", { hasText: "Zouk L1" }).getByRole("button", { name: "✓ Lead" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Done" })).toBeVisible();
 });

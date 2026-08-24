@@ -10,9 +10,7 @@ import { Portal } from "./Portal.js";
 const ERROR_DISPLAY_MS = 5000;
 const MAX_SEARCH_RESULTS = 8;
 
-// Mirrors the same rule the server used to enforce server-side (removed once the
-// eligibility gate moved here — see routes/kiosk.ts) — something left to spend today,
-// either membership allowance or a purchased/comp credit.
+// Something left to spend today: membership allowance or a purchased/comp credit.
 function isEligible(status: StudentStatus): boolean {
   return status.remaining > 0 || status.availableCredits > 0;
 }
@@ -41,10 +39,9 @@ function ineligibleReason(status: StudentStatus): string {
 
 // What's showing in the modal at any given moment: nothing, a brief loading spinner
 // (shown the instant a scan/tap is recognized, before the network round-trip that
-// resolves it completes), the real check-in dialog, or a decline message. Unifying
-// these into one piece of state (rather than separate `student`/`error` booleans)
-// means there's always exactly one dialog on screen once a scan/tap is recognized —
-// never a gap where nothing visible has happened yet.
+// resolves it completes), the real check-in dialog, or a decline message. Keeping
+// this as one piece of state means there's always exactly one dialog on screen once a
+// scan/tap is recognized — never a gap where nothing visible has happened yet.
 type DialogState = { kind: "loading" } | { kind: "student"; status: StudentStatus } | { kind: "error"; message: string };
 
 // The self-serve check-in station (`/kiosk`) — a student scans their QR code (their

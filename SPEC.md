@@ -309,9 +309,9 @@ Automations C and D (consume/flag on a live check-in, free a credit on undo — 
 testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
 `Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`, and
 `Recurring Plans.Is Active/Paid Access` are deliberately **not** derived (no `Tiers`
-join modeled at all) — grep-confirmed the app only ever reads these as opaque,
-already-resolved values, so replicating Airtable's own formulas for them would be
-real effort for no behavior that needs it dynamic. `filterByFormula` strings are
+join modeled at all) — the app only ever reads these as opaque, already-resolved
+values, so replicating Airtable's own formulas for them would be real effort for no
+behavior that needs it dynamic. `filterByFormula` strings are
 evaluated by `mockFormula.ts`, a small set of structural matchers for the handful of
 shapes this codebase's own template strings actually produce (not a general parser) —
 an unrecognized shape throws loudly rather than silently mis-filtering.
@@ -323,10 +323,10 @@ an unrecognized shape throws loudly rather than silently mis-filtering.
 - **Sandbox** (`npm run dev:sandbox`) — the real app running against the mock instead
   of real Airtable, for fast interactive verification with zero risk to real student
   data. Runs via the plain node server + Vite (`server/src/dev.ts` on `:3000` +
-  Vite on `:5199`), **not** `netlify dev` — discovered while building this that
-  Netlify Functions' dev emulation reloads the function module on every invocation
-  (correctly matching real serverless behavior), which wipes an in-memory store
-  between requests. A long-running process doesn't have that problem.
+  Vite on `:5199`), **not** `netlify dev` — Netlify Functions' dev emulation reloads
+  the function module on every invocation (correctly matching real serverless
+  behavior), which wipes an in-memory store between requests. A long-running process
+  doesn't have that problem.
   `POST /api/dev/reset-mock` (same `MOCK_AIRTABLE=true && !isProd` gating as
   dev-login) reseeds back to `server/src/airtable/sandboxSeed.ts`'s default fixtures
   without restarting the server.

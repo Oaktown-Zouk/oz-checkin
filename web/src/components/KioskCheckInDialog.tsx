@@ -53,11 +53,10 @@ export function KioskCheckInDialog({
     setPending(`${programId}_${role}`);
     setError(null);
     try {
-      // Uses POST /api/checkins' own returned status directly rather than a follow-up
-      // GET /api/kiosk/students/:id — that endpoint is eligibility-gated, and using up
-      // the student's last credit/allowance (the very thing this tap might just have
-      // done) is exactly what makes them stop being kiosk-eligible, 404ing the refresh
-      // and leaving stale (pre-check-in) state on screen.
+      // Uses POST /api/checkins' own returned status directly — GET
+      // /api/kiosk/students/:id is eligibility-gated, and using up the student's last
+      // credit/allowance (which this tap might just have done) is exactly what makes
+      // them stop being kiosk-eligible, so that endpoint isn't safe to rely on here.
       const updated = await api.checkIn(student.id, [{ programId, role }], effectiveDate?.toISOString());
       setStudent(updated);
       setCheckedInAny(true);

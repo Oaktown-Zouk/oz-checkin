@@ -54,9 +54,8 @@ export function CheckInDialog({
   async function handleSubmit() {
     if (selections.length === 0) return;
 
-    // Mirrors the old app's "no payment on file, confirm anyway" pattern — the server
-    // always allows the check-in either way (consuming a credit or flagging for
-    // review), this is just a heads-up before it happens.
+    // A heads-up before submitting, not a hard block — the server allows the check-in
+    // either way (consuming a credit or flagging it for review).
     if (student.remaining <= 0 && student.availableCredits === 0) {
       const ok = window.confirm(
         `${student.name} has no remaining classes or credits today. Check in anyway? (will be flagged for review)`

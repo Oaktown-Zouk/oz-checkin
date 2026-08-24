@@ -36,7 +36,8 @@ export interface StudentStatus {
   // Airtable's live fields can't represent a past date, so the app computes it itself —
   // see docs/airtable-schema.md, "Credits" (backdated gating).
   remaining: number;
-  // Current truth, never reconstructed historically — matches the old app's behavior.
+  // Always the current count, even for a backdated view — credits aren't
+  // reconstructed for a past date the way `remaining` above is.
   availableCredits: number;
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;

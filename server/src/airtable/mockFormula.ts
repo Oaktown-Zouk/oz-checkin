@@ -1,9 +1,9 @@
 // Evaluates the `filterByFormula` strings this app actually sends to Airtable.
 // Deliberately not a general Airtable-formula parser — every formula in this codebase
-// is built by our own template strings (grep confirms it), so there's a small, closed
-// set of shapes to support. Anything outside that set throws loudly rather than
-// silently mis-filtering, so a new formula shape added later fails a test immediately
-// instead of quietly returning wrong data.
+// is built from our own template strings, so there's a small, closed set of shapes to
+// support. Anything outside that set throws loudly rather than silently mis-filtering,
+// so a new formula shape added later fails a test immediately instead of quietly
+// returning wrong data.
 
 export interface MockRecordLike {
   id: string;

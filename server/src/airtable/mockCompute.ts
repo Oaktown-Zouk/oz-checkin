@@ -7,11 +7,11 @@
 // Deliberately NOT computed here (fixture-static instead — seed data sets them
 // directly, same as Airtable would have already resolved them): Members.Access
 // Status/Membership Status/Tier Name/Classes Allowed/Recently Active, Recurring
-// Plans.Is Active Membership/Is Paid Access. Confirmed via grep that Tier Name/
-// Classes Allowed are read as plain already-resolved fields with no in-app `Tiers`
-// join, and the Is Active/Paid Access fields aren't read anywhere at all — modeling a
-// full Recurring Plans -> Access Status derivation would be real effort replicating a
-// formula the docs don't even pin down precisely, for no app behavior that needs it.
+// Plans.Is Active Membership/Is Paid Access. Tier Name/Classes Allowed are read as
+// plain already-resolved fields with no in-app `Tiers` join, and the Is Active/Paid
+// Access fields aren't read anywhere at all — modeling a full Recurring Plans ->
+// Access Status derivation would be real effort replicating a formula the docs don't
+// even pin down precisely, for no app behavior that needs it.
 import { TABLES } from "./tableIds.js";
 import { isBlank } from "./mockFormula.js";
 import { today, dateStringFor } from "../lib/date.js";
