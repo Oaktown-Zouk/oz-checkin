@@ -235,12 +235,11 @@ naming the signed-in account.
 │     ├─ GET  programs                           │
 │     ├─ POST checkins                           │
 │     ├─ DELETE checkins/:id                     │
-│     ├─ GET  kiosk/search                       │
-│     ├─ GET  kiosk/scan                         │
+│     ├─ GET  kiosk/roster                       │
 │     └─ GET  kiosk/students/:id                 │
 │              │                                 │
 │              ▼                                 │
-│         Airtable REST API (system of record)   │
+│    airtable/client.ts (real or mock — below)   │
 └───────────────────────────────────────────────┘
 ```
 
@@ -249,8 +248,12 @@ naming the signed-in account.
   Functions v2 path-based routing. Locally runs the same way under `netlify dev`, or
   standalone via `@hono/node-server` (`server/src/dev.ts`, `npm run dev`) for quicker
   iteration without the Netlify runtime.
-- **Airtable client:** thin `fetch` wrapper (`server/src/airtable/client.ts`) — pagination,
-  429 retry, no SDK dependency.
+- **Airtable client:** `server/src/airtable/client.ts` is a thin dispatcher, not the
+  HTTP implementation itself — it delegates to `realClient.ts` (the actual `fetch`
+  wrapper: pagination, 429 retry, no SDK dependency) or `mockClient.ts` (an in-memory
+  fake, see "Testing" below) based on `MOCK_AIRTABLE`, gated identically to
+  `DEV_LOGIN_ENABLED` below. Every `services/*.ts` file imports from `client.ts`, never
+  `realClient.ts`/`mockClient.ts` directly, so the swap is invisible to them.
 - **Frontend:** React + Vite SPA, hand-rolled routing (`window.history.pushState` + a
   `popstate` listener) — no router library, the app only has two "pages" (the roster
   and a student detail page). Built to static files (`web/dist`), served by Netlify's
@@ -287,6 +290,56 @@ naming the signed-in account.
   `:3000`, so `APP_ORIGIN` there is `http://localhost:5173`, not `:3000`. The OAuth
   client's "Authorized redirect URIs" need one entry per `APP_ORIGIN` value
   (`<APP_ORIGIN>/api/auth/google/callback`).
+
+## Testing
+
+Three layers, all built on one mock (`server/src/airtable/mockClient.ts`) that stands
+in for Airtable behind the exact interface `services/*.ts` already calls — see
+"Airtable client" above for how it gets swapped in (`MOCK_AIRTABLE=true` *and*
+`NODE_ENV !== "production"`).
+
+**What the mock actually computes**, vs. what's just fixture-static (seed data sets it
+directly, exactly as if Airtable had already resolved it): `Members.Available
+Credits`/`Checked In Today (Live)`/`Remaining Today` and `Credits.Available` are
+computed live from the mock's own Checkins/Credits state (`mockCompute.ts`), because
+the app's own logic depends on them staying consistent with its own mutations.
+Automations C and D (consume/flag on a live check-in, free a credit on undo — see
+"Credits system" above) are simulated as synchronous side effects of
+`createRecords`/`updateRecord`, which is strictly *better* than real Airtable for
+testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
+`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`, and
+`Recurring Plans.Is Active/Paid Access` are deliberately **not** derived (no `Tiers`
+join modeled at all) — grep-confirmed the app only ever reads these as opaque,
+already-resolved values, so replicating Airtable's own formulas for them would be
+real effort for no behavior that needs it dynamic. `filterByFormula` strings are
+evaluated by `mockFormula.ts`, a small set of structural matchers for the handful of
+shapes this codebase's own template strings actually produce (not a general parser) —
+an unrecognized shape throws loudly rather than silently mis-filtering.
+
+- **Unit tests** (`npm test`, `node:test`, `server/src/services/*.test.ts`) — fast,
+  isolated, no network. `.env.test` sets `MOCK_AIRTABLE=true` plus dummy
+  `AIRTABLE_PAT`/`AIRTABLE_BASE_ID` (never actually used). Each test calls
+  `resetMockStore({...})` with exactly the fixture it needs.
+- **Sandbox** (`npm run dev:sandbox`) — the real app running against the mock instead
+  of real Airtable, for fast interactive verification with zero risk to real student
+  data. Runs via the plain node server + Vite (`server/src/dev.ts` on `:3000` +
+  Vite on `:5199`), **not** `netlify dev` — discovered while building this that
+  Netlify Functions' dev emulation reloads the function module on every invocation
+  (correctly matching real serverless behavior), which wipes an in-memory store
+  between requests. A long-running process doesn't have that problem.
+  `POST /api/dev/reset-mock` (same `MOCK_AIRTABLE=true && !isProd` gating as
+  dev-login) reseeds back to `server/src/airtable/sandboxSeed.ts`'s default fixtures
+  without restarting the server.
+- **E2E** (`npm run test:e2e`, Playwright, `e2e/*.spec.ts`) — a handful of specs
+  driving a real browser against a sandbox Playwright boots itself (`e2e/
+  playwright.config.ts`, two dedicated `webServer` entries on their own ports so a
+  real dev session never collides with the E2E one). `workers: 1` — every spec shares
+  one mock-backed server/store, so parallel workers would let one spec's `beforeEach`
+  reset race another's in-flight assertions. Playwright is pinned to `1.48`: this repo
+  has been developed on macOS 13, and current Playwright releases have dropped
+  Chromium support for it — installing the browser needs
+  `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx playwright install chromium` on
+  that OS specifically.
 
 ## API
 
