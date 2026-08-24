@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { LEVEL_OPTIONS } from "../levelEmoji.js";
 import { LevelBadge } from "./LevelBadge.js";
+
+const LEVEL_OPTIONS: (number | null)[] = [null, 1, 2, 3, 4];
 
 export function LevelEditDialog({
   title,
@@ -44,7 +45,7 @@ export function LevelEditDialog({
               className={`level-option${selected === level ? " level-option-selected" : ""}`}
               onClick={() => setSelected(level)}
             >
-              <span className="level-option-emoji">
+              <span className="level-option-icon">
                 <LevelBadge level={level} shape={shape} />
               </span>
               <span className="level-option-label">{level === null ? "Unset" : `Level ${level}`}</span>

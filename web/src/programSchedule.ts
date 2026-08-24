@@ -15,10 +15,11 @@ function weekdayNameFor(dateStr: string): string {
   return WEEKDAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
-// Mirrors server/src/services/programs.ts's old per-request filtering exactly, run here
-// against a Programs list fetched once on load (see App.tsx) instead of re-fetched
-// every time the check-in picker opens — and re-evaluated against whichever date
-// (live or backdated) is currently relevant, not just "today".
+// Filters `programs` (the full Active list, fetched once on load — see App.tsx) down
+// to whichever are actually scheduled for `dateStr`: active on that weekday, within
+// the program's start/end date range, and not in its skip dates. Re-run against
+// whichever date (live or backdated) is currently relevant, so backdating re-filters
+// instantly with no extra round-trip to the server.
 export function activeProgramsForDate(programs: ProgramSchedule[], dateStr: string): ProgramSchedule[] {
   const weekday = weekdayNameFor(dateStr);
   return programs.filter((p) => {
