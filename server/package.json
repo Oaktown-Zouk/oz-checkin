@@ -1,0 +1,24 @@
+{
+  "name": "server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "audit:credits": "tsx src/scripts/auditCreditConsumption.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --env-file=.env.test --import tsx --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "hono": "^4.6.9",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

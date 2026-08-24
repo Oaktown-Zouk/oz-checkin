@@ -1,0 +1,14 @@
+node_modules/
+dist/
+server/migration-log-*.json
+server/migration-credits-log-*.json
+.env
+.env.local
+.env.scratch
+web/dist/
+server/dist/
+*.log
+.DS_Store
+
+# Local Netlify folder
+.netlify
