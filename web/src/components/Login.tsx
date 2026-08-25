@@ -29,12 +29,16 @@ function GoogleLogo() {
   );
 }
 
-export function Login({ authError }: { authError: string | null }) {
+export function Login({ authError, onKioskMode }: { authError: string | null; onKioskMode: () => void }) {
   return (
     <div className="login-screen">
       <div className="login-card">
         <h1>Oaktown Zouk Front Desk</h1>
         {authError && <p className="error">{ERROR_MESSAGES[authError] ?? "Sign-in failed. Please try again."}</p>}
+        {/* So staff running a kiosk tablet don't need to know/type the /kiosk URL. */}
+        <button type="button" className="btn btn-secondary kiosk-mode-btn" onClick={onKioskMode}>
+          Kiosk Mode
+        </button>
         {/* Full-page navigation, not a fetch — Google needs to redirect the browser itself. */}
         <a className="google-signin-btn" href="/api/auth/google/start">
           <GoogleLogo />

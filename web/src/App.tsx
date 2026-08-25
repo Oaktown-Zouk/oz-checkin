@@ -102,6 +102,13 @@ export function App() {
     setRoute({ type: "list" });
   }, [effectiveAt]);
 
+  // From the signed-out Google login screen — lets staff reach the kiosk password
+  // form without needing to know/type the /kiosk URL themselves.
+  const navigateToKiosk = useCallback(() => {
+    window.history.pushState(null, "", "/kiosk");
+    setRoute({ type: "kiosk" });
+  }, []);
+
   const handleEffectiveAtChange = useCallback(
     (value: string) => {
       setEffectiveAt(value);
@@ -264,7 +271,7 @@ export function App() {
   }
 
   if (!authenticated) {
-    return <Login authError={authError} />;
+    return <Login authError={authError} onKioskMode={navigateToKiosk} />;
   }
 
   if (route.type === "student") {

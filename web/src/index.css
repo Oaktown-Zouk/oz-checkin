@@ -64,6 +64,12 @@ body {
   margin: 0;
 }
 
+.kiosk-mode-btn {
+  align-self: center;
+  height: 40px;
+  padding: 0 20px;
+}
+
 /* Matches Google's official "Sign in with Google" button spec: white background,
    neutral gray border/text, Roboto, subtle elevation on hover. */
 .google-signin-btn {
