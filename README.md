@@ -109,9 +109,10 @@ Runs the plain node server (`:3000`, `MOCK_AIRTABLE=true`) and Vite (`:5199`)
 together. Sign in via the dev-login escape hatch (e.g.
 `http://localhost:5199/api/auth/dev-login?email=claude-staff@test.com` — see
 `SPEC.md`'s "Auth" section for the full allowlist) rather than real Google OAuth,
-against `server/src/airtable/sandboxSeed.ts`'s fixture students. To try the kiosk
-password login instead, visit `/kiosk` while signed out and use
-`sandboxSeed.ts`'s `KIOSK_PASSWORD_LOGIN` fixture credentials. Hit
+against `server/src/airtable/sandboxSeed.ts`'s fixture students. To try password login
+instead (the identifier/password fields right on the same login screen, alongside the
+Google button — see `SPEC.md`'s "Auth" section), use `sandboxSeed.ts`'s
+`KIOSK_PASSWORD_LOGIN` fixture credentials. Hit
 `POST /api/dev/reset-mock` to reseed back to those fixtures without restarting the
 server — useful mid-session if you've mutated the sandbox's state and want a clean
 slate. See `SPEC.md`'s "Testing" section for what the mock does and doesn't compute,
