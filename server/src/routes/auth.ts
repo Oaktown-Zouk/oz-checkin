@@ -23,7 +23,10 @@ const GOOGLE_REDIRECT_URI = `${config.APP_ORIGIN}/api/auth/google/callback`;
 // Shared by every login path (OAuth callback, dev-login, kiosk password login) — each
 // authenticates differently, but they all end up minting the exact same kind of
 // stateless session cookie.
-function mintSession(c: Context, user: { email: string; role: UserRole; permissions: Permission[] }) {
+function mintSession(
+  c: Context,
+  user: { email: string; role: UserRole; permissions: Permission[]; userRoleId: string }
+) {
   setCookie(c, SESSION_COOKIE_NAME, createSessionValue(user), {
     path: "/",
     httpOnly: true,
@@ -99,7 +102,7 @@ authRoutes.get("/auth/google/callback", async (c) => {
   const access = await getAccessForEmail(email);
   if (!access) return c.redirect(`${config.APP_ORIGIN}/?authError=not_authorized`);
 
-  mintSession(c, { email, role: access.role, permissions: access.permissions });
+  mintSession(c, { email, role: access.role, permissions: access.permissions, userRoleId: access.userRoleId });
   return c.redirect(config.APP_ORIGIN + "/");
 });
 
@@ -119,7 +122,7 @@ authRoutes.post("/auth/kiosk-login", async (c) => {
     return c.json({ error: "Invalid credentials" }, 401);
   }
 
-  mintSession(c, { email: identifier, role: auth.role, permissions: auth.permissions });
+  mintSession(c, { email: identifier, role: auth.role, permissions: auth.permissions, userRoleId: auth.userRoleId });
   return c.json({ ok: true });
 });
 
@@ -164,7 +167,12 @@ if (config.DEV_LOGIN_ENABLED === "true" && !isProd) {
     }
 
     logDevLoginAttempt("SUCCESS", email, `role=${access.role}`);
-    mintSession(c, { email: normalized, role: access.role, permissions: access.permissions });
+    mintSession(c, {
+      email: normalized,
+      role: access.role,
+      permissions: access.permissions,
+      userRoleId: access.userRoleId,
+    });
     return c.redirect(config.APP_ORIGIN + "/");
   });
 }

@@ -1,11 +1,28 @@
 import { listRecords, TABLES } from "../airtable/client.js";
-import type { RecurringPlanFields, TransactionFields, CreditFields, CheckinFields } from "../airtable/fields.js";
+import type {
+  RecurringPlanFields,
+  TransactionFields,
+  CreditFields,
+  CheckinFields,
+  LevelupFields,
+  NoteFields,
+} from "../airtable/fields.js";
 import { fetchProgramNames, getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
+export interface NoteDetails {
+  summary: string;
+  strengths: string;
+  opportunities: string;
+  issuerName: string;
+}
+
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin";
+  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin" | "levelup" | "note";
   at: string;
   label: string;
+  // Populated only for type "note" — the full text behind the on-timeline summary,
+  // shown in a detail modal when that row is clicked (see StudentPage.tsx).
+  note?: NoteDetails;
 }
 
 export interface StudentTimeline {
@@ -23,7 +40,7 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
   const status = await getStudentStatusById(studentId);
   if (!status) return null;
 
-  const [plans, transactions, credits, checkins, programNameById] = await Promise.all([
+  const [plans, transactions, credits, checkins, levelups, notes, programNameById] = await Promise.all([
     listRecords<RecurringPlanFields>(TABLES.recurringPlans, {
       fields: ["Covers Member", "Status", "Start Date", "Frequency", "Canceled At"],
     }),
@@ -37,6 +54,12 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       filterByFormula: "{Undone At} = BLANK()",
       fields: ["Member", "Checked In At", "Class Level", "Role"],
     }),
+    listRecords<LevelupFields>(TABLES.levelups, {
+      fields: ["Member", "Role", "From", "To", "Issuer Name"],
+    }),
+    listRecords<NoteFields>(TABLES.notes, {
+      fields: ["Member", "Summary", "Strengths", "Opportunities", "Issuer Name"],
+    }),
     fetchProgramNames(),
   ]);
 
@@ -44,6 +67,8 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
   const myTransactions = transactions.filter((t) => t.fields.Member?.includes(studentId) && !t.fields.Refunded);
   const myCredits = credits.filter((c) => c.fields.Member?.includes(studentId));
   const myCheckins = checkins.filter((c) => c.fields.Member?.includes(studentId));
+  const myLevelups = levelups.filter((l) => l.fields.Member?.includes(studentId));
+  const myNotes = notes.filter((n) => n.fields.Member?.includes(studentId));
 
   const events: TimelineEvent[] = [];
 
@@ -89,6 +114,42 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       type: "checkin",
       at: c.fields["Checked In At"] ?? "",
       label: detail ? `Checked in (${detail})` : "Checked in",
+    });
+  }
+
+  // A student's first-ever level in a role (no "From") isn't a level-*up* — nothing
+  // to have leveled up from — so it's left out of the timeline entirely.
+  for (const l of myLevelups) {
+    const { From: from, To: to, Role: role } = l.fields;
+    if (from === undefined) continue;
+    const isIncrease = to !== undefined && to > from;
+    const base =
+      to === undefined
+        ? `Level cleared as a ${role}`
+        : isIncrease
+          ? `Assessed into Level ${to} as a ${role}`
+          : `Changed to Level ${to} as a ${role}`;
+    const issuerName = l.fields["Issuer Name"]?.[0];
+    events.push({
+      type: "levelup",
+      at: l.createdTime,
+      label: issuerName ? `${base} by ${issuerName}` : base,
+    });
+  }
+
+  for (const n of myNotes) {
+    const summary = n.fields.Summary ?? "";
+    const issuerName = n.fields["Issuer Name"]?.[0] ?? "Unknown";
+    events.push({
+      type: "note",
+      at: n.createdTime,
+      label: `Note from ${issuerName}: ${summary}`,
+      note: {
+        summary,
+        strengths: n.fields.Strengths ?? "",
+        opportunities: n.fields.Opportunities ?? "",
+        issuerName,
+      },
     });
   }
 

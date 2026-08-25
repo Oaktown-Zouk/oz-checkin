@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline, type TimelineEvent } from "../api.js";
+import {
+  api,
+  ApiError,
+  UnauthorizedError,
+  ForbiddenError,
+  type StudentTimeline,
+  type TimelineEvent,
+  type NoteDetails,
+} from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
 import { LevelBadge } from "./LevelBadge.js";
 import { TransferDialog } from "./TransferDialog.js";
+import { AddNoteDialog } from "./AddNoteDialog.js";
+import { NoteDetailModal } from "./NoteDetailModal.js";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
@@ -34,8 +44,10 @@ function StatBox({ label, value, onClick }: { label: string; value: React.ReactN
 }
 
 // The newest-first event feed at the bottom of the page — see api.ts's TimelineEvent
-// for the event types (membership started/status, payments, credits, check-ins).
-function Timeline({ events }: { events: TimelineEvent[] }) {
+// for the event types (membership started/status, payments, credits, check-ins,
+// level-ups, notes). A "note" row is clickable — it opens onOpenNote with the full
+// note text, since the inline label only ever shows the summary.
+function Timeline({ events, onOpenNote }: { events: TimelineEvent[]; onOpenNote: (note: NoteDetails) => void }) {
   if (events.length === 0) return <p className="empty-state">No events yet.</p>;
   return (
     <div className="timeline">
@@ -43,7 +55,13 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
         <div className="timeline-event" key={`${e.type}-${e.at}-${i}`}>
           <span className={`timeline-dot timeline-dot-${e.type}`} />
           <div className="timeline-content">
-            <div className="timeline-label">{e.label}</div>
+            {e.type === "note" && e.note ? (
+              <button type="button" className="timeline-note-link" onClick={() => onOpenNote(e.note!)}>
+                <b>Note from {e.note.issuerName}:</b> {e.note.summary}
+              </button>
+            ) : (
+              <div className="timeline-label">{e.label}</div>
+            )}
             <div className="timeline-date">{formatDateTime(e.at)}</div>
           </div>
         </div>
@@ -77,9 +95,12 @@ export function StudentPage({
   const [notFound, setNotFound] = useState(false);
   const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
+  const [viewingNote, setViewingNote] = useState<NoteDetails | null>(null);
   const { has } = usePermissions();
   const canEditLevels = has("Write Student Data");
   const canTransfer = has("Write Memberships");
+  const canAddNotes = has("Write Student Data");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +134,16 @@ export function StudentPage({
   async function handleTransferMembership(planId: string, targetEmail: string) {
     try {
       await api.transferMembership(studentId, planId, targetEmail);
+      await load();
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
+      throw err;
+    }
+  }
+
+  async function handleAddNote(summary: string, strengths: string, opportunities: string) {
+    try {
+      await api.addNote(studentId, summary, strengths, opportunities);
       await load();
     } catch (err) {
       if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
@@ -168,8 +199,15 @@ export function StudentPage({
             />
           </div>
 
-          <h2 className="timeline-heading">Timeline</h2>
-          <Timeline events={timeline.events} />
+          <div className="timeline-header">
+            <h2 className="timeline-heading">Timeline</h2>
+            {canAddNotes && (
+              <button type="button" className="btn btn-secondary" onClick={() => setAddingNote(true)}>
+                Add note
+              </button>
+            )}
+          </div>
+          <Timeline events={timeline.events} onOpenNote={setViewingNote} />
         </>
       )}
 
@@ -190,6 +228,16 @@ export function StudentPage({
           onClose={() => setTransferOpen(false)}
         />
       )}
+
+      {canAddNotes && addingNote && timeline && (
+        <AddNoteDialog
+          studentName={timeline.status.name}
+          onSubmit={handleAddNote}
+          onClose={() => setAddingNote(false)}
+        />
+      )}
+
+      {viewingNote && <NoteDetailModal note={viewingNote} onClose={() => setViewingNote(null)} />}
     </div>
   );
 }

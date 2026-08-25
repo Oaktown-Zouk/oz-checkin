@@ -5,3 +5,14 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# SPA fallback: client-side routing (web/src/App.tsx) means a deep link like /kiosk or
+# /students/:id has no matching static file — without this, a fresh load or refresh of
+# one 404s instead of reaching the app to route it client-side. Doesn't shadow the API:
+# /api/* and /health are matched by the function's own `path` config
+# (netlify/functions/api.mts), which Netlify resolves before falling through to this
+# catch-all.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

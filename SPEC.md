@@ -32,7 +32,10 @@ handful of things that are genuinely this app's own business logic.
   automations whenever a check-in exceeds the day's tier allowance, or flagged for
   front-desk review if none is available.
 - **Dance level tracking** — a Lead level and a Follow level (1–4 or unset) per
-  student, shown as small badges and editable inline.
+  student, shown as small badges and editable inline, with every actual change logged
+  to a `Levelups` table (who signed off on it, and when).
+- **Teacher notes** — a free-form Summary/Strengths/Opportunities note a teacher can
+  leave on a student, shown inline on their timeline and in full via a detail modal.
 - **Membership transfers** — move a Recurring Plan (membership) to a different student
   (e.g. someone bought a membership for a friend).
 - **Backdating** — view and correct check-ins for a past day via an effective
@@ -41,7 +44,7 @@ handful of things that are genuinely this app's own business logic.
   specifically, since Airtable's live formulas only ever mean literal "today" — see
   "Check-in semantics" below.
 - **Student detail pages** with a synthesized timeline (membership events, payments,
-  credits granted, check-ins) and running stats.
+  credits granted, check-ins, level changes, notes) and running stats.
 - **Manual refresh** — no live cross-device push (Netlify Functions can't hold a
   connection open); a "Refresh" button re-fetches the roster.
 - **Google OAuth or password login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/
@@ -118,6 +121,35 @@ blue square with the digit for Lead, a purple circle for Follow, gray when unset
 the left edge of the badge row in both the check-in list and the student detail page.
 Clicking either badge (or the corresponding stat box on the detail page) opens a picker
 dialog. Unchanged from the previous version of this app.
+
+**Every actual change is logged** to a `Levelups` table (`server/src/services/
+studentStatus.ts`'s `updateStudentLevel`) — teacher-facing history of when a student
+leveled up and who signed off on it. A row records `Member`, `Role` (Lead/Follow),
+`From`/`To` (either can be blank: no `From` for a student's first-ever level in that
+role, no `To` if the level was cleared back to unset), and `Issuer` — the signed-in
+account's `User Roles` record, taken directly from the session (see "Auth" below,
+`UserAccess.userRoleId`) rather than looked up fresh, so this costs exactly one
+Airtable write, not two. Re-saving the same level (e.g. a duplicate request) is a
+no-op and logs nothing. See `docs/airtable-schema.md`'s "Levelups" section for the
+full field list.
+
+## Notes
+
+Free-form, teacher-written notes on a student — **Write Student Data**, same
+permission as editing levels. "Add note" sits next to the "Timeline" heading on the
+student detail page and opens a dialog with three fields: a one-line **Summary**,
+and two paragraphs — "What `<Student>` is doing well:" (**Strengths**) and "What
+`<Student>` should work on:" (**Opportunities**). Only Summary is required.
+
+Saved via `POST /api/students/:id/notes` (`server/src/services/notes.ts`'s
+`createNote`) to a `Notes` table — `Member`, `Issuer` (from the session's
+`userRoleId`, same zero-extra-lookup pattern as `Levelups.Issuer`), `Summary`,
+`Strengths`, `Opportunities`. Shows up as its own event in the student timeline (see
+"Student detail page" below), inline as **Note from `<Issuer>`:** `<Summary>` — only
+the "Note from X:" prefix is bold, the summary itself isn't. Clicking that row opens
+a modal with the full note (Summary, Strengths under "Doing well", Opportunities
+under "Should work on"). See `docs/airtable-schema.md`'s "Notes" section for the
+full field list.
 
 ## Check-in semantics
 
@@ -236,6 +268,7 @@ naming the signed-in account.
 │     ├─ GET  students/:id/timeline              │
 │     ├─ GET  students/:id/memberships           │
 │     ├─ POST students/:id/transfer-membership   │
+│     ├─ POST students/:id/notes                 │
 │     ├─ GET  programs                           │
 │     ├─ POST checkins                           │
 │     ├─ DELETE checkins/:id                     │
@@ -273,10 +306,13 @@ naming the signed-in account.
   account's email from Google's userinfo endpoint, then resolves it to a role and
   permission set via Airtable (`services/userAccess.ts`; see "Permissions" below). On
   success the app mints its own stateless HMAC-signed session cookie carrying
-  `{ email, role, permissions }` (`server/src/lib/session.ts`) — no server-side
-  session store (fits serverless) and no re-checking Airtable on every request.
-  `mintSession` (`routes/auth.ts`) is the one place that cookie gets set, shared by
-  every login path below.
+  `{ email, role, permissions, userRoleId }` (`server/src/lib/session.ts`) —
+  `userRoleId` is the `User Roles` row's own record id, resolved once here rather than
+  looked up again wherever "who did this" needs recording (currently just
+  `Levelups.Issuer`, see "Dance levels" above). No server-side session store (fits
+  serverless) and no re-checking Airtable on every request. `mintSession`
+  (`routes/auth.ts`) is the one place that cookie gets set, shared by every login path
+  below.
   - **Password login** (`POST /api/auth/kiosk-login { identifier, password }`): a
     plain identifier/password form shown right on the login screen (`Login.tsx`),
     alongside the Google button, not a separate page — whichever method succeeds
@@ -342,11 +378,15 @@ Automations C and D (consume/flag on a live check-in, free a credit on undo — 
 "Credits system" above) are simulated as synchronous side effects of
 `createRecords`/`updateRecord`, which is strictly *better* than real Airtable for
 testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
-`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`, and
-`Recurring Plans.Is Active/Paid Access` are deliberately **not** derived (no `Tiers`
-join modeled at all) — the app only ever reads these as opaque, already-resolved
-values, so replicating Airtable's own formulas for them would be real effort for no
-behavior that needs it dynamic. `filterByFormula` strings are
+`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`,
+`Recurring Plans.Is Active/Paid Access`, `Levelups`' `Event`/`Issuer Name`/
+`Full Name (from Member)` lookups, and `Notes`' `Name`/`Full Name`/`Issuer Name`
+lookups are deliberately **not** derived (no `Tiers` join, no cross-table lookup
+resolution modeled at all) — the app only ever reads these as opaque,
+already-resolved values, so replicating Airtable's own formulas/lookups for them
+would be real effort for no behavior that needs it dynamic; a test that needs
+`Issuer Name` sets it directly in the relevant fixture, exactly as if Airtable had
+already resolved it. `filterByFormula` strings are
 evaluated by `mockFormula.ts`, a small set of structural matchers for the handful of
 shapes this codebase's own template strings actually produce (not a general parser) —
 an unrecognized shape throws loudly rather than silently mis-filtering.
@@ -406,10 +446,12 @@ permissions don't include the one that route needs). See "Permissions" above.
   malformed. No `q` param — the frontend fetches the unfiltered roster once and
   searches client-side, same as before.
 - `GET /api/students/:id/timeline` — **View Student Data.** Synthesized event feed
-  (membership started/status, payments, credits granted, check-ins) plus
+  (membership started/status, payments, credits granted, check-ins, level changes,
+  notes — see "Student detail page" below for the full event-type list) plus
   `totalCheckIns`/`mostRecentCheckInAt`. 404 if unknown id.
 - `PATCH /api/students/:id/lead-level` `{ level }` — **Write Student Data.** `level` is
-  `1`–`4` or `null`. 400 if invalid.
+  `1`–`4` or `null`. 400 if invalid. Logs a `Levelups` row if the value actually
+  changes — see "Dance levels".
 - `PATCH /api/students/:id/follow-level` `{ level }` — **Write Student Data.** Same
   shape.
 - `GET /api/students/:id/memberships` — **View Student Data.** Recurring Plans
@@ -419,6 +461,10 @@ permissions don't include the one that route needs). See "Permissions" above.
   `targetEmail`. 400 if missing fields; 404 if the plan or target student doesn't
   exist; 409 if the plan doesn't currently belong to `:id` or already belongs to the
   target.
+- `POST /api/students/:id/notes` `{ summary, strengths, opportunities }` — **Write
+  Student Data.** Creates a `Notes` row attributed to the signed-in session. 400 if
+  `summary` is blank; `strengths`/`opportunities` may be empty. 404 if the student
+  doesn't exist.
 - `GET /api/programs` — **Create Checkins.** All `Status = Active` Programs with their
   raw weekday/date-range/skip-date fields and `startTime` (`Programs.Start Time`,
   `"HH:mm"`), for the check-in picker to filter and sort client-side against whichever
@@ -475,10 +521,17 @@ clicking a name.
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
 - A newest-first timeline synthesized from `Recurring Plans`, `Transactions`,
-  `Credits`, and `Check-ins` for that student — not a stored event log. Event types:
-  `membership_started`, `membership_status` (non-active statuses only), `payment` (one
-  per held Transaction, labeled as membership payment or one-time pass by whether it
-  carries a plan), `credit_granted`, `checkin`.
+  `Credits`, `Check-ins`, `Levelups`, and `Notes` for that student — not a stored
+  event log. Event types: `membership_started`, `membership_status` (non-active
+  statuses only), `payment` (one per held Transaction, labeled as membership payment
+  or one-time pass by whether it carries a plan), `credit_granted`, `checkin`,
+  `levelup` (skipped for a student's first-ever level in a role — see "Dance levels"
+  above — labeled "Assessed into Level X as a Lead/Follow" on an increase, "Changed
+  to Level X as a Lead/Follow" on a decrease, or "Level cleared as a Lead/Follow" if
+  the level was reset back to unset; each suffixed with "by `<issuer's first name>`"
+  — read from `Levelups."Issuer Name"`, a lookup through `Issuer` — when known), and
+  `note` (see "Notes" above — inline as "Note from `<Issuer>`: `<Summary>`", the row
+  itself clickable to open the full Summary/Strengths/Opportunities in a modal).
 - Routing is hand-rolled — a direct load or reload of `/students/:id` lands back on
   that student's page, not the list.
 

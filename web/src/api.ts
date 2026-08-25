@@ -46,10 +46,18 @@ export interface HeldMembership {
   amount: number | null;
 }
 
+export interface NoteDetails {
+  summary: string;
+  strengths: string;
+  opportunities: string;
+  issuerName: string;
+}
+
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin";
+  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin" | "levelup" | "note";
   at: string;
   label: string;
+  note?: NoteDetails;
 }
 
 export interface StudentTimeline {
@@ -165,6 +173,11 @@ export const api = {
     request<StudentStatus>(`/api/students/${studentId}/transfer-membership`, {
       method: "POST",
       body: JSON.stringify({ planId, targetEmail }),
+    }),
+  addNote: (studentId: string, summary: string, strengths: string, opportunities: string) =>
+    request<{ ok: true }>(`/api/students/${studentId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ summary, strengths, opportunities }),
     }),
   // Kiosk mode — fetched once and cached client-side (see KioskPage.tsx) so search
   // and QR-scan matching both run locally with no per-keystroke/per-scan round trip.

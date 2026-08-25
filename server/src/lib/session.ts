@@ -14,6 +14,10 @@ export interface SessionPayload {
   email: string;
   role: UserRole;
   permissions: Permission[];
+  // The signed-in account's User Roles record id — see services/userAccess.ts's
+  // UserAccess.userRoleId for why this is resolved once at login rather than looked
+  // up again wherever "who did this" needs to be recorded (e.g. Levelups.Issuer).
+  userRoleId: string;
   expires: number;
 }
 
@@ -23,7 +27,12 @@ function sign(value: string): string {
 
 // Returns the cookie VALUE only (not a Set-Cookie header) — the caller sets it via the
 // framework's own cookie helper (see routes/auth.ts).
-export function createSessionValue(user: { email: string; role: UserRole; permissions: Permission[] }): string {
+export function createSessionValue(user: {
+  email: string;
+  role: UserRole;
+  permissions: Permission[];
+  userRoleId: string;
+}): string {
   const payload: SessionPayload = { ...user, expires: Date.now() + MAX_AGE_SECONDS * 1000 };
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${data}.${sign(data)}`;
@@ -50,6 +59,9 @@ export function readSession(raw: string | undefined): SessionPayload | null {
   // A cookie without a permissions array is invalid — reject it here instead of
   // crashing downstream on .includes().
   if (!Array.isArray(payload.permissions)) return null;
+  // Rejects any cookie minted before userRoleId existed — same "re-auth to pick up
+  // the new shape" tradeoff already accepted for role/permissions changes.
+  if (typeof payload.userRoleId !== "string") return null;
   if (typeof payload.expires !== "number" || Date.now() > payload.expires) return null;
   return payload;
 }
