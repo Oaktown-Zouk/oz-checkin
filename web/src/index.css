@@ -64,10 +64,20 @@ body {
   margin: 0;
 }
 
-.kiosk-mode-btn {
-  align-self: center;
-  height: 40px;
-  padding: 0 20px;
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gray);
+  font-size: 0.85rem;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 /* Matches Google's official "Sign in with Google" button spec: white background,
@@ -853,16 +863,30 @@ body {
   gap: 16px;
 }
 
-/* Admin-only (Backdate Kiosk permission) testing control — tucked into a corner so it
-   stays out of the way of the actual self-serve flow real students use. `top` matches
-   .kiosk-page's padding-top so this lines up with the banner's top edge. */
-.kiosk-backdate-control {
+/* Top-right corner controls, stacked so an admin's backdate control and the
+   always-present Log out button share one spot instead of competing for the corner. */
+.kiosk-header-controls {
   position: fixed;
-  top: 0;
+  top: 12px;
   right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Admin-only (Backdate Kiosk permission) testing control. */
+.kiosk-backdate-control {
   font-size: 1rem;
   opacity: 0.7;
-  z-index: 10;
+}
+
+.kiosk-logout-btn {
+  opacity: 0.7;
+}
+
+.kiosk-logout-btn:hover {
+  opacity: 1;
 }
 
 .kiosk-banner {

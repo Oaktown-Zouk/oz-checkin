@@ -271,21 +271,26 @@ naming the signed-in account.
   session store (fits serverless) and no re-checking Airtable on every request.
   `mintSession` (`routes/auth.ts`) is the one place that cookie gets set, shared by
   every login path below.
-  - **Kiosk password login** (`POST /api/auth/kiosk-login { identifier, password }`):
-    kiosk tablets are unattended, shared devices — putting a real staff member's
-    Google account on one is a bad fit, so `Kiosk`-role sessions can alternatively
-    authenticate with one shared identifier/password instead (`KioskLogin.tsx`, shown
-    at `/kiosk` when signed out — see "Kiosk mode"). The password is hashed with
-    Node's built-in `crypto.scrypt` (`server/src/lib/password.ts` — OWASP's #2-ranked
-    algorithm for password storage, chosen over adding a `bcrypt`/`argon2` dependency)
-    and stored in a `User Roles.Password Hash` field alongside the normal `Email`/
-    `Role` columns — a password-login row is just a `User Roles` row with that field
-    set, resolved via `getPasswordAuthForIdentifier` (`services/userAccess.ts`). Login
-    failures (unknown identifier or wrong password) return the same generic error
-    either way — no user enumeration. No app-level rate limiting: verification always
-    requires a live Airtable lookup (never cached), and Airtable's own 5 req/sec-per-
-    base cap (`airtable/realClient.ts`) already throttles guess throughput, as long as
-    the password itself is a real passphrase rather than a short PIN. Set/rotated via
+  - **Password login** (`POST /api/auth/kiosk-login { identifier, password }`): a
+    plain identifier/password form shown right on the login screen (`Login.tsx`),
+    alongside the Google button, not a separate page — whichever method succeeds
+    mints the same kind of session, so there's no reason to force every login through
+    OAuth once passwords are stored properly. In practice this is set up for kiosk
+    tablets specifically: they're unattended, shared devices, and putting a real staff
+    member's Google account on one is a bad fit, so a `Kiosk`-role session
+    authenticates with one shared identifier/password instead (see "Kiosk mode"). The
+    password is hashed with Node's built-in `crypto.scrypt`
+    (`server/src/lib/password.ts` — OWASP's #2-ranked algorithm for password storage,
+    chosen over adding a `bcrypt`/`argon2` dependency) and stored in a
+    `User Roles.Password Hash` field alongside the normal `Email`/`Role` columns — a
+    password-login row is just a `User Roles` row with that field set, resolved via
+    `getPasswordAuthForIdentifier` (`services/userAccess.ts`), and nothing about the
+    lookup restricts it to the `Kiosk` role. Login failures (unknown identifier or
+    wrong password) return the same generic error either way — no user enumeration.
+    No app-level rate limiting: verification always requires a live Airtable lookup
+    (never cached), and Airtable's own 5 req/sec-per-base cap (`airtable/realClient.ts`)
+    already throttles guess throughput, as long as the password itself is a real
+    passphrase rather than a short PIN. Set/rotated via
     `npx tsx src/scripts/setKioskPassword.ts <identifier> <newPassword>` — no in-app
     UI for it, matching the "rare, deliberate operation" pattern already used for
     `audit:credits`.
@@ -529,8 +534,11 @@ tablet, so a student can check themselves in with no front-desk involvement.
   instead shows "Welcome {name}! / Have a great class!" and auto-closes after
   5 seconds — the explicit Cancel/Done tap has no such delay, since the student already
   confirmed they're finished in that case.
-- **Password login**: `/kiosk` while signed out shows a plain identifier/password
-  form (`KioskLogin.tsx`) instead of the Google button — see "Auth" below.
+- **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
+  screen as every other unauthenticated route, Google button and identifier/password
+  form both included — see "Auth" below. A successful password login redirects to
+  `/`, and the session-derived routing there sends a `Kiosk`-role account straight
+  back to `/kiosk`.
 - **Visible window (kiosk-only)**: a class stops appearing in the kiosk's picker once
   `Programs.Start Time + Programs.Visible For` (a duration field, read over the API as
   a plain number of seconds) has passed — `withinVisibleWindow`,

@@ -16,7 +16,6 @@ import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
-import { KioskLogin } from "./components/KioskLogin.js";
 import { NavMenu } from "./components/NavMenu.js";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
@@ -259,21 +258,19 @@ export function App() {
     return (
       <PermissionsProvider value={permissions}>
         <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
-        <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} />
+        <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} onLogout={handleLogout} />
       </PermissionsProvider>
     );
   }
 
-  // Visiting /kiosk while signed out shows the password form instead of the Google
-  // button — kiosk tablets are shared, unattended devices with no Google account on
-  // them (see routes/auth.ts's /auth/kiosk-login). Every other unauthenticated route
-  // still falls through to the generic Google login below.
-  if (route.type === "kiosk" && !authenticated) {
-    return <KioskLogin />;
-  }
-
+  // Login offers both Google OAuth and a plain identifier/password form (for kiosk
+  // tablets — see routes/auth.ts's /auth/kiosk-login) on the same screen, so every
+  // unauthenticated route — /kiosk included — lands here. Whichever method succeeds
+  // sends the browser to "/" and lets the session-derived checks above route it from
+  // there (e.g. a Kiosk-role account ends up back on /kiosk regardless of where login
+  // happened).
   if (!authenticated) {
-    return <Login authError={authError} onKioskMode={navigateToKiosk} />;
+    return <Login authError={authError} />;
   }
 
   if (route.type === "student") {

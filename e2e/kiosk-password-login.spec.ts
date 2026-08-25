@@ -7,14 +7,14 @@ test.beforeEach(async ({ request }) => {
 
 test("wrong password shows an inline error and doesn't sign in", async ({ page }) => {
   await page.goto("/kiosk");
-  await expect(page.getByRole("heading", { name: "Oaktown Zouk Kiosk" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Oaktown Zouk Front Desk" })).toBeVisible();
 
   await page.getByPlaceholder("Login").fill(KIOSK_PASSWORD_LOGIN.identifier);
   await page.getByPlaceholder("Password").fill("not the right password");
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page.getByText("Invalid login or password.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Oaktown Zouk Kiosk" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Oaktown Zouk Front Desk" })).toBeVisible();
 });
 
 test("correct identifier/password signs in and lands on the kiosk roster", async ({ page }) => {
