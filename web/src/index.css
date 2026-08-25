@@ -52,10 +52,32 @@ body {
   font-size: 1rem;
 }
 
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .error {
   color: var(--red);
   font-size: 0.9rem;
   margin: 0;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gray);
+  font-size: 0.85rem;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 /* Matches Google's official "Sign in with Google" button spec: white background,
@@ -321,6 +343,65 @@ body {
   font-size: 0.75rem;
   cursor: pointer;
   padding: 0;
+}
+
+.nav-menu {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+}
+
+.nav-menu-trigger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.nav-menu-trigger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: #111827;
+  border-radius: 1px;
+}
+
+.nav-menu-dropdown {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.nav-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #111827;
+}
+
+.nav-menu-item:hover {
+  background: var(--gray-bg);
 }
 
 .row-menu {
@@ -778,19 +859,34 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px;
+  padding: 0 24px 24px;
   gap: 16px;
 }
 
-/* Admin-only (Backdate Kiosk permission) testing control — tucked into a corner so it
-   stays out of the way of the actual self-serve flow real students use. */
-.kiosk-backdate-control {
+/* Top-right corner controls, stacked so an admin's backdate control and the
+   always-present Log out button share one spot instead of competing for the corner. */
+.kiosk-header-controls {
   position: fixed;
   top: 12px;
-  right: 12px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Admin-only (Backdate Kiosk permission) testing control. */
+.kiosk-backdate-control {
   font-size: 1rem;
   opacity: 0.7;
-  z-index: 10;
+}
+
+.kiosk-logout-btn {
+  opacity: 0.7;
+}
+
+.kiosk-logout-btn:hover {
+  opacity: 1;
 }
 
 .kiosk-banner {
@@ -800,20 +896,11 @@ body {
   border-radius: 12px;
 }
 
-.kiosk-heading {
-  margin: 0;
-  font-size: 2rem;
-  text-align: center;
-}
-
-/* Wraps "Scan QR Code" + the camera feed + the search bar as one group. Fixed
-   margin-top rather than true viewport-centering — this runs on one known kiosk
-   tablet, not a range of screen sizes, so a flat offset is simpler and just as good. */
+/* Wraps "Scan QR Code to Check In" + the camera feed + the search bar as one group.
+   No margin-top of its own — .kiosk-page's flex gap is enough, so this sits right
+   under the banner on any screen size, not just a specific known kiosk tablet. */
 .kiosk-main {
   width: 100%;
-  /* .kiosk-page already puts a 16px flex gap above this, so 184 + 16 = 200px total
-     between the "Self Check-In" heading and this block. */
-  margin-top: 184px;
   display: flex;
   flex-direction: column;
   align-items: center;

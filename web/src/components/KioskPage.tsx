@@ -54,7 +54,15 @@ type DialogState = { kind: "loading" } | { kind: "student"; status: StudentStatu
 // id) both run against this local snapshot. Once a specific id is resolved, though,
 // the actual status always comes fresh from the server (see resolveId below) — the
 // cache is only ever used to find *who*, never to decide *whether*.
-export function KioskPage({ programs, onUnauthorized }: { programs: ProgramSchedule[]; onUnauthorized: () => void }) {
+export function KioskPage({
+  programs,
+  onUnauthorized,
+  onLogout,
+}: {
+  programs: ProgramSchedule[];
+  onUnauthorized: () => void;
+  onLogout: () => void;
+}) {
   const { has } = usePermissions();
   const canBackdate = has("Backdate Kiosk");
 
@@ -138,17 +146,23 @@ export function KioskPage({ programs, onUnauthorized }: { programs: ProgramSched
 
   return (
     <div className="kiosk-page">
-      {canBackdate && (
-        <div className="kiosk-backdate-control">
-          <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
-        </div>
-      )}
+      <div className="kiosk-header-controls">
+        {canBackdate && (
+          <div className="kiosk-backdate-control">
+            <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
+          </div>
+        )}
+        {/* The only sign-out affordance a kiosk-only session has — it doesn't hold the
+            other permissions NavMenu requires to show its own logout-adjacent nav. */}
+        <button type="button" className="btn btn-secondary kiosk-logout-btn" onClick={onLogout}>
+          Log out
+        </button>
+      </div>
 
       <img src={banner} alt="Oaktown Zouk" className="kiosk-banner" />
-      <h1 className="kiosk-heading">Self Check-In</h1>
 
       <div className="kiosk-main">
-        <p className="kiosk-camera-label">Scan QR Code</p>
+        <p className="kiosk-camera-label">Scan QR Code to Check In</p>
         <div className="kiosk-camera-wrap">
           {cameraError ? (
             <p className="kiosk-camera-error">{cameraError} Use the search bar below instead.</p>

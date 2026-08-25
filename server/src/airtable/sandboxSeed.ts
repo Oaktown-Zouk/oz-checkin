@@ -9,6 +9,16 @@ import type { SeedData } from "./mockCompute.js";
 // classes today no matter when it's actually run.
 const ALL_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// A password-login (kiosk tablet) User Roles row. The identifier/password are
+// plaintext test fixtures; the hash below is a real hashPassword("kiosk-test-password-1234")
+// output, precomputed once so the seed stays static — see e2e/kiosk-password-login.spec.ts.
+export const KIOSK_PASSWORD_LOGIN = {
+  identifier: "kiosk-tablet",
+  password: "kiosk-test-password-1234",
+  passwordHash:
+    "scrypt:16384:8:1:65572757b0ea16ecc21fe6d6fb31fb7b:f1ea175e0a3c5145af286d6aad92d4acb88f07263fb7377cf86bec374eeef20ffc94d6639f4cd8938b1012bb6b0d98f35c9bdaac4d77cd11533a02de25e30a44",
+} as const;
+
 export const FIXTURE_IDS = {
   members: {
     // Active membership, full allowance untouched — the "everything works" case.
@@ -229,6 +239,14 @@ export function buildSandboxSeed(): SeedData {
       { id: "recUserRoleVolunteer", fields: { Email: "claude-volunteer@test.com", Role: [rolePermissions.volunteer] } },
       { id: "recUserRoleKiosk", fields: { Email: "claude-kiosk@test.com", Role: [rolePermissions.kiosk] } },
       { id: "recUserRoleAdmin", fields: { Email: "claude-admin@test.com", Role: [rolePermissions.admin] } },
+      {
+        id: "recUserRoleKioskTablet",
+        fields: {
+          Email: KIOSK_PASSWORD_LOGIN.identifier,
+          Role: [rolePermissions.kiosk],
+          "Password Hash": KIOSK_PASSWORD_LOGIN.passwordHash,
+        },
+      },
     ],
   };
 }

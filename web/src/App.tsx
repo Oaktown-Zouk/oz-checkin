@@ -16,6 +16,7 @@ import { StudentList } from "./components/StudentList.js";
 import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
+import { NavMenu } from "./components/NavMenu.js";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
@@ -100,6 +101,13 @@ export function App() {
     window.history.pushState(null, "", buildUrl({ type: "list" }, effectiveAt));
     setRoute({ type: "list" });
   }, [effectiveAt]);
+
+  // From the signed-out Google login screen — lets staff reach the kiosk password
+  // form without needing to know/type the /kiosk URL themselves.
+  const navigateToKiosk = useCallback(() => {
+    window.history.pushState(null, "", "/kiosk");
+    setRoute({ type: "kiosk" });
+  }, []);
 
   const handleEffectiveAtChange = useCallback(
     (value: string) => {
@@ -249,11 +257,18 @@ export function App() {
   if (kioskOnly || (route.type === "kiosk" && authenticated)) {
     return (
       <PermissionsProvider value={permissions}>
-        <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} />
+        <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
+        <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} onLogout={handleLogout} />
       </PermissionsProvider>
     );
   }
 
+  // Login offers both Google OAuth and a plain identifier/password form (for kiosk
+  // tablets — see routes/auth.ts's /auth/kiosk-login) on the same screen, so every
+  // unauthenticated route — /kiosk included — lands here. Whichever method succeeds
+  // sends the browser to "/" and lets the session-derived checks above route it from
+  // there (e.g. a Kiosk-role account ends up back on /kiosk regardless of where login
+  // happened).
   if (!authenticated) {
     return <Login authError={authError} />;
   }
@@ -261,6 +276,7 @@ export function App() {
   if (route.type === "student") {
     return (
       <PermissionsProvider value={permissions}>
+        <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
       </PermissionsProvider>
     );
@@ -268,6 +284,7 @@ export function App() {
 
   return (
     <PermissionsProvider value={permissions}>
+      <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
       <div className="app">
         <header className="app-header">
           <h1>OZ Check-In</h1>

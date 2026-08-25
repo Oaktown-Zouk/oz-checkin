@@ -10,12 +10,28 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_MAX_AGE_SECONDS,
 } from "../lib/session.js";
-import { getAccessForEmail } from "../services/userAccess.js";
+import type { Context } from "hono";
+import { getAccessForEmail, getPasswordAuthForIdentifier } from "../services/userAccess.js";
+import { verifyPassword } from "../lib/password.js";
+import type { UserRole, Permission } from "../airtable/fields.js";
 
 export const authRoutes = new Hono();
 
 const isProd = process.env.NODE_ENV === "production";
 const GOOGLE_REDIRECT_URI = `${config.APP_ORIGIN}/api/auth/google/callback`;
+
+// Shared by every login path (OAuth callback, dev-login, kiosk password login) — each
+// authenticates differently, but they all end up minting the exact same kind of
+// stateless session cookie.
+function mintSession(c: Context, user: { email: string; role: UserRole; permissions: Permission[] }) {
+  setCookie(c, SESSION_COOKIE_NAME, createSessionValue(user), {
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: isProd,
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  });
+}
 
 // Kicks off the OAuth code flow — a real top-level navigation (not fetch), since Google
 // needs to redirect the browser itself. `state` is just CSRF protection for the login
@@ -83,14 +99,28 @@ authRoutes.get("/auth/google/callback", async (c) => {
   const access = await getAccessForEmail(email);
   if (!access) return c.redirect(`${config.APP_ORIGIN}/?authError=not_authorized`);
 
-  setCookie(c, SESSION_COOKIE_NAME, createSessionValue({ email, role: access.role, permissions: access.permissions }), {
-    path: "/",
-    httpOnly: true,
-    sameSite: "Lax",
-    secure: isProd,
-    maxAge: SESSION_MAX_AGE_SECONDS,
-  });
+  mintSession(c, { email, role: access.role, permissions: access.permissions });
   return c.redirect(config.APP_ORIGIN + "/");
+});
+
+// Password login for kiosk tablets — see server/src/lib/password.ts and SPEC.md's
+// "Auth" section. A plain fetch POST (not a redirect/navigation) since there's no
+// OAuth handshake requiring a real page load here.
+authRoutes.post("/auth/kiosk-login", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const identifier = typeof body?.identifier === "string" ? body.identifier : "";
+  const password = typeof body?.password === "string" ? body.password : "";
+  if (!identifier || !password) return c.json({ error: "Invalid credentials" }, 401);
+
+  const auth = await getPasswordAuthForIdentifier(identifier);
+  // Same generic error regardless of which check failed — never reveal whether the
+  // identifier exists (standard login-endpoint practice, no user enumeration).
+  if (!auth || !(await verifyPassword(password, auth.passwordHash))) {
+    return c.json({ error: "Invalid credentials" }, 401);
+  }
+
+  mintSession(c, { email: identifier, role: auth.role, permissions: auth.permissions });
+  return c.json({ ok: true });
 });
 
 // A fixed set of real User Roles rows created specifically for this, one per role, so
@@ -134,13 +164,7 @@ if (config.DEV_LOGIN_ENABLED === "true" && !isProd) {
     }
 
     logDevLoginAttempt("SUCCESS", email, `role=${access.role}`);
-    setCookie(c, SESSION_COOKIE_NAME, createSessionValue({ email: normalized, role: access.role, permissions: access.permissions }), {
-      path: "/",
-      httpOnly: true,
-      sameSite: "Lax",
-      secure: isProd,
-      maxAge: SESSION_MAX_AGE_SECONDS,
-    });
+    mintSession(c, { email: normalized, role: access.role, permissions: access.permissions });
     return c.redirect(config.APP_ORIGIN + "/");
   });
 }
