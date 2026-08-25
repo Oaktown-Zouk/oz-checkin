@@ -13,6 +13,10 @@ const ALL_PERMISSIONS: Permission[] = [
 export interface UserAccess {
   role: UserRole;
   permissions: Permission[];
+  // The signed-in User Roles row's own record id — baked into the session cookie
+  // (see lib/session.ts) so anything needing "who did this" (e.g. Levelups.Issuer)
+  // has it for free at write time, with no extra Airtable lookup.
+  userRoleId: string;
 }
 
 // Case-insensitive: Google accounts are case-preserving, and password-login
@@ -27,7 +31,9 @@ async function findUserRoleRecord(identifier: string, fields: (keyof UserRoleFie
   return records[0] ?? null;
 }
 
-async function resolveAccessForRoleRecordId(roleRecordId: string | undefined): Promise<UserAccess | null> {
+async function resolveAccessForRoleRecordId(
+  roleRecordId: string | undefined
+): Promise<Omit<UserAccess, "userRoleId"> | null> {
   if (!roleRecordId) return null;
   const roleRecord = await getRecordOrNull<RolePermissionFields>(TABLES.rolePermissions, roleRecordId);
   if (!roleRecord?.fields.Role) return null;
@@ -40,7 +46,10 @@ async function resolveAccessForRoleRecordId(roleRecordId: string | undefined): P
 
 export async function getAccessForEmail(email: string): Promise<UserAccess | null> {
   const userRoleRecord = await findUserRoleRecord(email, ["Role"]);
-  return resolveAccessForRoleRecordId(userRoleRecord?.fields.Role?.[0]);
+  if (!userRoleRecord) return null;
+  const access = await resolveAccessForRoleRecordId(userRoleRecord.fields.Role?.[0]);
+  if (!access) return null;
+  return { ...access, userRoleId: userRoleRecord.id };
 }
 
 // Fetches "Password Hash" too — unlike getAccessForEmail, which never pulls that
@@ -50,10 +59,10 @@ export async function getPasswordAuthForIdentifier(
 ): Promise<(UserAccess & { passwordHash: string }) | null> {
   const userRoleRecord = await findUserRoleRecord(identifier, ["Role", "Password Hash"]);
   const passwordHash = userRoleRecord?.fields["Password Hash"];
-  if (!passwordHash) return null;
+  if (!userRoleRecord || !passwordHash) return null;
 
-  const access = await resolveAccessForRoleRecordId(userRoleRecord?.fields.Role?.[0]);
+  const access = await resolveAccessForRoleRecordId(userRoleRecord.fields.Role?.[0]);
   if (!access) return null;
 
-  return { ...access, passwordHash };
+  return { ...access, userRoleId: userRoleRecord.id, passwordHash };
 }

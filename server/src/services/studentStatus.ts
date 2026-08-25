@@ -1,5 +1,5 @@
-import { listRecords, getRecordOrNull, updateRecord, TABLES, type AirtableRecord } from "../airtable/client.js";
-import type { MemberFields, CheckinFields, ProgramFields } from "../airtable/fields.js";
+import { listRecords, getRecordOrNull, createRecords, updateRecord, TABLES, type AirtableRecord } from "../airtable/client.js";
+import type { MemberFields, CheckinFields, ProgramFields, LevelupFields } from "../airtable/fields.js";
 import { today, dateStringFor, STUDIO_TIMEZONE } from "../lib/date.js";
 import { NotFoundError } from "../lib/errors.js";
 
@@ -227,17 +227,36 @@ export async function getStudentStatusById(id: string, date?: string): Promise<S
   return buildStatus(member, isLiveToday, mine, programNameById, mostRecentByMember.get(id) ?? []);
 }
 
+// issuerRoleId is the signed-in account's own User Roles record id (see
+// UserAccess.userRoleId) — already resolved once at login and carried in the session,
+// so recording who made the change costs no extra Airtable lookup here.
 export async function updateStudentLevel(
   id: string,
   field: "Lead Level" | "Follow Level",
-  level: number | null
+  level: number | null,
+  issuerRoleId: string
 ): Promise<StudentStatus> {
-  if (!(await getRecordOrNull<MemberFields>(TABLES.members, id))) {
-    throw new NotFoundError("Student not found");
-  }
+  const member = await getRecordOrNull<MemberFields>(TABLES.members, id);
+  if (!member) throw new NotFoundError("Student not found");
+  const previousLevel = member.fields[field] ?? null;
+
   await updateRecord<Record<"Lead Level" | "Follow Level", number | null>>(TABLES.members, id, {
     [field]: level,
   } as Record<"Lead Level" | "Follow Level", number | null>);
+
+  // Only a real change is worth a Levelups row — re-saving the same level (e.g. a
+  // duplicate/retried request) shouldn't log a no-op event.
+  if (level !== previousLevel) {
+    await createRecords<LevelupFields>(TABLES.levelups, [
+      {
+        Member: [id],
+        Issuer: [issuerRoleId],
+        Role: field === "Lead Level" ? "Lead" : "Follow",
+        ...(previousLevel !== null ? { From: previousLevel } : {}),
+        ...(level !== null ? { To: level } : {}),
+      },
+    ]);
+  }
 
   const updated = await getStudentStatusById(id);
   if (!updated) throw new NotFoundError("Student not found");

@@ -34,7 +34,8 @@ function StatBox({ label, value, onClick }: { label: string; value: React.ReactN
 }
 
 // The newest-first event feed at the bottom of the page — see api.ts's TimelineEvent
-// for the event types (membership started/status, payments, credits, check-ins).
+// for the event types (membership started/status, payments, credits, check-ins,
+// level-ups).
 function Timeline({ events }: { events: TimelineEvent[] }) {
   if (events.length === 0) return <p className="empty-state">No events yet.</p>;
   return (

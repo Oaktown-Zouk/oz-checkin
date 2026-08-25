@@ -201,14 +201,41 @@ Login is Google OAuth for Staff/Volunteer/Admin, or a shared password for Kiosk
 tablets: after verifying the account with Google (or the password against the row's
 `Password Hash`, for a kiosk login), the server looks up the identifier in
 `User Roles` (case-insensitive), follows the `Role` link to `Role Permissions`, and
-bakes both the role name and the resolved permission list into the signed session
-cookie (`services/userAccess.ts`'s `getAccessForEmail`/`getPasswordAuthForIdentifier`)
-— permission changes take effect on that account's next login, not live. No matching
-`User Roles` row at all means no access — the callback route redirects to
-`/?authError=not_authorized` without setting a session. A row with a role but none of
-the permissions a given page needs still gets a session (so it doesn't need to
-re-auth once a page exists for it), but the relevant routes 403 it, and the frontend
-shows a "not authorized for this page" screen instead of the roster.
+bakes the role name, the resolved permission list, and the `User Roles` row's own
+record id into the signed session cookie (`services/userAccess.ts`'s
+`getAccessForEmail`/`getPasswordAuthForIdentifier`) — permission changes take effect
+on that account's next login, not live. No matching `User Roles` row at all means no
+access — the callback route redirects to `/?authError=not_authorized` without setting
+a session. A row with a role but none of the permissions a given page needs still gets
+a session (so it doesn't need to re-auth once a page exists for it), but the relevant
+routes 403 it, and the frontend shows a "not authorized for this page" screen instead
+of the roster. The record id (`userRoleId` in the session, `UserAccess.userRoleId` in
+`userAccess.ts`) exists so a write that needs to record "who did this" — currently
+just `Levelups.Issuer`, below — never needs a second Airtable lookup at write time.
+
+## Levelups (`tblSFmkH7KlWVRmfM`)
+
+One row per Lead/Follow level *change* — written by `services/studentStatus.ts`'s
+`updateStudentLevel` whenever a `PATCH /students/:id/lead-level` or `.../follow-level`
+call actually changes the value (re-saving the same level is a no-op, not logged).
+Lets the studio answer "when did this student level up, and who signed off on it."
+
+- `Member` (link → `Members`, exactly one) — the student.
+- `Issuer` (link → `User Roles`, exactly one) — whoever made the change, from the
+  signed-in session's `userRoleId` (see "User Roles & Role Permissions" above) — never
+  a fresh lookup, so this write costs exactly one Airtable call.
+- `Role` (single select: `Lead` / `Follow`) — which level this row is about.
+- `From` (number) — the level before the change. **Blank** for a student's first-ever
+  level in that role (there's nothing to record it changed *from*).
+- `To` (number) — the level after the change. **Blank** if the level was cleared back
+  to unset.
+- `Event` (formula, read-only) — a human-readable summary built from the above, e.g.
+  "Lead from 2 to 3" or "Lead initially 2". Never written by the app.
+- `Issuer Name` (lookup through `Issuer`, read-only) — the issuer's `User Roles.First
+  Name`. Read by `services/studentTimeline.ts` to attribute a level change in the
+  student timeline (e.g. "... by Jane") without a second lookup.
+- `Full Name (from Member)` (lookup, read-only) and `Created` (Airtable's own
+  auto-set creation timestamp) — also never written by the app.
 
 ## Sessions / Events
 

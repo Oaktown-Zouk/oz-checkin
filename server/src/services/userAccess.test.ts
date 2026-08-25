@@ -48,6 +48,12 @@ describe("getAccessForEmail", () => {
     assert.deepEqual(access?.permissions.sort(), ["Create Checkins", "Undo Checkins"]);
   });
 
+  it("includes the User Roles row's own record id", async () => {
+    seedRoles();
+    const access = await getAccessForEmail("kiosk@example.com");
+    assert.equal(access?.userRoleId, "recUserKiosk");
+  });
+
   it("matches email case-insensitively", async () => {
     seedRoles();
     const access = await getAccessForEmail("admin@example.com");
@@ -63,6 +69,7 @@ describe("getPasswordAuthForIdentifier", () => {
     assert.equal(auth?.role, "Kiosk");
     assert.deepEqual(auth?.permissions.sort(), ["Create Checkins", "Undo Checkins"]);
     assert.equal(auth?.passwordHash, "scrypt:16384:8:1:aa:bb");
+    assert.equal(auth?.userRoleId, "recUserKioskTablet");
   });
 
   it("matches the identifier case-insensitively, same as email lookups", async () => {

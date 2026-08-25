@@ -47,7 +47,7 @@ export interface HeldMembership {
 }
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin";
+  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin" | "levelup";
   at: string;
   label: string;
 }

@@ -119,6 +119,17 @@ the left edge of the badge row in both the check-in list and the student detail 
 Clicking either badge (or the corresponding stat box on the detail page) opens a picker
 dialog. Unchanged from the previous version of this app.
 
+**Every actual change is logged** to a `Levelups` table (`server/src/services/
+studentStatus.ts`'s `updateStudentLevel`) — teacher-facing history of when a student
+leveled up and who signed off on it. A row records `Member`, `Role` (Lead/Follow),
+`From`/`To` (either can be blank: no `From` for a student's first-ever level in that
+role, no `To` if the level was cleared back to unset), and `Issuer` — the signed-in
+account's `User Roles` record, taken directly from the session (see "Auth" below,
+`UserAccess.userRoleId`) rather than looked up fresh, so this costs exactly one
+Airtable write, not two. Re-saving the same level (e.g. a duplicate request) is a
+no-op and logs nothing. See `docs/airtable-schema.md`'s "Levelups" section for the
+full field list.
+
 ## Check-in semantics
 
 - **Program + Role, not a single "Check In" button.** Front desk opens the check-in
@@ -273,10 +284,13 @@ naming the signed-in account.
   account's email from Google's userinfo endpoint, then resolves it to a role and
   permission set via Airtable (`services/userAccess.ts`; see "Permissions" below). On
   success the app mints its own stateless HMAC-signed session cookie carrying
-  `{ email, role, permissions }` (`server/src/lib/session.ts`) — no server-side
-  session store (fits serverless) and no re-checking Airtable on every request.
-  `mintSession` (`routes/auth.ts`) is the one place that cookie gets set, shared by
-  every login path below.
+  `{ email, role, permissions, userRoleId }` (`server/src/lib/session.ts`) —
+  `userRoleId` is the `User Roles` row's own record id, resolved once here rather than
+  looked up again wherever "who did this" needs recording (currently just
+  `Levelups.Issuer`, see "Dance levels" above). No server-side session store (fits
+  serverless) and no re-checking Airtable on every request. `mintSession`
+  (`routes/auth.ts`) is the one place that cookie gets set, shared by every login path
+  below.
   - **Password login** (`POST /api/auth/kiosk-login { identifier, password }`): a
     plain identifier/password form shown right on the login screen (`Login.tsx`),
     alongside the Google button, not a separate page — whichever method succeeds
@@ -342,11 +356,14 @@ Automations C and D (consume/flag on a live check-in, free a credit on undo — 
 "Credits system" above) are simulated as synchronous side effects of
 `createRecords`/`updateRecord`, which is strictly *better* than real Airtable for
 testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
-`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`, and
-`Recurring Plans.Is Active/Paid Access` are deliberately **not** derived (no `Tiers`
-join modeled at all) — the app only ever reads these as opaque, already-resolved
-values, so replicating Airtable's own formulas for them would be real effort for no
-behavior that needs it dynamic. `filterByFormula` strings are
+`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`,
+`Recurring Plans.Is Active/Paid Access`, and `Levelups`' `Event`/`Issuer Name`/
+`Full Name (from Member)` lookups are deliberately **not** derived (no `Tiers` join,
+no cross-table lookup resolution modeled at all) — the app only ever reads these as
+opaque, already-resolved values, so replicating Airtable's own formulas/lookups for
+them would be real effort for no behavior that needs it dynamic; a test that needs
+`Issuer Name` sets it directly in the seed's `Levelups` fixture, exactly as if
+Airtable had already resolved it. `filterByFormula` strings are
 evaluated by `mockFormula.ts`, a small set of structural matchers for the handful of
 shapes this codebase's own template strings actually produce (not a general parser) —
 an unrecognized shape throws loudly rather than silently mis-filtering.
@@ -409,7 +426,8 @@ permissions don't include the one that route needs). See "Permissions" above.
   (membership started/status, payments, credits granted, check-ins) plus
   `totalCheckIns`/`mostRecentCheckInAt`. 404 if unknown id.
 - `PATCH /api/students/:id/lead-level` `{ level }` — **Write Student Data.** `level` is
-  `1`–`4` or `null`. 400 if invalid.
+  `1`–`4` or `null`. 400 if invalid. Logs a `Levelups` row if the value actually
+  changes — see "Dance levels".
 - `PATCH /api/students/:id/follow-level` `{ level }` — **Write Student Data.** Same
   shape.
 - `GET /api/students/:id/memberships` — **View Student Data.** Recurring Plans
@@ -475,10 +493,15 @@ clicking a name.
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
 - A newest-first timeline synthesized from `Recurring Plans`, `Transactions`,
-  `Credits`, and `Check-ins` for that student — not a stored event log. Event types:
-  `membership_started`, `membership_status` (non-active statuses only), `payment` (one
-  per held Transaction, labeled as membership payment or one-time pass by whether it
-  carries a plan), `credit_granted`, `checkin`.
+  `Credits`, `Check-ins`, and `Levelups` for that student — not a stored event log.
+  Event types: `membership_started`, `membership_status` (non-active statuses only),
+  `payment` (one per held Transaction, labeled as membership payment or one-time pass
+  by whether it carries a plan), `credit_granted`, `checkin`, `levelup` (skipped for a
+  student's first-ever level in a role — see "Dance levels" above — labeled "Assessed
+  into Level X as a Lead/Follow" on an increase, "Changed to Level X as a
+  Lead/Follow" on a decrease, or "Level cleared as a Lead/Follow" if the level was
+  reset back to unset; each suffixed with "by `<issuer's first name>`" — read from
+  `Levelups."Issuer Name"`, a lookup through `Issuer` — when known).
 - Routing is hand-rolled — a direct load or reload of `/students/:id` lands back on
   that student's page, not the list.
 

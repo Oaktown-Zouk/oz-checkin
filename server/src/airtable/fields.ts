@@ -94,6 +94,22 @@ export interface UserRoleFields {
   "Password Hash"?: string; // set only on password-login (kiosk) rows, never OAuth ones
 }
 
+// A record of a student's Lead/Follow level being set, written once per level
+// change that actually changes the value — see services/studentStatus.ts's
+// updateStudentLevel. `Event`, `Full Name (from Member)`, `Issuer Name`, and
+// `Created` are Airtable-computed/auto-set fields on this table — never written by
+// the app.
+export interface LevelupFields {
+  Member?: string[]; // link -> Members (exactly one)
+  Issuer?: string[]; // link -> User Roles (exactly one) — who made the change
+  // Lookup (through Issuer) of that User Roles row's "First Name" — read-only, used
+  // to attribute a level change in the student timeline without a second lookup.
+  "Issuer Name"?: string[];
+  Role?: "Lead" | "Follow";
+  From?: number; // omitted (blank) for a student's first-ever level in this role
+  To?: number; // omitted (blank) if the level was cleared back to unset
+}
+
 export type Permission =
   | "View Student Data"
   | "Write Student Data"

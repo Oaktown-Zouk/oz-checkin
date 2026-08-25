@@ -95,6 +95,79 @@ describe("getStudentTimeline", () => {
     assert.equal(timeline?.events.some((e) => e.type === "membership_status"), false);
   });
 
+  it("includes a levelup event with the issuer's name when From is present", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.levelups]: [
+        {
+          id: "recLevelup1",
+          createdTime: "2025-05-01T00:00:00Z",
+          fields: { Member: [STUDENT], Role: "Lead", From: 2, To: 3, "Issuer Name": ["Jane"] },
+        },
+      ],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    const levelupEvent = timeline?.events.find((e) => e.type === "levelup");
+    assert.equal(levelupEvent?.label, "Assessed into Level 3 as a Lead by Jane");
+    assert.equal(levelupEvent?.at, "2025-05-01T00:00:00Z");
+  });
+
+  it("uses a different label when the level goes down", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.levelups]: [
+        { id: "recLevelup1", fields: { Member: [STUDENT], Role: "Follow", From: 3, To: 2, "Issuer Name": ["Jane"] } },
+      ],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    const levelupEvent = timeline?.events.find((e) => e.type === "levelup");
+    assert.equal(levelupEvent?.label, "Changed to Level 2 as a Follow by Jane");
+  });
+
+  it("uses a 'cleared' label when the level was reset back to unset", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.levelups]: [{ id: "recLevelup1", fields: { Member: [STUDENT], Role: "Lead", From: 3, "Issuer Name": ["Jane"] } }],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    const levelupEvent = timeline?.events.find((e) => e.type === "levelup");
+    assert.equal(levelupEvent?.label, "Level cleared as a Lead by Jane");
+  });
+
+  it("omits the issuer attribution when Issuer Name is missing", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.levelups]: [{ id: "recLevelup1", fields: { Member: [STUDENT], Role: "Lead", From: 2, To: 3 } }],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    const levelupEvent = timeline?.events.find((e) => e.type === "levelup");
+    assert.equal(levelupEvent?.label, "Assessed into Level 3 as a Lead");
+  });
+
+  it("hides a levelup event when From is missing (a student's first level in that role)", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.levelups]: [{ id: "recLevelup1", fields: { Member: [STUDENT], Role: "Lead", To: 1 } }],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    assert.equal(timeline?.events.some((e) => e.type === "levelup"), false);
+  });
+
+  it("excludes another student's levelups", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.levelups]: [{ id: "recLevelupOther", fields: { Member: [OTHER], Role: "Lead", From: 1, To: 2 } }],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    assert.deepEqual(timeline?.events, []);
+  });
+
   it("reports zero check-ins and a null mostRecentCheckInAt when there are none", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],

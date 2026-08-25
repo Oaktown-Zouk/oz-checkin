@@ -11,4 +11,5 @@ export const TABLES = {
   programs: "tblB90zwd3OjKxxDs",
   userRoles: "tblBeLbVbHNZIPIvz",
   rolePermissions: "tblYo1awEOvqBGVpR",
+  levelups: "tblSFmkH7KlWVRmfM",
 } as const;

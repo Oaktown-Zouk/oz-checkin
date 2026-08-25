@@ -27,7 +27,7 @@ async function handleLevelUpdate(c: Context, field: "Lead Level" | "Follow Level
   const body = await c.req.json().catch(() => ({}));
   if (!isValidLevel(body.level)) return c.json({ error: "level must be 1-4 or null" }, 400);
   try {
-    return c.json(await updateStudentLevel(id, field, body.level));
+    return c.json(await updateStudentLevel(id, field, body.level, c.get("user").userRoleId));
   } catch (err) {
     return handleError(c, err);
   }

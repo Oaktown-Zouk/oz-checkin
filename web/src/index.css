@@ -695,6 +695,10 @@ body {
   background: var(--amber);
 }
 
+.timeline-dot-levelup {
+  background: var(--purple);
+}
+
 .timeline-content {
   display: flex;
   align-items: baseline;
