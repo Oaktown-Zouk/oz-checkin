@@ -790,16 +790,17 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px;
+  padding: 0 24px 24px;
   gap: 16px;
 }
 
 /* Admin-only (Backdate Kiosk permission) testing control — tucked into a corner so it
-   stays out of the way of the actual self-serve flow real students use. */
+   stays out of the way of the actual self-serve flow real students use. `top` matches
+   .kiosk-page's padding-top so this lines up with the banner's top edge. */
 .kiosk-backdate-control {
   position: fixed;
-  top: 12px;
-  right: 12px;
+  top: 0;
+  right: 16px;
   font-size: 1rem;
   opacity: 0.7;
   z-index: 10;
@@ -812,20 +813,11 @@ body {
   border-radius: 12px;
 }
 
-.kiosk-heading {
-  margin: 0;
-  font-size: 2rem;
-  text-align: center;
-}
-
-/* Wraps "Scan QR Code" + the camera feed + the search bar as one group. Fixed
-   margin-top rather than true viewport-centering — this runs on one known kiosk
-   tablet, not a range of screen sizes, so a flat offset is simpler and just as good. */
+/* Wraps "Scan QR Code to Check In" + the camera feed + the search bar as one group.
+   No margin-top of its own — .kiosk-page's flex gap is enough, so this sits right
+   under the banner on any screen size, not just a specific known kiosk tablet. */
 .kiosk-main {
   width: 100%;
-  /* .kiosk-page already puts a 16px flex gap above this, so 184 + 16 = 200px total
-     between the "Self Check-In" heading and this block. */
-  margin-top: 184px;
   display: flex;
   flex-direction: column;
   align-items: center;

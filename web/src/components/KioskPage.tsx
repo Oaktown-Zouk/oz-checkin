@@ -145,10 +145,9 @@ export function KioskPage({ programs, onUnauthorized }: { programs: ProgramSched
       )}
 
       <img src={banner} alt="Oaktown Zouk" className="kiosk-banner" />
-      <h1 className="kiosk-heading">Self Check-In</h1>
 
       <div className="kiosk-main">
-        <p className="kiosk-camera-label">Scan QR Code</p>
+        <p className="kiosk-camera-label">Scan QR Code to Check In</p>
         <div className="kiosk-camera-wrap">
           {cameraError ? (
             <p className="kiosk-camera-error">{cameraError} Use the search bar below instead.</p>
