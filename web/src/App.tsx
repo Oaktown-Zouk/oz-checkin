@@ -17,6 +17,7 @@ import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
 import { KioskLogin } from "./components/KioskLogin.js";
+import { NavMenu } from "./components/NavMenu.js";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
@@ -257,6 +258,7 @@ export function App() {
   if (kioskOnly || (route.type === "kiosk" && authenticated)) {
     return (
       <PermissionsProvider value={permissions}>
+        <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} />
       </PermissionsProvider>
     );
@@ -277,6 +279,7 @@ export function App() {
   if (route.type === "student") {
     return (
       <PermissionsProvider value={permissions}>
+        <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
       </PermissionsProvider>
     );
@@ -284,6 +287,7 @@ export function App() {
 
   return (
     <PermissionsProvider value={permissions}>
+      <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
       <div className="app">
         <header className="app-header">
           <h1>OZ Check-In</h1>
