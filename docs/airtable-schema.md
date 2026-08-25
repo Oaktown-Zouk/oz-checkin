@@ -237,6 +237,26 @@ Lets the studio answer "when did this student level up, and who signed off on it
 - `Full Name (from Member)` (lookup, read-only) and `Created` (Airtable's own
   auto-set creation timestamp) — also never written by the app.
 
+## Notes (`tblXfNHoBzKa3mqpB`)
+
+One row per teacher-written note on a student — written by `services/notes.ts`'s
+`createNote` via `POST /students/:id/notes`. See `SPEC.md`'s "Notes" section for the
+UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
+
+- `Member` (link → `Members`, exactly one) — the student the note is about.
+- `Issuer` (link → `User Roles`, exactly one) — whoever wrote it, from the signed-in
+  session's `userRoleId` (see "User Roles & Role Permissions" above) — same
+  zero-extra-lookup pattern as `Levelups.Issuer`.
+- `Summary` (single line text) — the only required field; shown inline on the
+  student timeline.
+- `Strengths` (long text) — "What `<Student>` is doing well," optional.
+- `Opportunities` (long text) — "What `<Student>` should work on," optional.
+- `Name` (formula, read-only), `Full Name` (lookup through `Member`, read-only),
+  `Issuer Name` (lookup through `Issuer`, read-only — the issuer's `User Roles.First
+  Name`, read by `services/studentTimeline.ts` to attribute the note in the student
+  timeline without a second lookup), and `Created` (Airtable's own auto-set creation
+  timestamp) — none of these are ever written by the app.
+
 ## Sessions / Events
 
 Not used by this app's check-in flow — `Check-ins.Class Level` links directly to

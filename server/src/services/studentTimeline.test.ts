@@ -168,6 +168,39 @@ describe("getStudentTimeline", () => {
     assert.deepEqual(timeline?.events, []);
   });
 
+  it("includes a note event with full details, scoped to just this student", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.notes]: [
+        {
+          id: "recNote1",
+          createdTime: "2025-06-01T00:00:00Z",
+          fields: {
+            Member: [STUDENT],
+            Summary: "Great progress this week",
+            Strengths: "Strong frame",
+            Opportunities: "Timing on turns",
+            "Issuer Name": ["Jane"],
+          },
+        },
+        // Someone else's note — must not leak into this student's timeline.
+        { id: "recNoteOther", fields: { Member: [OTHER], Summary: "Not this student", "Issuer Name": ["Jane"] } },
+      ],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    const noteEvent = timeline?.events.find((e) => e.type === "note");
+    assert.equal(noteEvent?.label, "Note from Jane: Great progress this week");
+    assert.equal(noteEvent?.at, "2025-06-01T00:00:00Z");
+    assert.deepEqual(noteEvent?.note, {
+      summary: "Great progress this week",
+      strengths: "Strong frame",
+      opportunities: "Timing on turns",
+      issuerName: "Jane",
+    });
+    assert.equal(timeline?.events.filter((e) => e.type === "note").length, 1);
+  });
+
   it("reports zero check-ins and a null mostRecentCheckInAt when there are none", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],

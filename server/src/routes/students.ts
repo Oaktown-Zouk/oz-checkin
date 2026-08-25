@@ -3,6 +3,7 @@ import { requirePermission } from "../lib/auth.js";
 import { listStudentStatuses, updateStudentLevel } from "../services/studentStatus.js";
 import { getStudentTimeline } from "../services/studentTimeline.js";
 import { transferMembership, heldMemberships } from "../services/transfers.js";
+import { createNote } from "../services/notes.js";
 import { isValidDateString } from "../lib/date.js";
 import { handleError } from "../lib/respond.js";
 
@@ -61,6 +62,27 @@ studentRoutes.post("/:id/transfer-membership", requirePermission("Write Membersh
   }
   try {
     return c.json(await transferMembership(id, planId, targetEmail));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+studentRoutes.post("/:id/notes", requirePermission("Write Student Data"), async (c) => {
+  const id = c.req.param("id") ?? "";
+  const body = await c.req.json().catch(() => ({}));
+  const { summary, strengths, opportunities } = body as {
+    summary?: string;
+    strengths?: string;
+    opportunities?: string;
+  };
+  if (!summary?.trim()) return c.json({ error: "summary is required" }, 400);
+  try {
+    await createNote(
+      id,
+      { summary: summary.trim(), strengths: strengths?.trim() ?? "", opportunities: opportunities?.trim() ?? "" },
+      c.get("user").userRoleId
+    );
+    return c.json({ ok: true });
   } catch (err) {
     return handleError(c, err);
   }

@@ -487,17 +487,46 @@ body {
 }
 
 .dialog-card input,
-.dialog-card select {
+.dialog-card select,
+.dialog-card textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 1rem;
+  font-family: inherit;
+}
+
+.dialog-card textarea {
+  resize: vertical;
+}
+
+.dialog-field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: -6px;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.note-dialog {
+  max-width: 480px;
+}
+
+.note-section-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.note-section-text {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
 }
 
 .level-options {
@@ -647,9 +676,17 @@ body {
   background: var(--gray);
 }
 
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .timeline-heading {
   font-size: 1.1rem;
-  margin: 0 0 12px;
+  margin: 0;
 }
 
 .timeline {
@@ -699,6 +736,10 @@ body {
   background: var(--purple);
 }
 
+.timeline-dot-note {
+  background: var(--blue);
+}
+
 .timeline-content {
   display: flex;
   align-items: baseline;
@@ -711,6 +752,24 @@ body {
 .timeline-label {
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+/* Unlike .timeline-label, only the "Note from X:" prefix (a <b>) is bold — the
+   summary itself reads as plain text, per the note's own display spec. */
+.timeline-note-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-note-link:hover {
+  text-decoration: underline;
 }
 
 .timeline-date {
