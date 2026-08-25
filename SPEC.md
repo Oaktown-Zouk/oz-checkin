@@ -44,8 +44,8 @@ handful of things that are genuinely this app's own business logic.
   credits granted, check-ins) and running stats.
 - **Manual refresh** — no live cross-device push (Netlify Functions can't hold a
   connection open); a "Refresh" button re-fetches the roster.
-- **Google OAuth login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/`Admin`)
-  looked up in Airtable, stateless signed-cookie session.
+- **Google OAuth or password login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/
+  `Admin`) looked up in Airtable, stateless signed-cookie session.
 - **Kiosk mode** (`/kiosk`) — a self-serve check-in station for a tablet: a student
   scans a QR code (their Givebutter contact id) or types their name, taps Lead/Follow,
   and walks in with no staff involvement. See "Kiosk mode" below.
@@ -259,9 +259,15 @@ naming the signed-in account.
   `DEV_LOGIN_ENABLED` below. Every `services/*.ts` file imports from `client.ts`, never
   `realClient.ts`/`mockClient.ts` directly, so the swap is invisible to them.
 - **Frontend:** React + Vite SPA, hand-rolled routing (`window.history.pushState` + a
-  `popstate` listener) — no router library, the app only has two "pages" (the roster
-  and a student detail page). Built to static files (`web/dist`), served by Netlify's
-  CDN.
+  `popstate` listener) — no router library, the app has three "pages": the roster, a
+  student detail page, and `/kiosk`. Built to static files (`web/dist`), served by
+  Netlify's CDN.
+- **Navigation:** a top-left hamburger (`NavMenu.tsx`) linking "Front Desk" and
+  "Kiosk," present on all three pages but only rendered for a session holding both
+  `View Student Data` and `Create Checkins` — i.e. only when there's actually more
+  than one destination it could send that session to. A `Kiosk`-only session (just
+  `Create Checkins`) never sees it, since `/kiosk` is the only page it can reach
+  anyway.
 - **Auth:** Google OAuth (authorization code flow, `server/src/routes/auth.ts`) — sign-in
   redirects to Google, the callback exchanges the code server-side and reads the
   account's email from Google's userinfo endpoint, then resolves it to a role and
@@ -387,6 +393,10 @@ permissions don't include the one that route needs). See "Permissions" above.
   of setting a cookie.
 - `GET /api/auth/dev-login?email=` — dev-only equivalent of the callback above, minus
   the Google round-trip. See "Auth" above for its gating.
+- `POST /api/auth/kiosk-login { identifier, password }` — resolves the identifier
+  against `User Roles`, verifies the password against its `Password Hash`, and sets
+  the session cookie on success. 401 with the same generic error either way if the
+  identifier is unknown or the password is wrong — see "Auth" above.
 - `POST /api/logout` — clears the session cookie.
 - `GET /api/session` — `{ authenticated: boolean, email?, role?, permissions? }`.
 - `GET /api/students?date=<YYYY-MM-DD>` — **View Student Data.** The full roster with
@@ -479,9 +489,9 @@ tablet, so a student can check themselves in with no front-desk involvement.
 
 - **Login redirect**: a `Kiosk`-role account (only `Create Checkins`/`Undo Checkins`,
   no `View Student Data`) is confined to `/kiosk` entirely, not just defaulted there —
-  navigating anywhere else in the app bounces straight back. Staff/Volunteer accounts
-  can also visit `/kiosk` directly (they hold `Create Checkins` too); it's just not
-  their default landing page.
+  navigating anywhere else in the app bounces straight back. Staff/Volunteer/Admin
+  accounts can also reach `/kiosk` directly via `NavMenu` (they hold `Create Checkins`
+  too); it's just not their default landing page.
 - **Roster cache**: on load, the page fetches every non-duplicate student once
   (`GET /api/kiosk/roster`) into local state — id, Contact ID, full name, membership
   status, available credits, and remaining allowance. Both name search and QR-scan
@@ -539,6 +549,10 @@ tablet, so a student can check themselves in with no front-desk involvement.
   form both included — see "Auth" below. A successful password login redirects to
   `/`, and the session-derived routing there sends a `Kiosk`-role account straight
   back to `/kiosk`.
+- **Log out**: a top-right button, always present regardless of permissions — the
+  only sign-out affordance a `Kiosk`-only session has, since `NavMenu` (see
+  "Architecture") requires permissions that session doesn't hold. Shares the corner
+  with the admin-only backdate control below when both are present.
 - **Visible window (kiosk-only)**: a class stops appearing in the kiosk's picker once
   `Programs.Start Time + Programs.Visible For` (a duration field, read over the API as
   a plain number of seconds) has passed — `withinVisibleWindow`,
