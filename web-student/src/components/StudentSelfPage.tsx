@@ -35,11 +35,9 @@ export function StudentSelfPage({
           <NavMenu current={view} onNavigate={onNavigate} onLogout={onLogout} />
         </div>
         <div className="student-email">{status.email}</div>
+        {/* No level badges here — the Lead/Follow stat boxes below already show the
+            same levels. */}
         <div className="badges">
-          <span className="student-levels">
-            <LevelBadge level={status.leadLevel} shape="square" />
-            <LevelBadge level={status.followLevel} shape="circle" />
-          </span>
           <MembershipBadge student={status} />
         </div>
       </div>

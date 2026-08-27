@@ -269,13 +269,6 @@ body {
   font-weight: 600;
 }
 
-.student-levels {
-  font-size: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .level-badge-shape {
   display: inline-flex;
   align-items: center;

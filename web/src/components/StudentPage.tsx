@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline, type NoteDetails } from "../api.js";
 import { usePermissions } from "../permissions.js";
-import { StudentBadges } from "./StudentBadges.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
 import { TransferDialog } from "./TransferDialog.js";
 import { AddNoteDialog } from "./AddNoteDialog.js";
-import { LevelBadge, Timeline, NoteDetailModal } from "shared";
+import { LevelBadge, MembershipBadge, Timeline, NoteDetailModal } from "shared";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
@@ -125,11 +124,13 @@ export function StudentPage({
           <div className="student-page-header">
             <h1>{timeline.status.name}</h1>
             <div className="student-email">{timeline.status.email}</div>
-            <StudentBadges
-              student={timeline.status}
-              onUpdateLeadLevel={(level) => handleUpdateLevel("lead", level)}
-              onUpdateFollowLevel={(level) => handleUpdateLevel("follow", level)}
-            />
+            {/* No level badges here — the Lead/Follow stat boxes below already show
+                (and, with Write Student Data, let you click to edit) the same levels;
+                see StudentBadges.tsx for the roster row, which has no such boxes and
+                still needs them. */}
+            <div className="badges">
+              <MembershipBadge student={timeline.status} />
+            </div>
             {canTransfer && (
               <button
                 type="button"
