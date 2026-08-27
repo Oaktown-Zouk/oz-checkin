@@ -777,11 +777,17 @@ an already-set var). `npm run dev:student-server` / `dev:student-web` (mirroring
 `dev:sandbox` — `MOCK_AIRTABLE=true`, no risk to real data).
 
 **Deploy**: a second Netlify site pointed at this same repo, with `web-student/` as
-its publish target — `netlify-student.toml` (repo root, mirroring the main
-`netlify.toml`'s exact shape) is the config that site's "Configuration file path"
-setting should point to, since a functions directory living outside a site's own base
-directory isn't a safe bet in Netlify's config resolution. Needs its own custom
-domain/subdomain and its own Google OAuth "Authorized redirect URI" entry (same OAuth
-client as the staff app works fine — reused for the token exchange, just needs the
+its publish target — config lives at `web-student/netlify.toml`, not a repo-root
+`netlify-student.toml` as originally planned. Netlify only ever discovers a file
+literally named `netlify.toml` (confirmed via Netlify's own docs and support forum —
+no custom filename is recognized, regardless of any "Configuration file path"
+setting), so the site's "Package directory" should be set to `web-student` instead,
+leaving "Base directory" at its default (repo root). Paths inside that config
+(`publish`, `functions.directory`) still resolve against the base directory
+regardless of package directory, per Netlify's docs, which is why they stay
+root-relative (`web-student/dist`, `netlify/functions-student`) — confirmed working
+locally too, since `dev:netlify-student` discovers and resolves this exact file the
+same way. Needs its own custom domain/subdomain and its own Google OAuth "Authorized
+redirect URI" entry (same OAuth client as the staff app works fine — reused for the
 extra redirect URI registered) — both are account-level setup steps, not something
 this repo's code can do on its own.
