@@ -16,12 +16,17 @@ shared/                      Types + read-only presentational components used by
                              web/ and web-student/ — TS source, no build step of its own.
 netlify/functions/           The staff app's Netlify Function (wraps server/src/app.ts)
 netlify/functions-student/   The student app's Netlify Function (wraps studentApp.ts)
-netlify.toml                 Staff app's Netlify build/functions/publish config
-netlify-student.toml         Student app's real deployed config — a separate Netlify
-                             site points here
-web-student/netlify.toml     Local-dev-only config, for `dev:netlify-student` below —
-                             not used by any deploy (see that section for why it's a
-                             separate file from netlify-student.toml above)
+netlify.toml                 Staff app's Netlify build/functions/publish config — the
+                             staff site's own "Package directory" is left unset, so
+                             this is the one it finds at the repo root by default
+web-student/netlify.toml     Student app's config — used both by its real deployed
+                             site (set that site's "Package directory" to
+                             `web-student`) and by local `dev:netlify-student` below.
+                             Lives here, not at the repo root, because Netlify only
+                             ever looks for a file literally named `netlify.toml`
+                             (confirmed via Netlify's own docs/support forum — a
+                             custom name isn't recognized at all, regardless of any
+                             "Configuration file path" setting)
 ```
 
 **Airtable is the database.** This app has no local database of its own — it reads and
@@ -173,11 +178,9 @@ Runs at `http://localhost:9999`, talking to the **real Airtable base** — the s
 origin (and same registered "Authorized redirect URI," see the Prerequisites section
 above) as the two-terminal mode, even though under the hood Vite itself is bumped to
 run on :9998 instead, so Netlify Dev's own proxy can own :9999 (the port the browser
-actually talks to). This uses `web-student/netlify.toml` + `web-student/functions/` —
-a local-dev-only duplicate of `netlify/functions-student/student-api.mts`, not the
-real deployed one (Netlify won't let a workspace's own `netlify.toml` point
-`functions.directory` outside that workspace, so a real "point at the shared file"
-setup isn't possible here; keep both files in sync if either changes).
+actually talks to). This uses `web-student/netlify.toml`, the same config file the
+real deployed site uses (see the workspace tree above) — pointing straight at the real
+`netlify/functions-student/student-api.mts`, no local-only duplicate needed.
 
 One known gap: the dev-login escape hatch (`/api/auth/dev-login?email=...`) doesn't
 work under this script specifically — something in Netlify CLI's local routing

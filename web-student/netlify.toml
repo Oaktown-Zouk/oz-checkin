@@ -1,26 +1,28 @@
-# Local-dev-only config for `npm run dev:netlify-student` (see root package.json).
-# Netlify's config auto-discovery walks upward from cwd and stops at the first
-# netlify.toml found — putting one here, scoped to this workspace, means
-# `netlify dev --filter web-student` picks THIS file instead of the root
-# netlify.toml (which is for the staff app). The real deployed student site still
-# uses the root-level netlify-student.toml (see its own comment for why) — this
-# file exists purely so local dev has working isolation too.
+# The student site's ONE config file — used both by the real deployed site and by
+# local `npm run dev:netlify-student` (see root package.json). Netlify requires the
+# file to be literally named `netlify.toml` (a custom name like the earlier
+# `netlify-student.toml` this repo used isn't recognized at all, confirmed via
+# Netlify's own docs and support forum), so this lives inside web-student/ instead of
+# at the repo root — the staff app's netlify.toml already claims that spot.
 #
-# functions points at web-student/functions/, a local duplicate of
-# netlify/functions-student/student-api.mts, not that real file directly — Netlify
-# rejects a functions directory outside the toml's own base directory (confirmed by
-# running it: "must be inside the repository root directory"), so `../netlify/...`
-# doesn't work here even though the CLI otherwise happily discovers this toml.
-# The path itself is relative to the repo root (confirmed via --debug's
-# `functionsDirectory` output), not to this file's own location, despite this file
-# living in a subdirectory — hence "web-student/functions" here, not just "functions".
+# Deployed-site setup: point the site's "Package directory" at `web-student` (leave
+# "Base directory" unset/at the repo root — Netlify's docs confirm paths inside this
+# file resolve against the base directory, not the package directory, regardless of
+# where the file itself lives, so `publish`/`functions.directory` below stay
+# root-relative same as the staff app's own netlify.toml). No "Configuration file
+# path" override needed — setting the package directory is enough for Netlify to find
+# this file on its own (it checks the package directory first).
+#
+# Locally, `netlify dev --filter web-student` (see dev:netlify-student) discovers this
+# same file via its own config search, and resolves these same paths the same way —
+# confirmed by actually running it, not assumed.
 
 [build]
   command = "npm run build"
-  publish = "dist"
+  publish = "web-student/dist"
 
 [functions]
-  directory = "web-student/functions"
+  directory = "netlify/functions-student"
   node_bundler = "esbuild"
 
 [[redirects]]
