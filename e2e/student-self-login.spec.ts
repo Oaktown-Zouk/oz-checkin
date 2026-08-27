@@ -20,13 +20,34 @@ test("student self-login lands on their own read-only page with no write UI at a
   await expect(page.getByRole("button", { name: "Add note" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Transfer membership" })).toHaveCount(0);
 
+  // Log out lives inside the nav menu (see NavMenu.tsx), not a standalone button.
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(page.getByRole("button", { name: "My Progress" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "QR Code" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
+});
+
+test("the QR Code nav item shows a check-in QR code, and switching back works", async ({ page }) => {
+  await page.goto("/api/auth/dev-login?email=claude-student@test.com");
+  await expect(page.getByRole("heading", { name: "Claude Test Student" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "QR Code" }).click();
+
+  const qrImage = page.getByRole("img", { name: "Your check-in QR code" });
+  await expect(qrImage).toBeVisible();
+  await expect(qrImage).toHaveAttribute("src", /^data:image\/png;base64,/);
+
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "My Progress" }).click();
+  await expect(page.getByText("Total check-ins")).toBeVisible();
 });
 
 test("logging out returns to the sign-in screen", async ({ page }) => {
   await page.goto("/api/auth/dev-login?email=claude-student@test.com");
   await expect(page.getByRole("heading", { name: "Claude Test Student" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Menu" }).click();
   await page.getByRole("button", { name: "Log out" }).click();
   await page.waitForURL("/");
   // A real <a href> (Google needs to redirect the browser itself), so its ARIA role

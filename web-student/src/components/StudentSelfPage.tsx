@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LevelBadge, MembershipBadge, Timeline, NoteDetailModal, type StudentTimeline, type NoteDetails } from "shared";
+import { NavMenu, type StudentView } from "./NavMenu.js";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
@@ -9,19 +10,30 @@ function formatDate(iso: string): string {
 // no level-edit dialog, no Transfer button, no Add note button. This app never even
 // imports those components (see web/src/components/StudentPage.tsx for the staff
 // equivalent, which does), so there's nothing here that could be wired up to a write
-// action even by mistake.
-export function StudentSelfPage({ timeline, onLogout }: { timeline: StudentTimeline; onLogout: () => void }) {
+// action even by mistake. No outer app wrapper here — App.tsx owns that (and the
+// banner above it) — but the nav menu lives inline with the name here, not in App.tsx,
+// since StudentQrPage.tsx needs the exact same placement next to its own heading.
+export function StudentSelfPage({
+  timeline,
+  view,
+  onNavigate,
+  onLogout,
+}: {
+  timeline: StudentTimeline;
+  view: StudentView;
+  onNavigate: (view: StudentView) => void;
+  onLogout: () => void;
+}) {
   const [viewingNote, setViewingNote] = useState<NoteDetails | null>(null);
   const { status } = timeline;
 
   return (
-    <div className="app student-page">
-      <button type="button" className="btn btn-secondary back-link" onClick={onLogout}>
-        Log out
-      </button>
-
+    <>
       <div className="student-page-header">
-        <h1>{status.name}</h1>
+        <div className="page-header-row">
+          <h1>{status.name}</h1>
+          <NavMenu current={view} onNavigate={onNavigate} onLogout={onLogout} />
+        </div>
         <div className="student-email">{status.email}</div>
         <div className="badges">
           <span className="student-levels">
@@ -61,6 +73,6 @@ export function StudentSelfPage({ timeline, onLogout }: { timeline: StudentTimel
       <Timeline events={timeline.events} onOpenNote={setViewingNote} />
 
       {viewingNote && <NoteDetailModal note={viewingNote} onClose={() => setViewingNote(null)} />}
-    </div>
+    </>
   );
 }

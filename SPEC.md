@@ -714,14 +714,27 @@ comparison anywhere in this app for a bug to get wrong.
 - `GET /api/session` — `{ authenticated, email?, studentId? }`.
 - `GET /api/me/timeline` — the only data route, `requireStudent`-gated.
 
-**Frontend** (`web-student/`): much smaller than the staff app — one page, no
-client-side routing, no permissions to branch on (a signed-in session here is always
-exactly a Student session). Google-only login screen (no password option — students
-never touch kiosk auth); the self-view page has no edit affordances anywhere, and
-critically *never imports* the components that would have any (`LevelEditDialog`,
-`TransferDialog`, `AddNoteDialog`) — there's nothing on this page that could be wired
-up to a write action even by mistake, on top of the backend having nowhere to send one
-anyway.
+**Frontend** (`web-student/`): much smaller than the staff app — no client-side
+routing, no permissions to branch on (a signed-in session here is always exactly a
+Student session). Google-only login screen (no password option — students never
+touch kiosk auth); once signed in, a small always-visible nav menu
+(`components/NavMenu.tsx`, styled after the staff app's own hamburger nav) toggles
+between two local views, plain `useState`, nothing worth deep-linking to:
+- **My Progress** (`StudentSelfPage.tsx`) — the self-view page, no edit affordances
+  anywhere, and critically *never imports* the components that would have any
+  (`LevelEditDialog`, `TransferDialog`, `AddNoteDialog`) — there's nothing on this
+  page that could be wired up to a write action even by mistake, on top of the
+  backend having nowhere to send one anyway.
+- **QR Code** (`StudentQrPage.tsx`) — renders the student's kiosk check-in QR code
+  client-side (the `qrcode` package, browser build), encoding the bare Givebutter
+  Contact ID — the exact same payload `web/src/useQrScanner.ts` decodes at the kiosk
+  and `server/src/scripts/generateQrCode.ts` prints. No backend change was needed:
+  `GET /api/me/timeline` already returned `status.contactId`. A member with no
+  Contact ID yet (Givebutter sync gap) sees a plain "ask the front desk" message
+  instead of a broken image.
+
+Log out lives inside the nav menu now too, rather than its own standalone button —
+one control at the top of the page instead of two.
 
 **Shared code** (`shared/` workspace, consumed as TS source directly by both Vite
 apps, no build step of its own): `types.ts` (`StudentStatus`, `TimelineEvent`,

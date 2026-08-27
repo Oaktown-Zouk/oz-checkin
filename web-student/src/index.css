@@ -89,7 +89,23 @@ body {
 .app {
   max-width: 900px;
   margin: 0 auto;
-  padding: 24px 16px 64px;
+  padding: 0 16px 64px;
+}
+
+/* Same banner/class name as web/src/components/KioskPage.tsx's — .app here isn't a
+   flex column like .kiosk-page is, so this needs its own centering. Negative
+   margin-bottom pulls the header row up into the watercolor's fading tail (the PNG
+   has real alpha there) instead of leaving a full banner's worth of dead space before
+   any content starts. */
+.kiosk-banner {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  border-radius: 12px;
+  margin: 0 auto -80px;
+  position: relative;
+  z-index: 0;
 }
 
 .empty-state {
@@ -153,27 +169,6 @@ body {
   background: var(--amber);
 }
 
-.btn {
-  display: inline-block;
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  font-size: 0.9rem;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.btn-secondary {
-  background: white;
-  border-color: var(--border);
-  color: #111827;
-}
-
 .dialog-overlay {
   position: fixed;
   inset: 0;
@@ -228,10 +223,6 @@ body {
 .note-section-text {
   margin: 4px 0 0;
   white-space: pre-wrap;
-}
-
-.back-link {
-  margin-bottom: 16px;
 }
 
 .student-page-header {
@@ -402,4 +393,124 @@ body {
 .timeline-date {
   font-size: 0.8rem;
   color: var(--gray);
+}
+
+/* Adapted from web/src/index.css's same-named classes — the staff version is a fixed
+   top-left overlay, but this app renders it inline instead, on the right side of the
+   name in each page's own header row (see .page-header-row, NavMenu.tsx). */
+.nav-menu {
+  position: relative;
+  display: inline-block;
+  z-index: 20;
+}
+
+/* Name on the left, nav menu on the right — used by both StudentSelfPage's and
+   StudentQrPage's headers so the menu placement stays identical across views. */
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.nav-menu-trigger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.nav-menu-trigger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: #111827;
+  border-radius: 1px;
+}
+
+/* right-aligned, not left, since the trigger now sits at the right edge of the
+   header row — a left-aligned dropdown would hang off the far side of the page. */
+.nav-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.nav-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #111827;
+}
+
+.nav-menu-item:hover {
+  background: var(--gray-bg);
+}
+
+/* Not present on the staff app's version — there, every item navigates away from the
+   current page, so there's no "current page" to mark. Here the two items are local
+   view toggles, so it's worth showing which one you're already on. */
+.nav-menu-item-active {
+  font-weight: 600;
+  background: var(--gray-bg);
+}
+
+.nav-menu-item-logout {
+  border-top: 1px solid var(--border);
+  color: var(--red);
+}
+
+.qr-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.qr-page h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.qr-page-nav {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.qr-code-image {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  padding: 16px;
+}
+
+.qr-code-hint {
+  color: var(--gray);
+  font-size: 0.85rem;
+  max-width: 320px;
+  margin: 0;
 }
