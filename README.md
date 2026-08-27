@@ -17,7 +17,11 @@ shared/                      Types + read-only presentational components used by
 netlify/functions/           The staff app's Netlify Function (wraps server/src/app.ts)
 netlify/functions-student/   The student app's Netlify Function (wraps studentApp.ts)
 netlify.toml                 Staff app's Netlify build/functions/publish config
-netlify-student.toml         Student app's — a separate Netlify site points here
+netlify-student.toml         Student app's real deployed config — a separate Netlify
+                             site points here
+web-student/netlify.toml     Local-dev-only config, for `dev:netlify-student` below —
+                             not used by any deploy (see that section for why it's a
+                             separate file from netlify-student.toml above)
 ```
 
 **Airtable is the database.** This app has no local database of its own — it reads and
@@ -212,5 +216,5 @@ maintenance script that runs against the **real** base (dry-run by default,
 | `npm run typecheck` | Type-check all four workspaces plus both Netlify functions |
 | `npm test` | Server unit tests, against the mock |
 | `npm run test:e2e` | Playwright E2E specs, against a sandbox Playwright boots itself |
-| `npm run audit:credits` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |
+| `npm run audit:credits --workspace server` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |
 | `npx tsx server/src/scripts/setKioskPassword.ts <identifier> <newPassword>` (run from `server/`) | Sets/rotates the shared kiosk-tablet login password — see `SPEC.md`'s "Auth" section. No in-app UI for this; it's a deliberate, rare operation. |

@@ -54,8 +54,10 @@ handful of things that are genuinely this app's own business logic.
   and walks in with no staff involvement. See "Kiosk mode" below.
 - **Student self-service login** — a completely separate app (its own frontend,
   backend, and deployment) where a student can sign in with the same Google account
-  their Member record uses and see a read-only view of their own timeline (check-ins,
-  level history, notes). See "Student self-service app" below.
+  their Member record uses (provided they've actually transacted or hold a recurring
+  plan — contact info alone isn't enough) and see a read-only view of their own
+  timeline (check-ins, level history, notes) plus their kiosk check-in QR code. See
+  "Student self-service app" below.
 
 ## Scale & constraints
 
