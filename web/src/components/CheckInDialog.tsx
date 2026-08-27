@@ -1,8 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
 import { activeProgramsForDate, hasConflictingSelection, todayInStudioTz } from "../programSchedule.js";
-import { MembershipBadge } from "./MembershipBadge.js";
-import { Portal } from "./Portal.js";
+import { MembershipBadge, Portal } from "shared";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 

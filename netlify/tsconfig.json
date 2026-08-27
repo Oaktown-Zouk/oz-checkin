@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["functions"]
+  "include": ["functions", "functions-student", "../web-student/functions"]
 }

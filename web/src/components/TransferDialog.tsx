@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type HeldMembership, type StudentStatus } from "../api.js";
-import { Portal } from "./Portal.js";
+import { Portal } from "shared";
 
 function formatMembership(m: HeldMembership): string {
   const amount = m.amount != null ? `, $${m.amount.toFixed(2)}/${m.frequency ?? "period"}` : "";

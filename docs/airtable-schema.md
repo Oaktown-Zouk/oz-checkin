@@ -20,7 +20,10 @@ Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
 `Follow Level` (the last two are app-writable, via the level-edit dialogs),
 `Contact ID` (Givebutter's contact id, read-only here — printed on a student's kiosk
 QR code so `/kiosk` can resolve a scan straight to a Member, see
-`server/src/services/kiosk.ts`).
+`server/src/services/kiosk.ts`). `Email` also drives the separate student
+self-service app's login (`services/userAccess.ts`'s `getStudentAccessForEmail`,
+case-insensitive, excluding `Duplicate`-flagged rows) — see `SPEC.md`'s "Student
+self-service app" section.
 
 Computed fields to read directly, never recompute:
 - `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"`
@@ -173,7 +176,11 @@ for check-in logic.
 ## User Roles (`tblBeLbVbHNZIPIvz`) & Role Permissions (`tblYo1awEOvqBGVpR`)
 
 Both managed by hand — neither is synced from Givebutter, and there's no self-service
-signup, so add a row before a new person tries to sign in or gets a new role.
+signup, so add a row before a new person tries to sign in or gets a new role. These
+tables are specific to the staff app — the separate student self-service app doesn't
+use them at all (see `SPEC.md`'s "Student self-service app" section); a student
+session's synthetic `"Student"` role never appears here as an actual `Role
+Permissions` row.
 
 - **`User Roles`** — maps an identifier to a role. Fields: `Email` (plain text,
   primary — a Google account email for an OAuth row, or a plain chosen identifier for

@@ -1,27 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  api,
-  ApiError,
-  UnauthorizedError,
-  ForbiddenError,
-  type StudentTimeline,
-  type TimelineEvent,
-  type NoteDetails,
-} from "../api.js";
+import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline, type NoteDetails } from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
-import { LevelBadge } from "./LevelBadge.js";
 import { TransferDialog } from "./TransferDialog.js";
 import { AddNoteDialog } from "./AddNoteDialog.js";
-import { NoteDetailModal } from "./NoteDetailModal.js";
+import { LevelBadge, Timeline, NoteDetailModal } from "shared";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { dateStyle: "medium" });
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
 // One of the four boxes in the stats row — a plain `<div>` normally, or a clickable
@@ -40,33 +27,6 @@ function StatBox({ label, value, onClick }: { label: string; value: React.ReactN
     </button>
   ) : (
     <div className="stat">{content}</div>
-  );
-}
-
-// The newest-first event feed at the bottom of the page — see api.ts's TimelineEvent
-// for the event types (membership started/status, payments, credits, check-ins,
-// level-ups, notes). A "note" row is clickable — it opens onOpenNote with the full
-// note text, since the inline label only ever shows the summary.
-function Timeline({ events, onOpenNote }: { events: TimelineEvent[]; onOpenNote: (note: NoteDetails) => void }) {
-  if (events.length === 0) return <p className="empty-state">No events yet.</p>;
-  return (
-    <div className="timeline">
-      {events.map((e, i) => (
-        <div className="timeline-event" key={`${e.type}-${e.at}-${i}`}>
-          <span className={`timeline-dot timeline-dot-${e.type}`} />
-          <div className="timeline-content">
-            {e.type === "note" && e.note ? (
-              <button type="button" className="timeline-note-link" onClick={() => onOpenNote(e.note!)}>
-                <b>Note from {e.note.issuerName}:</b> {e.note.summary}
-              </button>
-            ) : (
-              <div className="timeline-label">{e.label}</div>
-            )}
-            <div className="timeline-date">{formatDateTime(e.at)}</div>
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 

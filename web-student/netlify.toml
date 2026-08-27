@@ -1,0 +1,29 @@
+# Local-dev-only config for `npm run dev:netlify-student` (see root package.json).
+# Netlify's config auto-discovery walks upward from cwd and stops at the first
+# netlify.toml found — putting one here, scoped to this workspace, means
+# `netlify dev --filter web-student` picks THIS file instead of the root
+# netlify.toml (which is for the staff app). The real deployed student site still
+# uses the root-level netlify-student.toml (see its own comment for why) — this
+# file exists purely so local dev has working isolation too.
+#
+# functions points at web-student/functions/, a local duplicate of
+# netlify/functions-student/student-api.mts, not that real file directly — Netlify
+# rejects a functions directory outside the toml's own base directory (confirmed by
+# running it: "must be inside the repository root directory"), so `../netlify/...`
+# doesn't work here even though the CLI otherwise happily discovers this toml.
+# The path itself is relative to the repo root (confirmed via --debug's
+# `functionsDirectory` output), not to this file's own location, despite this file
+# living in a subdirectory — hence "web-student/functions" here, not just "functions".
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "web-student/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

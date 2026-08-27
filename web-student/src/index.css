@@ -1,0 +1,405 @@
+/* Trimmed copy of web/src/index.css's classes — just what this app's pages actually
+   use. Kept as a separate file rather than shared (see shared/'s scope in SPEC.md):
+   presentational components are shared, but each app owns its own layout/CSS. */
+
+:root {
+  color-scheme: light dark;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --red: #dc2626;
+  --red-bg: #fee2e2;
+  --amber: #b45309;
+  --amber-bg: #fef3c7;
+  --blue: #1d4ed8;
+  --blue-bg: #dbeafe;
+  --gray: #6b7280;
+  --gray-bg: #f3f4f6;
+  --purple: #7c3aed;
+  --border: #e5e7eb;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #edf5f4;
+  color: #111827;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+}
+
+.login-card h1 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  text-align: center;
+}
+
+.error {
+  color: var(--red);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* Matches Google's official "Sign in with Google" button spec: white background,
+   neutral gray border/text, Roboto, subtle elevation on hover. */
+.google-signin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  color: #1f1f1f;
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.google-signin-btn:hover {
+  background: #f8f9fa;
+  box-shadow:
+    0 1px 2px 0 rgba(60, 64, 67, 0.3),
+    0 1px 3px 1px rgba(60, 64, 67, 0.15);
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.empty-state {
+  color: var(--gray);
+  text-align: center;
+  margin-top: 40px;
+}
+
+.student-email {
+  font-size: 0.8rem;
+  color: var(--gray);
+}
+
+.badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 8px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-green {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.badge-amber {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.badge-gray {
+  background: var(--gray-bg);
+  color: var(--gray);
+}
+
+.badge-blue {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+/* Higher-contrast variant — for the badges carrying the most important info
+   (membership tier, credits remaining). */
+.badge-prominent {
+  font-weight: 700;
+  color: white;
+}
+
+.badge-prominent.badge-green {
+  background: var(--green);
+}
+
+.badge-prominent.badge-amber {
+  background: var(--amber);
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-secondary {
+  background: white;
+  border-color: var(--border);
+  color: #111827;
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.dialog-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialog-card h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.dialog-description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--gray);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.note-dialog {
+  max-width: 480px;
+}
+
+.note-section-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.note-section-text {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.back-link {
+  margin-bottom: 16px;
+}
+
+.student-page-header {
+  margin-bottom: 20px;
+}
+
+.student-page-header h1 {
+  font-size: 1.6rem;
+  margin: 0 0 4px;
+}
+
+.student-page-header .student-email {
+  font-size: 0.9rem;
+}
+
+.student-page-header .badges {
+  margin-top: 10px;
+}
+
+.student-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.stat {
+  flex: 1;
+  min-width: 160px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--gray);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.student-levels {
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.level-badge-shape {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.225rem;
+  height: 1.225rem;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.level-badge-square {
+  border-radius: 4px;
+  background: var(--blue);
+}
+
+.level-badge-circle {
+  border-radius: 50%;
+  background: var(--purple);
+}
+
+.level-badge-unset {
+  background: var(--gray);
+}
+
+.timeline-heading {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline-event {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 999px;
+}
+
+.timeline-dot-membership_started {
+  background: var(--green);
+}
+
+.timeline-dot-membership_status {
+  background: var(--gray);
+}
+
+.timeline-dot-payment {
+  background: var(--blue);
+}
+
+.timeline-dot-credit_granted {
+  background: var(--green);
+}
+
+.timeline-dot-checkin {
+  background: var(--amber);
+}
+
+.timeline-dot-levelup {
+  background: var(--purple);
+}
+
+.timeline-dot-note {
+  background: var(--blue);
+}
+
+.timeline-content {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.timeline-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* Unlike .timeline-label, only the "Note from X:" prefix (a <b>) is bold — the
+   summary itself reads as plain text, per the note's own display spec. */
+.timeline-note-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-note-link:hover {
+  text-decoration: underline;
+}
+
+.timeline-date {
+  font-size: 0.8rem;
+  color: var(--gray);
+}

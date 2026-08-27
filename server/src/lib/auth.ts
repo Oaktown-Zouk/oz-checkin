@@ -7,7 +7,7 @@ import type { UserRole, Permission } from "../airtable/fields.js";
 // without re-parsing the cookie themselves.
 declare module "hono" {
   interface ContextVariableMap {
-    user: { email: string; role: UserRole; permissions: Permission[]; userRoleId: string };
+    user: { email: string; role: UserRole; permissions: Permission[]; userRoleId?: string; studentId?: string };
   }
 }
 
@@ -27,6 +27,7 @@ export function requirePermission(permission: Permission) {
       role: session.role,
       permissions: session.permissions,
       userRoleId: session.userRoleId,
+      studentId: session.studentId,
     });
     await next();
   };

@@ -5,11 +5,19 @@ and the reasoning behind it, and [`docs/airtable-schema.md`](./docs/airtable-sch
 for the Airtable schema/field reference.
 
 ```
-server/             Hono API — Netlify Functions in production, runnable standalone
-                     for local dev. Airtable is the system of record; no local database.
-web/                 React + Vite front-desk SPA
-netlify/functions/   The one Netlify Function (wraps the Hono app)
-netlify.toml         Netlify build/functions/publish config
+server/                     Hono APIs — both apps' backends live here (server/src/app.ts
+                             for staff, server/src/studentApp.ts for the separate student
+                             app). Netlify Functions in production, runnable standalone
+                             for local dev. Airtable is the system of record; no local database.
+web/                         React + Vite front-desk SPA
+web-student/                 React + Vite student self-service SPA — a separate app, not
+                             a page in web/. See SPEC.md's "Student self-service app".
+shared/                      Types + read-only presentational components used by both
+                             web/ and web-student/ — TS source, no build step of its own.
+netlify/functions/           The staff app's Netlify Function (wraps server/src/app.ts)
+netlify/functions-student/   The student app's Netlify Function (wraps studentApp.ts)
+netlify.toml                 Staff app's Netlify build/functions/publish config
+netlify-student.toml         Student app's — a separate Netlify site points here
 ```
 
 **Airtable is the database.** This app has no local database of its own — it reads and
@@ -30,8 +38,10 @@ you need it for reference.
   "Authorized redirect URI" for every `APP_ORIGIN` this runs under (see `.env.example`):
   `http://localhost:5173/api/auth/google/callback` (`npm run dev`, two-terminal — note
   this is the Vite port, not the API's own :3000, since that's the origin the browser
-  actually sees), `http://localhost:8888/api/auth/google/callback` (`netlify dev`), and
-  the production domain once deployed.
+  actually sees), `http://localhost:8888/api/auth/google/callback` (`netlify dev`),
+  `http://localhost:9999/api/auth/google/callback` (the student app — both its
+  two-terminal mode and its `netlify dev` equivalent share this one, see "Running the
+  student app locally"), and the production domain(s) once deployed.
 
 ## Setup
 
@@ -58,24 +68,32 @@ Both need the same six required variables, plus the optional `DEV_LOGIN_ENABLED`
 actually determines what the account can do — see `docs/airtable-schema.md`). Add a
 row there before anyone new tries to sign in — there's no self-service signup.
 
+**The student app is separate** and needs its own env file — `server/.env.student`
+(template: `server/.env.student.example`), not the two above. See "Running the
+student app locally" below and `SPEC.md`'s "Student self-service app" section.
+Authorizing a student account needs no manual row anywhere: any Google account whose
+address matches a `Members.Email` can sign in.
+
 ## Running locally
 
 **Recommended — the real Netlify runtime:**
 
 ```bash
-npm run dev:netlify
+npm run dev:netlify-staff
 ```
 
 Runs the actual Netlify Dev proxy (Vite + the Function together) at
 `http://localhost:8888` — the closest local approximation to production, since it's
 the same routing/runtime Netlify uses when deployed. This is also what's meant by
 "run it for real on my laptop" before deciding to deploy — there's no other local
-"production mode" script; `netlify dev` **is** that mode here.
+"production mode" script; `netlify dev` **is** that mode here. (There's a
+`dev:netlify-student` equivalent for the student app too — see "Running the student
+app locally" below.)
 
 > `netlify-cli` auto-detects this as an npm-workspaces monorepo and normally prompts to
 > pick one workspace as "the project," which doesn't fit this repo's shape (the real
-> site spans both `server/` and `web/` via the root `netlify.toml`). `dev:netlify` is
-> pre-wired with `--filter web` to skip that prompt — picking `web` still correctly
+> site spans both `server/` and `web/` via the root `netlify.toml`). `dev:netlify-staff`
+> is pre-wired with `--filter web` to skip that prompt — picking `web` still correctly
 > resolves the root `netlify.toml`/`netlify/functions` (config resolution walks
 > upward), and it's a natural fit anyway since `web` is what needs its own dev server
 > (Vite) proxied alongside the Function.
@@ -88,14 +106,14 @@ npm run dev:web       # terminal 2 — SPA on :5173, proxying /api to :3000
 ```
 
 Skips Netlify's function-bundling step on every change, at the cost of not exercising
-the actual Netlify Functions runtime — reach for `dev:netlify` before trusting a change
-that touches routing/deployment behavior specifically.
+the actual Netlify Functions runtime — reach for `dev:netlify-staff` before trusting a
+change that touches routing/deployment behavior specifically.
 
 Either way: open the app (`:8888` or `:5173`) and sign in with Google — the account
 needs a row in Airtable's `User Roles` table first (see above).
 
-Both `dev:netlify` and the two-terminal mode above talk to the **real Airtable base**
-by default — for a local/seed data mode with no risk to real student data, see
+Both `dev:netlify-staff` and the two-terminal mode above talk to the **real Airtable
+base** by default — for a local/seed data mode with no risk to real student data, see
 "Sandbox mode" below.
 
 **Sandbox mode** — the real app running against an in-memory mock of Airtable instead
@@ -118,14 +136,59 @@ server — useful mid-session if you've mutated the sandbox's state and want a c
 slate. See `SPEC.md`'s "Testing" section for what the mock does and doesn't compute,
 and why this doesn't run under `netlify dev`.
 
+## Running the student app locally
+
+A separate app (see `SPEC.md`'s "Student self-service app") — its own dev servers,
+its own ports, its own env file.
+
+```bash
+npm run dev:student-server   # terminal 1 — API on :3001, needs server/.env.student
+npm run dev:student-web      # terminal 2 — SPA on :9999, proxying /api to :3001
+```
+
+Or, against the in-memory mock instead of real Airtable (same idea as `dev:sandbox`
+above, zero risk to real student data):
+
+```bash
+npm run dev:student-sandbox   # API on :3001 + SPA on :9999, MOCK_AIRTABLE=true
+```
+
+Sign in via `http://localhost:9999/api/auth/dev-login?email=claude-student@test.com`
+rather than real Google OAuth — the one fixed test identity this app's dev-login
+allows (see `SPEC.md`), matching a dedicated fixture member in
+`sandboxSeed.ts` (or, against the real base, the existing "ZZtesty mctestface" test
+member, whose `Email` is already set to this address).
+
+**Real Netlify Dev runtime, single command** (mirrors `dev:netlify-staff` above):
+
+```bash
+npm run dev:netlify-student
+```
+
+Runs at `http://localhost:9999`, talking to the **real Airtable base** — the same
+origin (and same registered "Authorized redirect URI," see the Prerequisites section
+above) as the two-terminal mode, even though under the hood Vite itself is bumped to
+run on :9998 instead, so Netlify Dev's own proxy can own :9999 (the port the browser
+actually talks to). This uses `web-student/netlify.toml` + `web-student/functions/` —
+a local-dev-only duplicate of `netlify/functions-student/student-api.mts`, not the
+real deployed one (Netlify won't let a workspace's own `netlify.toml` point
+`functions.directory` outside that workspace, so a real "point at the shared file"
+setup isn't possible here; keep both files in sync if either changes).
+
+One known gap: the dev-login escape hatch (`/api/auth/dev-login?email=...`) doesn't
+work under this script specifically — something in Netlify CLI's local routing
+swallows that exact path+query-param combination before it reaches the function (real
+Google OAuth is unaffected). Use `dev:student-sandbox` or the two-terminal mode above
+for dev-login testing instead.
+
 ## Testing
 
 ```bash
 npm test           # server unit tests (node:test), against the mock — fast, no network
 npm run dev:sandbox # then exercise flows by hand against fixture data (see above)
 npm run test:e2e    # Playwright, boots its own sandbox — see SPEC.md's "Testing"
-npm run typecheck   # both workspaces + the Netlify function
-npm run build       # both workspaces
+npm run typecheck   # all four workspaces + both Netlify functions
+npm run build       # all four workspaces
 ```
 
 One-time setup for `test:e2e`: `npx playwright install chromium` (add
@@ -139,11 +202,14 @@ maintenance script that runs against the **real** base (dry-run by default,
 
 | Command | What it does |
 |---|---|
-| `npm run dev:netlify` | Real Netlify Dev runtime — recommended for anything beyond quick iteration |
+| `npm run dev:netlify-staff` | Real Netlify Dev runtime (staff app) — recommended for anything beyond quick iteration |
+| `npm run dev:netlify-student` | Real Netlify Dev runtime (student app), single command — see "Running the student app locally" |
 | `npm run dev:server` / `npm run dev:web` | Two-terminal fast-iteration alternative |
 | `npm run dev:sandbox` | Two-terminal, but against the in-memory Airtable mock instead of the real base — see "Sandbox mode" above |
-| `npm run build` | Production build — `web/dist` (static) + compiled `server/dist` (unused by Netlify directly, but keeps the workspace typechecking/buildable standalone) |
-| `npm run typecheck` | Type-check server, web, and the Netlify function |
+| `npm run dev:student-server` / `npm run dev:student-web` | Two-terminal student-app equivalent of `dev:server`/`dev:web`, on its own ports — see "Running the student app locally" above |
+| `npm run dev:student-sandbox` | Student-app equivalent of `dev:sandbox` — against the in-memory mock, zero risk to real student data |
+| `npm run build` | Production build — all four workspaces (`server`, `web`, `shared`, `web-student`) |
+| `npm run typecheck` | Type-check all four workspaces plus both Netlify functions |
 | `npm test` | Server unit tests, against the mock |
 | `npm run test:e2e` | Playwright E2E specs, against a sandbox Playwright boots itself |
 | `npm run audit:credits` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |

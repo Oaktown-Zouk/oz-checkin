@@ -32,6 +32,10 @@ export const FIXTURE_IDS = {
     lapsedLarry: "recMemberLapsedLarry",
     // Flagged Duplicate — must never appear in the roster.
     duplicateDana: "recMemberDuplicateDana",
+    // The web-student/ dev-login fixture (server/src/studentApp.ts's
+    // DEV_LOGIN_STUDENT_EMAIL) — not reused by any staff-facing test, so its data
+    // shape is free to change without risk of colliding with what other specs assume.
+    testStudent: "recMemberTestStudent",
   },
   programs: {
     zoukL1: "recProgramZoukL1",
@@ -128,6 +132,20 @@ export function buildSandboxSeed(): SeedData {
           "Tier Name": "1 Class",
           "Classes Allowed": 1,
           Duplicate: true,
+          "Recently Active": 1,
+        },
+      },
+      {
+        id: members.testStudent,
+        fields: {
+          "Full Name": "Claude Test Student",
+          Email: "claude-student@test.com",
+          "Contact ID": "contact-test-student",
+          "Access Status": "Active",
+          "Membership Status": "Active",
+          "Tier Name": "2 Class",
+          "Classes Allowed": 2,
+          "Lead Level": 2,
           "Recently Active": 1,
         },
       },

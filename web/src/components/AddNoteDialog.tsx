@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Portal } from "./Portal.js";
+import { Portal } from "shared";
 
 export function AddNoteDialog({
   studentName,

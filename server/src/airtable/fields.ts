@@ -86,7 +86,12 @@ export interface RecurringPlanFields {
   "Is Paid Access"?: number;
 }
 
-export type UserRole = "Staff" | "Volunteer" | "Kiosk" | "Admin";
+// "Student" is synthetic — never a real Role Permissions row, and never resolved via
+// User Roles at all. It's minted only by the separate student app (server/src/
+// studentApp.ts) for an OAuth login matching a Members.Email, not a staff account —
+// see SessionPayload's studentId for how that session is identified instead of by
+// userRoleId.
+export type UserRole = "Staff" | "Volunteer" | "Kiosk" | "Admin" | "Student";
 
 export interface UserRoleFields {
   Email?: string;

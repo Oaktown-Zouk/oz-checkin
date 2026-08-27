@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { LevelBadge } from "./LevelBadge.js";
-import { Portal } from "./Portal.js";
+import { LevelBadge, Portal } from "shared";
 
 const LEVEL_OPTIONS: (number | null)[] = [null, 1, 2, 3, 4];
 
