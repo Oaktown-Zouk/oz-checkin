@@ -17,7 +17,13 @@ export interface SessionPayload {
   // The signed-in account's User Roles record id — see services/userAccess.ts's
   // UserAccess.userRoleId for why this is resolved once at login rather than looked
   // up again wherever "who did this" needs to be recorded (e.g. Levelups.Issuer).
-  userRoleId: string;
+  // Present for every role except "Student", which has no User Roles row at all.
+  userRoleId?: string;
+  // Present only for role === "Student" — the Members record this session is scoped
+  // to, minted by the separate student app (studentApp.ts). Mutually exclusive with
+  // userRoleId: a session is either User-Roles-backed (staff/kiosk) or
+  // Members-backed (student), never both.
+  studentId?: string;
   expires: number;
 }
 
@@ -31,7 +37,8 @@ export function createSessionValue(user: {
   email: string;
   role: UserRole;
   permissions: Permission[];
-  userRoleId: string;
+  userRoleId?: string;
+  studentId?: string;
 }): string {
   const payload: SessionPayload = { ...user, expires: Date.now() + MAX_AGE_SECONDS * 1000 };
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -59,9 +66,14 @@ export function readSession(raw: string | undefined): SessionPayload | null {
   // A cookie without a permissions array is invalid — reject it here instead of
   // crashing downstream on .includes().
   if (!Array.isArray(payload.permissions)) return null;
-  // Rejects any cookie minted before userRoleId existed — same "re-auth to pick up
-  // the new shape" tradeoff already accepted for role/permissions changes.
-  if (typeof payload.userRoleId !== "string") return null;
+  // A Student session is identified by studentId (no User Roles row exists for it);
+  // every other role must carry userRoleId — same "re-auth to pick up the new shape"
+  // tradeoff already accepted when userRoleId was first added.
+  if (payload.role === "Student") {
+    if (typeof payload.studentId !== "string") return null;
+  } else if (typeof payload.userRoleId !== "string") {
+    return null;
+  }
   if (typeof payload.expires !== "number" || Date.now() > payload.expires) return null;
   return payload;
 }

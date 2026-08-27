@@ -16,7 +16,7 @@ export function LevelBadge({
       {/* A truly empty span has no line box in some browsers, shifting its vertical
           centering relative to a sibling that does contain a digit — a non-breaking
           space keeps both states' line-box metrics identical. */}
-      {level ?? " "}
+      {level ?? " "}
     </span>
   );
 }

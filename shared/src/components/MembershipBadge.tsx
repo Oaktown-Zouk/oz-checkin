@@ -1,4 +1,4 @@
-import type { StudentStatus } from "../api.js";
+import type { StudentStatus } from "../types.js";
 
 // The membership tier or credits-remaining badge — shared between the roster row and
 // the check-in dialog (where it helps front desk see how many classes are left before

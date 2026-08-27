@@ -952,11 +952,19 @@ body {
   opacity: 1;
 }
 
+/* Negative margin-bottom pulls .kiosk-main up into the watercolor's fading tail (the
+   PNG has real alpha there) instead of leaving a full banner's worth of dead space
+   before any content starts — combines with .kiosk-page's own 16px gap to net about
+   -64px of actual overlap. */
 .kiosk-banner {
+  display: block;
   width: 100%;
   max-width: 640px;
   height: auto;
   border-radius: 12px;
+  margin: 0 auto -40px;
+  position: relative;
+  z-index: 0;
 }
 
 /* Wraps "Scan QR Code to Check In" + the camera feed + the search bar as one group.

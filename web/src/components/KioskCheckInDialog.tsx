@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { api, ApiError, type ProgramSchedule, type StudentStatus } from "../api.js";
 import { activeProgramsForDate, hasConflictingSelection, todayInStudioTz, withinVisibleWindow } from "../programSchedule.js";
-import { MembershipBadge } from "./MembershipBadge.js";
-import { Portal } from "./Portal.js";
+import { MembershipBadge, Portal } from "shared";
 
 const ROLES = ["Lead", "Follow"] as const;
 const WELCOME_MS = 5000;

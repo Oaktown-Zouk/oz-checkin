@@ -5,7 +5,7 @@ import { usePermissions } from "../permissions.js";
 import { useQrScanner } from "../useQrScanner.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
-import { Portal } from "./Portal.js";
+import { Portal } from "shared";
 
 const ERROR_DISPLAY_MS = 5000;
 const MAX_SEARCH_RESULTS = 8;

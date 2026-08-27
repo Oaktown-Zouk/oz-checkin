@@ -43,6 +43,9 @@ export function evaluateFormula(formula: string, record: MockRecordLike): boolea
   const andMatch = expr.match(/^AND\((.*)\)$/s);
   if (andMatch) return splitTopLevelArgs(andMatch[1]).every((arg) => evaluateFormula(arg, record));
 
+  const orMatch = expr.match(/^OR\((.*)\)$/s);
+  if (orMatch) return splitTopLevelArgs(orMatch[1]).some((arg) => evaluateFormula(arg, record));
+
   let m = expr.match(/^\{([^}]+)\}\s*=\s*BLANK\(\)$/);
   if (m) return isBlank(record.fields[m[1]]);
 

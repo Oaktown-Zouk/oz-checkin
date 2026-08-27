@@ -52,6 +52,12 @@ handful of things that are genuinely this app's own business logic.
 - **Kiosk mode** (`/kiosk`) — a self-serve check-in station for a tablet: a student
   scans a QR code (their Givebutter contact id) or types their name, taps Lead/Follow,
   and walks in with no staff involvement. See "Kiosk mode" below.
+- **Student self-service login** — a completely separate app (its own frontend,
+  backend, and deployment) where a student can sign in with the same Google account
+  their Member record uses (provided they've actually transacted or hold a recurring
+  plan — contact info alone isn't enough) and see a read-only view of their own
+  timeline (check-ins, level history, notes) plus their kiosk check-in QR code. See
+  "Student self-service app" below.
 
 ## Scale & constraints
 
@@ -251,6 +257,14 @@ all: one with `Create Checkins` (i.e. `Kiosk`) is routed to `/kiosk` instead (se
 "Kiosk mode" below); one with neither sees a "not authorized for this page" screen
 naming the signed-in account.
 
+This permission model is specific to the staff app (`web/`/`server/`). The separate
+student app (see "Student self-service app" below) doesn't participate in it at all —
+a student session carries `role: "Student"` and an empty `permissions: []`, and access
+is identity-scoped (this one `Members` record) rather than permission-scoped. It's a
+deliberately different, simpler model for a fundamentally different kind of account:
+one row per role config doesn't make sense when every student needs to see exactly
+one thing, their own data, and nothing else.
+
 ## Architecture
 
 ```
@@ -294,7 +308,15 @@ naming the signed-in account.
 - **Frontend:** React + Vite SPA, hand-rolled routing (`window.history.pushState` + a
   `popstate` listener) — no router library, the app has three "pages": the roster, a
   student detail page, and `/kiosk`. Built to static files (`web/dist`), served by
-  Netlify's CDN.
+  Netlify's CDN. Since routing is client-side, a fresh load or refresh of a deep URL
+  (`/kiosk`, `/students/:id`) has no matching static file — `netlify.toml`'s catch-all
+  `/* -> /index.html` redirect (status 200) sends it to the SPA anyway, which then
+  routes it correctly once React mounts. Doesn't shadow `/api/*`/`/health`, which are
+  matched by the function's own `path` config (`netlify/functions/api.mts`) before
+  Netlify falls through to this redirect. Local `netlify dev` doesn't reproduce a
+  missing-redirect bug here either way — it proxies to Vite's own dev server, which
+  already does SPA-friendly fallback on its own; the failure mode only shows up
+  against the real static-hosted build.
 - **Navigation:** a top-left hamburger (`NavMenu.tsx`) linking "Front Desk" and
   "Kiosk," present on all three pages but only rendered for a session holding both
   `View Student Data` and `Create Checkins` — i.e. only when there's actually more
@@ -407,16 +429,23 @@ an unrecognized shape throws loudly rather than silently mis-filtering.
   without restarting the server.
 - **E2E** (`npm run test:e2e`, Playwright, `e2e/*.spec.ts`) — a handful of specs
   driving a real browser against a sandbox Playwright boots itself (`e2e/
-  playwright.config.ts`, two dedicated `webServer` entries on their own ports so a
-  real dev session never collides with the E2E one). `workers: 1` — every spec shares
-  one mock-backed server/store, so parallel workers would let one spec's `beforeEach`
-  reset race another's in-flight assertions. Playwright is pinned to `1.48`: this repo
-  has been developed on macOS 13, and current Playwright releases have dropped
-  Chromium support for it — installing the browser needs
+  playwright.config.ts`, four dedicated `webServer` entries on their own ports — two
+  for the staff app, two more for the separate student app, see "Student
+  self-service app" below — so a real dev session never collides with the E2E one).
+  `workers: 1` — every spec shares the same mock-backed stores, so parallel workers
+  would let one spec's `beforeEach` reset race another's in-flight assertions. The
+  student app's own specs (`e2e/student-self-login.spec.ts`) override `baseURL` to
+  point at its dedicated port and skip that `beforeEach` — its one data route is
+  read-only, so there's nothing to reset between tests. Playwright is pinned to
+  `1.48`: this repo has been developed on macOS 13, and current Playwright releases
+  have dropped Chromium support for it — installing the browser needs
   `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx playwright install chromium` on
   that OS specifically.
 
 ## API
+
+This is the staff app's API (`server/src/app.ts`). The separate student app has its
+own, much smaller route list — see "Student self-service app" below.
 
 All routes except `/api/auth/*`, `/api/logout`, `/api/session`, and `/health` require
 a valid session holding the specific permission noted below (`requirePermission(...)`
@@ -627,3 +656,132 @@ tablet, so a student can check themselves in with no front-desk involvement.
   happen. Both endpoints reject a `date` param from any session lacking
   `Backdate Kiosk` (403) — a real production kiosk tablet has no way to misrepresent
   the current time even via a crafted request.
+
+## Student self-service app
+
+A student can sign in with the same Google account their `Members.Email` uses and see
+a read-only view of their own timeline — check-ins, level history, notes. Deliberately
+built as a **fully separate app** (own frontend, own backend, own deployment), not a
+new page or permission on the staff app, because self-service login meaningfully
+widens *who* can obtain a valid session (any Gmail account matching a studio member,
+vs. the staff app's small hand-provisioned `User Roles` list) — a different threat
+model that calls for a structural backstop, not just another permission check
+alongside `transferMembership`/`createNote`/`updateStudentLevel` in the same process.
+
+**The isolation is real, not just conventional.** `server/src/studentApp.ts` — a
+second, minimal Hono app, deployed as its own Netlify Function
+(`netlify/functions-student/student-api.mts`) at its own origin — never imports
+`services/notes.ts`, `services/transfers.ts`, `services/levelups.ts`,
+`routes/checkins.ts`, `routes/students.ts` (the staff one), or `routes/kiosk.ts`.
+Verified by tracing its actual import graph: zero references to `createRecords` or
+`updateRecord` anywhere reachable from `studentApp.ts`, not just "the route code
+happens not to call them." (`services/studentStatus.ts`, which this app does import
+via `studentTimeline.ts` for read-only student data, is entirely read-only itself —
+`updateStudentLevel` lives in `services/levelups.ts` specifically so that importing
+student status/timeline data never pulls a write-capable export along for the ride in
+the same module.) A bug in this app's own code structurally cannot reach write-capable
+logic, because that logic isn't part of this deployment's bundle at all.
+
+**Auth is Members-only, not a fallback from the staff app.** The two apps' identity
+resolution stays decoupled by table, not just by deployment:
+`services/userAccess.ts`'s `getStudentAccessForEmail(email)` looks up `Members` by
+`Email` (case-insensitive, excluding `Duplicate`-flagged rows — same filter
+`listStudentStatuses` already uses) and returns just `{ studentId }`, no
+role/permission resolution at all. The staff app's OAuth callback
+(`server/src/routes/auth.ts`) never calls it, and this app's own OAuth callback never
+calls `getAccessForEmail`. A student who lands on the staff app's Google button gets
+the same `not_authorized` as always; a staff member whose email happens to also match
+a Member sees their own student view here, same as anyone else — no special-casing
+either direction.
+
+**Also requires a `Transactions` or `Recurring Plans` link** — a deliberate narrowing
+of who counts as a "student" for login purposes. A `Members` row can exist purely from
+Givebutter capturing contact info (an abandoned checkout, a newsletter signup) with no
+actual payment ever made; those rows shouldn't get a portal account just because an
+email address exists. The filter is `OR(NOT({Transactions} = BLANK()), NOT({Recurring
+Plans} = BLANK()))` — either link field having at least one entry is enough, checked
+purely for non-emptiness (the app never reads which transactions/plans, just whether
+any exist). `mockFormula.ts` gained `OR(...)` support for this (only `AND`/`NOT` were
+needed before).
+
+**Session shape**: `role: "Student"`, `permissions: []`, and a `studentId` (not
+`userRoleId` — see `lib/session.ts`'s `SessionPayload`, whose validation now branches
+on `role` for which id field a cookie must carry). The one data route,
+`GET /api/me/timeline`, takes **no `:id` param at all** — it reads `studentId`
+straight off the session (`lib/studentAuth.ts`'s `requireStudent` middleware). This is
+structurally simpler than a permission check on a parameterized route: there's no id
+comparison anywhere in this app for a bug to get wrong.
+
+**Routes** (all under `server/src/studentApp.ts`):
+- `GET /health`
+- `GET /api/auth/google/start` / `GET /api/auth/google/callback` — same OAuth code
+  flow as the staff app (state-cookie CSRF check, `verified_email` requirement).
+- `GET /api/auth/dev-login?email=` — dev-only (same gating as the staff app's),
+  restricted to a small fixed allowlist rather than any real member's email, same
+  "can't impersonate a real person" reasoning as the staff app's own dev-login
+  allowlist: `claude-student@test.com` (the sandbox's fixture student, mock-only) and
+  `ben@oaktownzouk.com` (a real Member with a real Transaction, explicitly authorized
+  by its owner as a real-base test identity — not an exception to the
+  can't-impersonate rule, since the account owner is the one granting it).
+- `POST /api/logout`
+- `GET /api/session` — `{ authenticated, email?, studentId? }`.
+- `GET /api/me/timeline` — the only data route, `requireStudent`-gated.
+
+**Frontend** (`web-student/`): much smaller than the staff app — no client-side
+routing, no permissions to branch on (a signed-in session here is always exactly a
+Student session). Google-only login screen (no password option — students never
+touch kiosk auth); once signed in, a small always-visible nav menu
+(`components/NavMenu.tsx`, styled after the staff app's own hamburger nav) toggles
+between two local views, plain `useState`, nothing worth deep-linking to:
+- **My Progress** (`StudentSelfPage.tsx`) — the self-view page, no edit affordances
+  anywhere, and critically *never imports* the components that would have any
+  (`LevelEditDialog`, `TransferDialog`, `AddNoteDialog`) — there's nothing on this
+  page that could be wired up to a write action even by mistake, on top of the
+  backend having nowhere to send one anyway.
+- **QR Code** (`StudentQrPage.tsx`) — renders the student's kiosk check-in QR code
+  client-side (the `qrcode` package, browser build), encoding the bare Givebutter
+  Contact ID — the exact same payload `web/src/useQrScanner.ts` decodes at the kiosk
+  and `server/src/scripts/generateQrCode.ts` prints. No backend change was needed:
+  `GET /api/me/timeline` already returned `status.contactId`. A member with no
+  Contact ID yet (Givebutter sync gap) sees a plain "ask the front desk" message
+  instead of a broken image.
+
+Log out lives inside the nav menu now too, rather than its own standalone button —
+one control at the top of the page instead of two.
+
+**Shared code** (`shared/` workspace, consumed as TS source directly by both Vite
+apps, no build step of its own): `types.ts` (`StudentStatus`, `TimelineEvent`,
+`NoteDetails`, etc. — re-exported from `web/src/api.ts` so nothing in the staff app
+had to change its own imports) and a handful of read-only presentational components
+(`Portal`, `GoogleLogo`, `LevelBadge`, `MembershipBadge`, `Timeline`,
+`NoteDetailModal`) relocated from `web/src/components/` to their single canonical
+source, so the two apps' timeline rendering can't silently drift apart. Write-capable
+components (the three named above) and each app's own CSS stay local, not shared.
+
+**A separate, read-only Airtable PAT** is a real additional layer worth setting up:
+the student Netlify site's own `AIRTABLE_PAT` (independent of the staff site's, same
+base) should be scoped to `data.records:read` only, no write, no schema — created in
+Airtable's UI. Even a hypothetical bug that got this app calling a write operation
+would still be rejected by Airtable itself (403). Not yet done as of this writing —
+both apps' local dev currently point at the same read/write PAT; this is called out
+explicitly in `server/.env.student.example` as a recommended (not required) upgrade.
+
+**Local dev**: `server/.env.student` (gitignored, template in
+`server/.env.student.example`) — a separate env file specifically so the two apps' dev
+servers can run side by side with different ports/origins, and so this app's
+`AIRTABLE_PAT` can genuinely differ from the staff app's even locally.
+`server/src/devStudent.ts` loads it explicitly before anything imports `config.js`
+(whose own `dotenv/config` only loads the default `.env`, and dotenv never overrides
+an already-set var). `npm run dev:student-server` / `dev:student-web` (mirroring
+`dev:server`/`dev:web`) or the combined `dev:student-sandbox` (mirroring
+`dev:sandbox` — `MOCK_AIRTABLE=true`, no risk to real data).
+
+**Deploy**: a second Netlify site pointed at this same repo, with `web-student/` as
+its publish target — `netlify-student.toml` (repo root, mirroring the main
+`netlify.toml`'s exact shape) is the config that site's "Configuration file path"
+setting should point to, since a functions directory living outside a site's own base
+directory isn't a safe bet in Netlify's config resolution. Needs its own custom
+domain/subdomain and its own Google OAuth "Authorized redirect URI" entry (same OAuth
+client as the staff app works fine — reused for the token exchange, just needs the
+extra redirect URI registered) — both are account-level setup steps, not something
+this repo's code can do on its own.

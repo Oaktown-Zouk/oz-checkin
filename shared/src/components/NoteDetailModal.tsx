@@ -1,4 +1,4 @@
-import type { NoteDetails } from "../api.js";
+import type { NoteDetails } from "../types.js";
 import { Portal } from "./Portal.js";
 
 export function NoteDetailModal({ note, onClose }: { note: NoteDetails; onClose: () => void }) {

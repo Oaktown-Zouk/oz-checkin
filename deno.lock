@@ -11,6 +11,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@playwright/test@1.48",
         "npm:netlify-cli@^27.1.2"
       ]
     },
@@ -20,13 +21,24 @@
           "dependencies": [
             "npm:@hono/node-server@^1.13.7",
             "npm:@types/node@24",
+            "npm:@types/qrcode@^1.5.6",
             "npm:dotenv@^16.4.5",
-            "npm:drizzle-kit@1.0.0-rc.4",
-            "npm:drizzle-orm@1.0.0-rc.4",
             "npm:hono@^4.6.9",
+            "npm:jsqr@^1.4.0",
+            "npm:qrcode@^1.5.4",
+            "npm:sharp@~0.34.5",
             "npm:tsx@^4.19.1",
             "npm:typescript@^5.6.2",
             "npm:zod@^3.23.8"
+          ]
+        }
+      },
+      "shared": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/react-dom@^18.3.0",
+            "npm:@types/react@^18.3.5",
+            "npm:typescript@^5.6.2"
           ]
         }
       },
@@ -36,8 +48,24 @@
             "npm:@types/react-dom@^18.3.0",
             "npm:@types/react@^18.3.5",
             "npm:@vitejs/plugin-react@^4.3.1",
+            "npm:jsqr@^1.4.0",
             "npm:react-dom@^18.3.1",
             "npm:react@^18.3.1",
+            "npm:shared@*",
+            "npm:typescript@^5.6.2",
+            "npm:vite@^5.4.6"
+          ]
+        }
+      },
+      "web-student": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/react-dom@^18.3.0",
+            "npm:@types/react@^18.3.5",
+            "npm:@vitejs/plugin-react@^4.3.1",
+            "npm:react-dom@^18.3.1",
+            "npm:react@^18.3.1",
+            "npm:shared@*",
             "npm:typescript@^5.6.2",
             "npm:vite@^5.4.6"
           ]

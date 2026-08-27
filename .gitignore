@@ -5,6 +5,7 @@ server/migration-credits-log-*.json
 .env
 .env.local
 .env.scratch
+.env.student
 web/dist/
 web/.vite/
 server/dist/

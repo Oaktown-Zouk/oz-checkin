@@ -32,6 +32,11 @@ export interface MemberFields {
   // Givebutter's contact id — printed on a student's kiosk QR code, so kiosk mode can
   // resolve a scan straight to a Member (see services/kiosk.ts).
   "Contact ID"?: string;
+  // Link fields, only ever checked for non-emptiness (never read individually) — gate
+  // student self-service login to members who've actually transacted, not just left
+  // contact info with no payment. See getStudentAccessForEmail.
+  Transactions?: string[];
+  "Recurring Plans"?: string[];
 }
 
 export interface CheckinFields {
@@ -86,7 +91,12 @@ export interface RecurringPlanFields {
   "Is Paid Access"?: number;
 }
 
-export type UserRole = "Staff" | "Volunteer" | "Kiosk" | "Admin";
+// "Student" is synthetic — never a real Role Permissions row, and never resolved via
+// User Roles at all. It's minted only by the separate student app (server/src/
+// studentApp.ts) for an OAuth login matching a Members.Email, not a staff account —
+// see SessionPayload's studentId for how that session is identified instead of by
+// userRoleId.
+export type UserRole = "Staff" | "Volunteer" | "Kiosk" | "Admin" | "Student";
 
 export interface UserRoleFields {
   Email?: string;

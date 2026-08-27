@@ -2,8 +2,7 @@ import { useState } from "react";
 import type { StudentStatus } from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
-import { LevelBadge } from "./LevelBadge.js";
-import { MembershipBadge } from "./MembershipBadge.js";
+import { LevelBadge, MembershipBadge } from "shared";
 
 export function StudentBadges({
   student,
