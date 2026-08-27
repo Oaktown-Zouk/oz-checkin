@@ -692,6 +692,16 @@ the same `not_authorized` as always; a staff member whose email happens to also 
 a Member sees their own student view here, same as anyone else — no special-casing
 either direction.
 
+**Also requires a `Transactions` or `Recurring Plans` link** — a deliberate narrowing
+of who counts as a "student" for login purposes. A `Members` row can exist purely from
+Givebutter capturing contact info (an abandoned checkout, a newsletter signup) with no
+actual payment ever made; those rows shouldn't get a portal account just because an
+email address exists. The filter is `OR(NOT({Transactions} = BLANK()), NOT({Recurring
+Plans} = BLANK()))` — either link field having at least one entry is enough, checked
+purely for non-emptiness (the app never reads which transactions/plans, just whether
+any exist). `mockFormula.ts` gained `OR(...)` support for this (only `AND`/`NOT` were
+needed before).
+
 **Session shape**: `role: "Student"`, `permissions: []`, and a `studentId` (not
 `userRoleId` — see `lib/session.ts`'s `SessionPayload`, whose validation now branches
 on `role` for which id field a cookie must carry). The one data route,
@@ -705,11 +715,12 @@ comparison anywhere in this app for a bug to get wrong.
 - `GET /api/auth/google/start` / `GET /api/auth/google/callback` — same OAuth code
   flow as the staff app (state-cookie CSRF check, `verified_email` requirement).
 - `GET /api/auth/dev-login?email=` — dev-only (same gating as the staff app's),
-  restricted to one fixed fake identity (`claude-student@test.com`) rather than any
-  real member's email, same "can't impersonate a real person" reasoning as the staff
-  app's own dev-login allowlist. The corresponding real `Members` row — the existing
-  "ZZtesty mctestface" test fixture, reused rather than creating a new one — has its
-  `Email` set to this address for real-base testing.
+  restricted to a small fixed allowlist rather than any real member's email, same
+  "can't impersonate a real person" reasoning as the staff app's own dev-login
+  allowlist: `claude-student@test.com` (the sandbox's fixture student, mock-only) and
+  `ben@oaktownzouk.com` (a real Member with a real Transaction, explicitly authorized
+  by its owner as a real-base test identity — not an exception to the
+  can't-impersonate rule, since the account owner is the one granting it).
 - `POST /api/logout`
 - `GET /api/session` — `{ authenticated, email?, studentId? }`.
 - `GET /api/me/timeline` — the only data route, `requireStudent`-gated.

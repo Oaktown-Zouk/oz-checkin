@@ -111,12 +111,17 @@ studentApp.get("/api/auth/google/callback", async (c) => {
 });
 
 // Dev-only (same DEV_LOGIN_ENABLED=true && NODE_ENV !== "production" gating as the
-// staff app's dev-login), restricted to one fixed fake identity — not "any email,"
+// staff app's dev-login), restricted to a small fixed allowlist — not "any email,"
 // for the same reason the staff dev-login is restricted to fake accounts rather than
 // any real User Roles row: this must not be able to impersonate a real student just
-// by knowing their email. The corresponding real Member row (a dedicated test
-// fixture) needs its own Email set to this address — see docs/airtable-schema.md.
-const DEV_LOGIN_STUDENT_EMAIL = "claude-student@test.com";
+// by knowing their email.
+// - claude-student@test.com — the sandbox's fixture student (sandboxSeed.ts),
+//   MOCK_AIRTABLE only.
+// - ben@oaktownzouk.com — a real Member with a real Transaction (needed since
+//   getStudentAccessForEmail now requires one), explicitly authorized by its owner
+//   as a real-base test identity — not a fake/synthetic exception to the "can't
+//   impersonate a real student" rule, since the account owner is the one granting it.
+const DEV_LOGIN_STUDENT_ALLOWED_EMAILS = new Set(["claude-student@test.com", "ben@oaktownzouk.com"]);
 
 if (config.DEV_LOGIN_ENABLED === "true" && !isProd) {
   studentApp.get("/api/auth/dev-login", async (c) => {
@@ -124,7 +129,7 @@ if (config.DEV_LOGIN_ENABLED === "true" && !isProd) {
     if (!email) return c.json({ error: "?email= required" }, 400);
 
     const normalized = email.trim().toLowerCase();
-    if (normalized !== DEV_LOGIN_STUDENT_EMAIL) {
+    if (!DEV_LOGIN_STUDENT_ALLOWED_EMAILS.has(normalized)) {
       console.log(`[dev-login] REJECTED (not allowlisted) email=${email} at=${new Date().toISOString()}`);
       return c.json({ error: "This email isn't allowed to use dev-login" }, 403);
     }

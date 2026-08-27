@@ -93,10 +93,26 @@ describe("getStudentAccessForEmail", () => {
   function seedMembers() {
     resetMockStore({
       [TABLES.members]: [
-        { id: "recMemberKeep", fields: { "Full Name": "Keep Me", Email: "student@example.com" } },
+        {
+          id: "recMemberKeep",
+          fields: { "Full Name": "Keep Me", Email: "student@example.com", Transactions: ["recTxn1"] },
+        },
         {
           id: "recMemberDup",
-          fields: { "Full Name": "Duplicate Dana", Email: "dupe@example.com", Duplicate: true },
+          fields: {
+            "Full Name": "Duplicate Dana",
+            Email: "dupe@example.com",
+            Duplicate: true,
+            Transactions: ["recTxn2"],
+          },
+        },
+        {
+          id: "recMemberPlanOnly",
+          fields: { "Full Name": "Plan Paula", Email: "plan-only@example.com", "Recurring Plans": ["recPlan1"] },
+        },
+        {
+          id: "recMemberNoActivity",
+          fields: { "Full Name": "Lead Leo", Email: "lead-only@example.com" },
         },
       ],
     });
@@ -122,5 +138,16 @@ describe("getStudentAccessForEmail", () => {
   it("returns null for an email with no matching Member", async () => {
     seedMembers();
     assert.equal(await getStudentAccessForEmail("nobody@example.com"), null);
+  });
+
+  it("finds a Member via a Recurring Plan even with no Transactions", async () => {
+    seedMembers();
+    const access = await getStudentAccessForEmail("plan-only@example.com");
+    assert.deepEqual(access, { studentId: "recMemberPlanOnly" });
+  });
+
+  it("rejects a Member with neither a Transaction nor a Recurring Plan (contact info only, never paid)", async () => {
+    seedMembers();
+    assert.equal(await getStudentAccessForEmail("lead-only@example.com"), null);
   });
 });

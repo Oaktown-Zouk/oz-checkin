@@ -32,6 +32,11 @@ export interface MemberFields {
   // Givebutter's contact id — printed on a student's kiosk QR code, so kiosk mode can
   // resolve a scan straight to a Member (see services/kiosk.ts).
   "Contact ID"?: string;
+  // Link fields, only ever checked for non-emptiness (never read individually) — gate
+  // student self-service login to members who've actually transacted, not just left
+  // contact info with no payment. See getStudentAccessForEmail.
+  Transactions?: string[];
+  "Recurring Plans"?: string[];
 }
 
 export interface CheckinFields {

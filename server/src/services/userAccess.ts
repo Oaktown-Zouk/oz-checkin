@@ -73,11 +73,14 @@ export async function getPasswordAuthForIdentifier(
 // resolution at all (a Student session is identity-scoped, not permission-based; see
 // lib/session.ts's studentId). Excludes Duplicate-flagged records, same filter
 // services/studentStatus.ts's listStudentStatuses already uses for the same reason
-// (Givebutter contact-merge artifacts, not real distinct members).
+// (Givebutter contact-merge artifacts, not real distinct members). Also requires at
+// least one Transaction or Recurring Plan — narrows self-service login to members
+// who've actually paid at some point, not anyone who's merely left contact info with
+// Givebutter (e.g. an abandoned checkout or a newsletter signup).
 export async function getStudentAccessForEmail(email: string): Promise<{ studentId: string } | null> {
   const escaped = email.replace(/'/g, "\\'");
   const records = await listRecords<MemberFields>(TABLES.members, {
-    filterByFormula: `AND(LOWER({Email}) = LOWER('${escaped}'), NOT({Duplicate}))`,
+    filterByFormula: `AND(LOWER({Email}) = LOWER('${escaped}'), NOT({Duplicate}), OR(NOT({Transactions} = BLANK()), NOT({Recurring Plans} = BLANK())))`,
     fields: ["Email"],
   });
   const member = records[0];

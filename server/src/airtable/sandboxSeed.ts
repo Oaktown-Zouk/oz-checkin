@@ -147,6 +147,9 @@ export function buildSandboxSeed(): SeedData {
           "Classes Allowed": 2,
           "Lead Level": 2,
           "Recently Active": 1,
+          // Needed to pass getStudentAccessForEmail's transacted-or-recurring-plan
+          // gate — an arbitrary id is fine, nothing ever reads this record back.
+          Transactions: ["recTxnTestStudent"],
         },
       },
     ],

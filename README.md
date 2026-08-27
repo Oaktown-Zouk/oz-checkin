@@ -154,10 +154,10 @@ npm run dev:student-sandbox   # API on :3001 + SPA on :9999, MOCK_AIRTABLE=true
 ```
 
 Sign in via `http://localhost:9999/api/auth/dev-login?email=claude-student@test.com`
-rather than real Google OAuth — the one fixed test identity this app's dev-login
-allows (see `SPEC.md`), matching a dedicated fixture member in
-`sandboxSeed.ts` (or, against the real base, the existing "ZZtesty mctestface" test
-member, whose `Email` is already set to this address).
+rather than real Google OAuth — a fixed allowlisted identity (see `SPEC.md`) matching
+a dedicated fixture member in `sandboxSeed.ts`. Against the real base instead, use
+`ben@oaktownzouk.com` — a real Member with a real Transaction, the other allowlisted
+dev-login identity.
 
 **Real Netlify Dev runtime, single command** (mirrors `dev:netlify-staff` above):
 

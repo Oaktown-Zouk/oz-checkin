@@ -22,8 +22,10 @@ Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
 QR code so `/kiosk` can resolve a scan straight to a Member, see
 `server/src/services/kiosk.ts`). `Email` also drives the separate student
 self-service app's login (`services/userAccess.ts`'s `getStudentAccessForEmail`,
-case-insensitive, excluding `Duplicate`-flagged rows) — see `SPEC.md`'s "Student
-self-service app" section.
+case-insensitive, excluding `Duplicate`-flagged rows, and requiring at least one
+`Transactions` or `Recurring Plans` link — both `multipleRecordLinks` to their
+respective tables, checked only for non-emptiness, never read individually) — see
+`SPEC.md`'s "Student self-service app" section.
 
 Computed fields to read directly, never recompute:
 - `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"`
