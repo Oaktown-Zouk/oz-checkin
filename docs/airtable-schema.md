@@ -249,6 +249,34 @@ Lets the studio answer "when did this student level up, and who signed off on it
   student timeline (e.g. "... by Jane") without a second lookup.
 - `Full Name (from Member)` (lookup, read-only) and `Created` (Airtable's own
   auto-set creation timestamp) — also never written by the app.
+- `From (safe)` / `To (safe)` (formula, read-only) — `IF({From} = BLANK(), -1, {From})`
+  and the `To` equivalent. Exist purely so the Members-side Lookups below have
+  something non-blank to pull through; nothing on this table itself reads them.
+
+**Members' Lookup fields through this table** (`Role (from Levelups)`,
+`From (safe, from Levelups)`, `To (safe, from Levelups)`, `Issuer Name (from
+Levelups)`, `Created (from Levelups)`) let `services/studentTimeline.ts` build a
+student's levelup events straight off their own `Members` record, with no separate
+read of this table at all. **Why `(safe)` and not plain `From`/`To`**: confirmed by
+testing directly against real data — Airtable's Lookup fields silently *drop* an
+entry when the source field is blank on that linked record, rather than keeping a
+placeholder. Since `From`/`To` are legitimately blank on a real, common subset of
+rows (first-ever level, cleared level), looking them up directly desyncs that array's
+length from `Role`/`Issuer Name`/`Created`'s — the app zips these five arrays
+together by index to reconstruct each levelup record, and a length mismatch corrupts
+that silently. Routing through `From (safe)`/`To (safe)` (which are never blank)
+keeps all five arrays the same length; the app translates `-1` back to "blank" on the
+way in. There are also `From (from Levelups)`/`To (from Levelups)` Lookups still
+sitting on `Members` from before this was diagnosed — broken in the way just
+described, unused, and harmless to leave (Airtable's API doesn't support deleting
+fields, so they're stuck until removed by hand in the UI).
+
+Same-shaped Lookups exist on `Members` for `Notes` too (`Teacher Notes` — the
+auto-generated reverse link, renamed from its default `Notes 2` since `Notes` itself
+was already a plain text field), but the app doesn't use them yet: `Strengths`/
+`Opportunities` have the identical blank-value risk described above and don't have
+`(safe)` equivalents, and `Notes` is empty in the real base as of this writing anyway
+— not worth the same fix until it's an actual bottleneck.
 
 ## Notes (`tblXfNHoBzKa3mqpB`)
 
@@ -269,6 +297,14 @@ UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
   Name`, read by `services/studentTimeline.ts` to attribute the note in the student
   timeline without a second lookup), and `Created` (Airtable's own auto-set creation
   timestamp) — none of these are ever written by the app.
+- `json` (formula, read-only) — an attempt at packing `Summary`/`Strengths`/
+  `Opportunities` into one string for a `Members`-side Lookup to pull through
+  (`json (from Teacher Notes)`), the same idea as `Levelups`' `From (safe)`/
+  `To (safe)`. Not used by the app: Airtable's formula language has no JSON-escaping
+  function, and this one is confirmed broken by testing it directly — an embedded
+  quote in `Summary` breaks the string, and `Opportunities`' value is missing its
+  opening quote (a formula typo, not a fundamental limit). Harmless to leave; not
+  worth fixing given `Notes` is empty in the real base as of this writing.
 
 ## Sessions / Events
 

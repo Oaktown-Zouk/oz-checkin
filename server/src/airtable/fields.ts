@@ -37,6 +37,22 @@ export interface MemberFields {
   // contact info with no payment. See getStudentAccessForEmail.
   Transactions?: string[];
   "Recurring Plans"?: string[];
+  // Lookup fields through the Levelups link, one array per Levelups column, added so
+  // studentTimeline.ts can build this member's levelup events straight off their own
+  // Member record instead of scanning the whole Levelups table. Airtable Lookups
+  // silently *drop* an entry when the source field is blank on that linked record
+  // (confirmed empirically, not documented) rather than leaving a placeholder — since
+  // From/To are blank on a real, common subset of Levelups rows (first-ever level /
+  // cleared level), reading them directly would desync this array's length from
+  // Role/Issuer Name/Created's, corrupting the by-index zip below. "From (safe, from
+  // Levelups)"/"To (safe, from Levelups)" pull through Levelups formula fields that
+  // coalesce blank to -1 instead, so all five arrays are guaranteed the same length —
+  // -1 is translated back to "blank" in studentTimeline.ts.
+  "Role (from Levelups)"?: ("Lead" | "Follow")[];
+  "From (safe, from Levelups)"?: number[];
+  "To (safe, from Levelups)"?: number[];
+  "Issuer Name (from Levelups)"?: string[];
+  "Created (from Levelups)"?: string[];
 }
 
 export interface CheckinFields {

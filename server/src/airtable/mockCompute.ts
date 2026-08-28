@@ -93,17 +93,35 @@ function availableCreditsFor(store: Store, memberId: string): RawRecord[] {
     .sort((a, b) => String(a.fields["Granted At"] ?? "").localeCompare(String(b.fields["Granted At"] ?? "")));
 }
 
-// Members.Available Credits / Checked In Today (Live) / Remaining Today — the three
-// fields the whole check-in/eligibility flow actually gates on. Everything else on
-// the member passes through untouched (fixture-static, see file header).
+// Members' Lookup-through-Levelups fields (see MemberFields's comment in fields.ts)
+// — same idea as availableCreditsFor, but simulating what the real Lookup fields
+// resolve to rather than something the app itself mutates. Real Airtable Lookups
+// drop an entry outright when the source is blank on that linked record (confirmed
+// against the real base, not simulated generally here) — "safe" here just means the
+// mock never produces a blank From/To to drop in the first place, matching the real
+// "From (safe)"/"To (safe)" formula fields' -1-for-blank convention.
+function levelupsFor(store: Store, memberId: string): RawRecord[] {
+  return [...table(store, TABLES.levelups).values()].filter((l) => linksTo(l.fields, "Member", memberId));
+}
+
+// Members.Available Credits / Checked In Today (Live) / Remaining Today / the
+// Levelups lookup fields — everything the whole check-in/eligibility/timeline flow
+// actually gates on. Everything else on the member passes through untouched
+// (fixture-static, see file header).
 export function computeMemberFields(member: RawRecord, store: Store): Record<string, unknown> {
   const classesAllowed = Number(member.fields["Classes Allowed"] ?? 0);
   const checkedInToday = checkedInCountOn(store, member.id, today());
+  const myLevelups = levelupsFor(store, member.id);
   return {
     ...member.fields,
     "Available Credits": availableCreditsFor(store, member.id).length,
     "Checked In Today (Live)": checkedInToday,
     "Remaining Today": classesAllowed - checkedInToday,
+    "Role (from Levelups)": myLevelups.map((l) => l.fields.Role),
+    "From (safe, from Levelups)": myLevelups.map((l) => (isBlank(l.fields.From) ? -1 : l.fields.From)),
+    "To (safe, from Levelups)": myLevelups.map((l) => (isBlank(l.fields.To) ? -1 : l.fields.To)),
+    "Issuer Name (from Levelups)": myLevelups.map((l) => (l.fields["Issuer Name"] as string[] | undefined)?.[0]),
+    "Created (from Levelups)": myLevelups.map((l) => l.createdTime),
   };
 }
 
