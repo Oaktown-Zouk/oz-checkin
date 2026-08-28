@@ -246,6 +246,54 @@ menu on a row, or a button on the student detail page. Credit transfers
 (`Credits.Purchased By` exists in the schema for the same purpose) aren't built —
 not requested yet.
 
+## Merging duplicate students
+
+Whatever syncs Givebutter into `Members` doesn't match emails case-insensitively, so
+the same real person can end up with two rows (e.g. `cindy@gmail.com` and
+`Cindy@gmail.com`) — a recurring problem, not a one-off. **Merge duplicate…**, next to
+Transfer membership in the roster row's 3-dot menu
+(`server/src/services/merge.ts`'s `mergeMembers`, `POST /api/students/merge`, same
+`Write Memberships` permission), fixes one pair at a time.
+
+- **Finding the other record** (`web/src/components/MergeDialog.tsx`): a local name
+  search against the roster already loaded in `App.tsx` — no extra fetch — since both
+  halves of a duplicate pair are, by definition, both still showing up on the roster
+  today (that's the visible symptom). The row the dialog was opened from is excluded
+  from its own search results.
+- **Picking the survivor**: the user always makes the final call, but the dialog
+  pre-selects whichever side has an active membership (`accessStatus === "Active"`,
+  Airtable's own formula — not re-derived here) once `heldMemberships` loads for both
+  candidates, so the common case needs no extra click. Only overrides the default (the
+  row the dialog was opened from) when exactly one side has one.
+- **What moves**: every link from the loser to the survivor — `Check-ins.Member`,
+  `Recurring Plans.Member` and `.Covers Member` (independently — see "Membership
+  transfers" above for why they can diverge), `Transactions.Member`, `Credits.Member`
+  and `.Purchased By`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
+  (`Classes Allowed`, `Tier Name`, `Available Credits`, `Remaining Today`,
+  `Recently Active`) are Airtable rollups/formulas over these same linked tables, so
+  once the links move, those numbers recompute themselves — merging is repointing
+  links, not recomputing counts by hand.
+- **The one-per-student exception**: an Airtable automation grants every new `Members`
+  row its own `New Member` signup credit. If both halves of a duplicate pair got one,
+  reassigning both would double it up — that credit specifically is left attached to
+  the loser instead (see next bullet), every other `Credits.Reason` reassigns
+  normally.
+- **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
+  (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
+  but still there to audit, including whatever didn't get reassigned (the extra
+  `New Member` credit above). Flagged last, only once every reassignment has actually
+  landed, so a failure partway through leaves it visible and the merge safely
+  retryable — Airtable has no cross-table transaction, but every reassignment is
+  independently idempotent.
+- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, and `Contact ID` copy from
+  the loser onto the survivor only when the survivor doesn't already have a value —
+  never overwrites something the survivor already has.
+- **Not automated on purpose**: if both sides have their own active Recurring Plan,
+  that's the studio actually double-billing someone — merging the `Members` rows
+  doesn't fix that, only canceling one subscription in Givebutter does. The dialog
+  shows both plans plainly (so it's hard to miss) rather than guessing which to
+  keep.
+
 ## Permissions
 
 Access is permission-based, not role-based — a role is just Airtable's way of

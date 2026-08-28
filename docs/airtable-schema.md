@@ -51,9 +51,11 @@ Computed fields to read directly, never recompute:
   the date type.
 - `Duplicate` (checkbox) — set by hand when Givebutter's contact-merge tool leaves a
   stray record behind (it doesn't actually delete the merged-away contact, so the sync
-  keeps recreating it as a separate Member). The roster query excludes it server-side
-  (`NOT({Duplicate})`), so it's never fetched at all; direct-by-id lookups (timeline,
-  level edits) are not filtered.
+  keeps recreating it as a separate Member), or automatically by `services/merge.ts`'s
+  `mergeMembers` on whichever side of a merge didn't survive (case-variant email
+  duplicates — see `SPEC.md`'s "Merging duplicate students"). The roster query
+  excludes it server-side (`NOT({Duplicate})`), so it's never fetched at all;
+  direct-by-id lookups (timeline, level edits) are not filtered.
 - `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation that runs when
   `Membership Amount` is updated, not this app; see "Tier Rule gaps" below for when
   it's empty.
@@ -127,6 +129,12 @@ consumed it is ever deleted directly in Airtable rather than undone through the 
 
 The app never reimplements "is this credit valid" — it filters `Credits` by `Member` +
 `Available = 1`.
+
+`services/merge.ts`'s `mergeMembers` reassigns `Member` and `Purchased By`
+independently when combining two duplicate `Members` rows, except: if both sides have
+their own `Reason = New Member` credit, the loser's is left in place rather than
+reassigned, so the merged student doesn't end up with two signup credits — see
+`SPEC.md`'s "Merging duplicate students".
 
 Granting is still Airtable automations; consuming and freeing a credit are both
 application code now (see SPEC.md's "Credits system" for why):

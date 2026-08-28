@@ -127,6 +127,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ planId, targetEmail }),
     }),
+  // Not nested under a single student id — the caller picks which of the two is the
+  // survivor in MergeDialog, so both ids are just body fields (see routes/students.ts).
+  mergeStudents: (survivorId: string, duplicateId: string) =>
+    request<StudentStatus>("/api/students/merge", {
+      method: "POST",
+      body: JSON.stringify({ survivorId, duplicateId }),
+    }),
   addNote: (studentId: string, summary: string, strengths: string, opportunities: string) =>
     request<{ ok: true }>(`/api/students/${studentId}/notes`, {
       method: "POST",

@@ -563,6 +563,68 @@ body {
   max-width: 480px;
 }
 
+.merge-dialog {
+  max-width: 520px;
+}
+
+.merge-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.merge-search-result {
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.merge-search-result:hover {
+  background: #f9fafb;
+}
+
+.merge-candidates {
+  display: flex;
+  gap: 12px;
+}
+
+.merge-candidate {
+  flex: 1;
+  text-align: left;
+  padding: 12px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.merge-candidate-selected {
+  border-color: #111827;
+  background: #f9fafb;
+}
+
+.merge-candidate-name {
+  font-weight: 600;
+}
+
+.merge-candidate-email {
+  font-size: 0.8rem;
+  color: var(--gray);
+}
+
+.merge-candidate-detail {
+  font-size: 0.8rem;
+}
+
 .note-section-label {
   font-size: 0.8rem;
   font-weight: 600;

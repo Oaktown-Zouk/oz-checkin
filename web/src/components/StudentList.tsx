@@ -3,6 +3,7 @@ import { StudentRow } from "./StudentRow.js";
 
 export function StudentList({
   students,
+  allStudents,
   loading,
   effectiveDate,
   programs,
@@ -12,8 +13,12 @@ export function StudentList({
   onUpdateLeadLevel,
   onUpdateFollowLevel,
   onTransferMembership,
+  onMerge,
 }: {
   students: StudentStatus[];
+  // The full (unfiltered) roster — see StudentRow.tsx's comment; passed straight
+  // through to MergeDialog regardless of what's currently typed into the search box.
+  allStudents: StudentStatus[];
   loading: boolean;
   effectiveDate?: string;
   programs: ProgramSchedule[];
@@ -23,6 +28,7 @@ export function StudentList({
   onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
+  onMerge: (survivorId: string, duplicateId: string) => Promise<void>;
 }) {
   if (loading && students.length === 0) {
     return <p className="empty-state">Loading…</p>;
@@ -37,6 +43,7 @@ export function StudentList({
         <StudentRow
           key={s.id}
           student={s}
+          allStudents={allStudents}
           effectiveDate={effectiveDate}
           programs={programs}
           onCheckIn={onCheckIn}
@@ -45,6 +52,7 @@ export function StudentList({
           onUpdateLeadLevel={onUpdateLeadLevel}
           onUpdateFollowLevel={onUpdateFollowLevel}
           onTransferMembership={onTransferMembership}
+          onMerge={onMerge}
         />
       ))}
     </div>

@@ -3,6 +3,7 @@ import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js
 import { usePermissions } from "../permissions.js";
 import { RowMenu } from "./RowMenu.js";
 import { TransferDialog } from "./TransferDialog.js";
+import { MergeDialog } from "./MergeDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { CheckInDialog } from "./CheckInDialog.js";
 
@@ -12,6 +13,7 @@ function formatTime(iso: string): string {
 
 export function StudentRow({
   student,
+  allStudents,
   effectiveDate,
   programs,
   onCheckIn,
@@ -20,8 +22,13 @@ export function StudentRow({
   onUpdateLeadLevel,
   onUpdateFollowLevel,
   onTransferMembership,
+  onMerge,
 }: {
   student: StudentStatus;
+  // The full (unfiltered) roster — passed through untouched to MergeDialog, which
+  // needs to search across every student, not just whatever the header search box
+  // currently has typed into it. See App.tsx.
+  allStudents: StudentStatus[];
   effectiveDate?: string;
   programs: ProgramSchedule[];
   onCheckIn: (studentId: string, selections: CheckInSelection[]) => void;
@@ -30,15 +37,22 @@ export function StudentRow({
   onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
+  onMerge: (survivorId: string, duplicateId: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
   const { has } = usePermissions();
   const canCheckIn = has("Create Checkins");
   const canUndo = has("Undo Checkins");
   const canTransfer = has("Write Memberships");
-  const menuItems = canTransfer ? [{ label: "Transfer membership", onClick: () => setTransferOpen(true) }] : [];
+  const menuItems = canTransfer
+    ? [
+        { label: "Transfer membership", onClick: () => setTransferOpen(true) },
+        { label: "Merge duplicate…", onClick: () => setMergeOpen(true) },
+      ]
+    : [];
 
   async function handleUndo(checkinId: string) {
     setBusy(true);
@@ -117,6 +131,15 @@ export function StudentRow({
           student={student}
           onSubmit={(planId, targetEmail) => onTransferMembership(student.id, planId, targetEmail)}
           onClose={() => setTransferOpen(false)}
+        />
+      )}
+
+      {mergeOpen && (
+        <MergeDialog
+          student={student}
+          allStudents={allStudents}
+          onSubmit={onMerge}
+          onClose={() => setMergeOpen(false)}
         />
       )}
     </div>

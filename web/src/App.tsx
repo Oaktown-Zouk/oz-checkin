@@ -262,6 +262,16 @@ export function App() {
     }
   }
 
+  async function handleMerge(survivorId: string, duplicateId: string) {
+    try {
+      await api.mergeStudents(survivorId, duplicateId);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   if (!authChecked) return null;
 
   if (forbiddenUser) {
@@ -341,6 +351,7 @@ export function App() {
 
         <StudentList
           students={visibleStudents}
+          allStudents={students}
           loading={loading}
           effectiveDate={effectiveDate}
           programs={programs}
@@ -350,6 +361,7 @@ export function App() {
           onUpdateLeadLevel={handleUpdateLeadLevel}
           onUpdateFollowLevel={handleUpdateFollowLevel}
           onTransferMembership={handleTransferMembership}
+          onMerge={handleMerge}
         />
       </div>
     </PermissionsProvider>

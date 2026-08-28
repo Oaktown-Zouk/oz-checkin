@@ -4,6 +4,7 @@ import { listStudentStatuses } from "../services/studentStatus.js";
 import { updateStudentLevel } from "../services/levelups.js";
 import { getStudentTimeline } from "../services/studentTimeline.js";
 import { transferMembership, heldMemberships } from "../services/transfers.js";
+import { mergeMembers } from "../services/merge.js";
 import { createNote, updateNote } from "../services/notes.js";
 import { isValidDateString } from "../lib/date.js";
 import { handleError } from "../lib/respond.js";
@@ -65,6 +66,22 @@ studentRoutes.post("/:id/transfer-membership", requirePermission("Write Membersh
   }
   try {
     return c.json(await transferMembership(id, planId, targetEmail));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+// Not nested under a single :id — after the caller picks a survivor in the dialog
+// (see web/src/components/MergeDialog.tsx), either of the two picked students could
+// end up on either side, so both ids are just body fields.
+studentRoutes.post("/merge", requirePermission("Write Memberships"), async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { survivorId, duplicateId } = body as { survivorId?: string; duplicateId?: string };
+  if (!survivorId || !duplicateId) {
+    return c.json({ error: "survivorId and duplicateId are required" }, 400);
+  }
+  try {
+    return c.json(await mergeMembers(survivorId, duplicateId));
   } catch (err) {
     return handleError(c, err);
   }
