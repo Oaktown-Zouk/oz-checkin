@@ -64,6 +64,11 @@ export function CheckInDialog({
     .filter((entry): entry is [string, "Lead" | "Follow"] => Boolean(entry[1]))
     .map(([programId, role]) => ({ programId, role }));
 
+  // Purely a local preview of what remaining will become once these picks are
+  // submitted — recomputed from student.remaining on every render, not a separate
+  // piece of state, so it can never drift from the selections that produce it.
+  const localRemaining = student.remaining - selections.length;
+
   async function handleSubmit() {
     if (selections.length === 0) return;
 
@@ -98,6 +103,11 @@ export function CheckInDialog({
               glance how many the student has left before checking them into more. */}
           <div className="badges">
             <MembershipBadge student={student} />
+          </div>
+
+          <div className="remaining-counter">
+            <span className="remaining-counter-value">{localRemaining}</span>
+            <span className="remaining-counter-label">remaining</span>
           </div>
 
           {activePrograms.length === 0 && <p className="dialog-description">No classes scheduled for this day.</p>}

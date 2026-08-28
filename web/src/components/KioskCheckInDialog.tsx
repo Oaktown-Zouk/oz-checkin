@@ -102,6 +102,11 @@ export function KioskCheckInDialog({
             <MembershipBadge student={student} />
           </div>
 
+          <div className="remaining-counter remaining-counter-kiosk">
+            <span className="remaining-counter-value">{student.remaining}</span>
+            <span className="remaining-counter-label">remaining</span>
+          </div>
+
           {visiblePrograms.length === 0 && <p className="dialog-description">No classes available right now.</p>}
 
           <div className="kiosk-program-list">
