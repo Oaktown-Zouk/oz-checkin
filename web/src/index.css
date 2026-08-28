@@ -912,6 +912,12 @@ body {
   color: var(--green);
 }
 
+/* Nudges a student toward what they picked last week — bold text only, so it doesn't
+   compete visually with the done/conflict states above. */
+.kiosk-role-btn-recent {
+  font-weight: 800;
+}
+
 .kiosk-role-btn:disabled {
   cursor: default;
   opacity: 0.5;

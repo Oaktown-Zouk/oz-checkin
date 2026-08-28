@@ -14,6 +14,14 @@ function isTakenAtAll(student: StudentStatus, programId: string) {
   return student.checkinsToday.some((c) => c.programId === programId);
 }
 
+// lastCheckinSelections is already bounded to the student's last 7 days (see
+// computeLastCheckinSelections) — used here purely as a visual nudge ("you did this
+// last week") rather than to preselect anything, since kiosk check-ins are always an
+// explicit tap.
+function isFromLastWeek(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
+  return student.lastCheckinSelections.some((s) => s.programId === programId && s.role === role);
+}
+
 // The self-serve, large-touch-target version of the check-in flow — structurally
 // different enough from CheckInDialog (immediate per-tap check-in vs. pick-then-
 // submit, no email/undo/transfer affordances at all) to warrant its own component
@@ -105,12 +113,13 @@ export function KioskCheckInDialog({
                   <div className="kiosk-role-buttons">
                     {ROLES.map((role) => {
                       const done = isDone(student, p.id, role);
+                      const recent = !done && isFromLastWeek(student, p.id, role);
                       const key = `${p.id}_${role}`;
                       return (
                         <button
                           key={role}
                           type="button"
-                          className={`kiosk-role-btn${done ? " kiosk-role-btn-done" : ""}`}
+                          className={`kiosk-role-btn${done ? " kiosk-role-btn-done" : ""}${recent ? " kiosk-role-btn-recent" : ""}`}
                           disabled={done || conflict || pending !== null}
                           onClick={() => handleTap(p.id, role)}
                         >
