@@ -101,6 +101,8 @@ plan amount at all. Two things handle this:
   `gateCheckIns`, formerly Automation C — see "Credits" below) when a check-in exceeds
   the member's tier allowance and no credit is available to cover it.
 - `Credits` — reverse link, populated once a `Credits` record consumes this check-in.
+  `services/checkins.ts`'s `undoCheckIn` reads this directly to find which credit to
+  free on undo, rather than scanning the whole `Credits` table.
 
 The check-in dialog preselects a student's most recent visit's programs/roles by
 scanning non-undone Check-ins app-side (`StudentStatus.lastCheckinSelections`, see
@@ -113,16 +115,15 @@ viewed.
 `Member` (holder), `Purchased By` (payer — defaults same as Member, kept distinct so a
 future credit-transfer feature has somewhere to write), `Reason` (`New Member` /
 `Drop-in Purchase` / `Comp`), `Source Transaction` (link → Transactions, set only for
-`Drop-in Purchase`), `Granted At`, `Consumed At`, `Consumed By Check-in`, `Available`
-(formula — true iff `Consumed By Check-in` is unlinked, **not** based on
-`Consumed At`, so a credit self-heals if the check-in that consumed it is ever deleted
-directly in Airtable rather than undone through the app).
+`Drop-in Purchase`), `Granted At`, `Consumed By Check-in`, `Available` (formula — true
+iff `Consumed By Check-in` is unlinked, so a credit self-heals if the check-in that
+consumed it is ever deleted directly in Airtable rather than undone through the app).
 
 The app never reimplements "is this credit valid" — it filters `Credits` by `Member` +
 `Available = 1`.
 
-Granting is still Airtable automations; consumption is application code (see
-SPEC.md's "Credits system" for why):
+Granting is still Airtable automations; consuming and freeing a credit are both
+application code now (see SPEC.md's "Credits system" for why):
 - **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
 - **B** — a `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
   not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
@@ -131,9 +132,12 @@ SPEC.md's "Credits system" for why):
   same-day only. `services/checkins.ts`'s `gateCheckIns` now does this for every
   check-in it creates, live or backdated, and leaving the real automation active
   alongside it double-consumes a credit for the same over-allowance check-in.
-- **D** — `Check-ins.Undone At` becomes non-blank → finds the `Credits` record
-  consumed by that check-in and clears `Consumed At`/`Consumed By Check-in`.
-  Unchanged, still an Airtable automation.
+- ~~**D**~~ — also retired, lower urgency. It used to run whenever `Check-ins.Undone
+  At` became non-blank, finding the `Credits` record consumed by that check-in and
+  clearing `Consumed By Check-in`. `services/checkins.ts`'s `undoCheckIn` now does
+  this itself immediately, via the check-in's own `Credits` reverse link. Leaving this
+  one active isn't a correctness bug like C — it'd just find nothing to clear — but
+  it's dead weight; disable when convenient.
 
 ## Programs (`tblB90zwd3OjKxxDs`)
 

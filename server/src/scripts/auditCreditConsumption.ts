@@ -91,7 +91,6 @@ async function main() {
       );
       if (APPLY) {
         await updateRecord<CreditFields>(TABLES.credits, credit.id, {
-          "Consumed At": c.fields["Checked In At"],
           "Consumed By Check-in": [c.id],
         });
       }

@@ -92,15 +92,14 @@ architecture-level, that one is the technical schema reference.
 ## Credits system
 
 The old app's "buy a pass, redeem it at check-in" model is now a first-class `Credits`
-table. Granting is still entirely Airtable automations; **consumption is now
-application code**, not an automation:
+table. Granting is still entirely Airtable automations; **consuming and freeing a
+credit are now both application code**, not automations:
 
 - **`Credits`** — `Member` (holder), `Purchased By` (payer, for a future transfer
   feature), `Reason` (`New Member` / `Drop-in Purchase` / `Comp`), `Source Transaction`,
-  `Granted At`, `Consumed At`, `Consumed By Check-in`, `Available` (formula: true iff
-  `Consumed By Check-in` is unlinked — this makes a credit self-heal if the check-in
-  that consumed it is ever deleted directly in Airtable, not just undone through the
-  app).
+  `Granted At`, `Consumed By Check-in`, `Available` (formula: true iff `Consumed By
+  Check-in` is unlinked — this makes a credit self-heal if the check-in that consumed
+  it is ever deleted directly in Airtable, not just undone through the app).
 - **Automation A** grants a credit when a new `Members` record is created.
 - **Automation B** grants a credit when a `Transactions` record qualifies as a
   drop-in purchase (succeeded, one-time, no plan).
@@ -117,10 +116,14 @@ application code**, not an automation:
   check-in will be double-gated: the app consumes a credit, and the still-active
   automation, independently seeing a negative `Remaining Today`, consumes a second one
   for the same check-in.
-- **Automation D** runs whenever a `Check-ins` record's `Undone At` gets set: it frees
-  any credit that check-in had consumed. Unchanged — undo doesn't need the same
-  same-day restriction Automation C had, so there was never a reason to bring this one
-  in-app too.
+- ~~**Automation D**~~ — also retired, though less urgently than C: it used to run
+  whenever a `Check-ins` record's `Undone At` got set, freeing any credit that
+  check-in had consumed. `undoCheckIn` (`services/checkins.ts`) now does this itself,
+  immediately, reading the check-in's own `Credits` reverse link (populated by
+  whichever credit consumed it) to find the credit to free — no separate table scan
+  needed. Unlike Automation C, leaving Automation D active alongside this isn't a
+  correctness bug (clearing an already-unlinked `Consumed By Check-in` is a no-op, not
+  a double-effect), just redundant. Disable it in Airtable when convenient.
 
 The app's own gating logic (`gateCheckIns`, `services/checkins.ts`) counts that
 student's existing non-undone check-ins on the target date (live or backdated),

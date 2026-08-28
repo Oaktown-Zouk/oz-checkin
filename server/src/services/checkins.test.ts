@@ -173,7 +173,7 @@ describe("createCheckIns (backdated)", () => {
 });
 
 describe("undoCheckIn", () => {
-  it("frees the credit it consumed (Automation D) and updates checkedInToday", async () => {
+  it("frees the credit it consumed and updates checkedInToday", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
       [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],

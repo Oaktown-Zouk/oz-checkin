@@ -33,7 +33,6 @@ async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): 
 
   if (candidate) {
     await updateRecord<CreditFields>(TABLES.credits, candidate.id, {
-      "Consumed At": new Date().toISOString(),
       "Consumed By Check-in": [checkinId],
     });
   } else {
@@ -119,8 +118,24 @@ export async function undoCheckIn(checkinId: string): Promise<StudentStatus> {
   await updateRecord<CheckinFields>(TABLES.checkins, checkinId, {
     "Undone At": new Date().toISOString(),
   });
-  // Automation D frees any credit this check-in consumed, and the live rollup
-  // (Checked In Today (Live) -> Remaining Today) self-corrects — nothing else to do.
+
+  // Free any credit this check-in had consumed, immediately — mirrors gateCheckIns's
+  // move off of an Airtable automation (formerly Automation D) for the same reason:
+  // no waiting on a separate async trigger. checkin.fields.Credits is the check-in's
+  // own reverse link to whichever Credits record consumed it (set by
+  // consumeOldestCreditOrFlag), already in hand from the getRecordOrNull above — no
+  // extra read needed to find it. Automation D is now redundant for check-ins undone
+  // through the app (safe to leave enabled, unlike Automation C: clearing an
+  // already-clear link is a no-op, not a double-consume), but there's no reason to
+  // keep relying on it either.
+  const consumedCreditId = checkin.fields.Credits?.[0];
+  if (consumedCreditId) {
+    await updateRecord<CreditFields>(TABLES.credits, consumedCreditId, {
+      "Consumed By Check-in": [],
+    });
+  }
+  // The live rollup (Checked In Today (Live) -> Remaining Today) self-corrects on its
+  // own once Undone At is set — nothing else to do for that part.
 
   const viewedDate = checkin.fields["Checked In At"]
     ? dateStringFor(new Date(checkin.fields["Checked In At"]))

@@ -1,11 +1,10 @@
 // Computes the subset of Airtable's formula/rollup fields this app's own logic
-// actually depends on staying live/consistent with its own mutations, and simulates
-// Automation D (freeing a credit on undo — see applyUndoAutomation below). Credit
-// consumption on create (formerly Automation C) is no longer simulated here at all:
-// services/checkins.ts now does that itself, for every check-in, so the mock just
-// needs to serve its listRecords/updateRecord calls like any other write. See
-// mockClient.ts for how these get wired into createRecords/updateRecord/listRecords/
-// getRecord.
+// actually depends on staying live/consistent with its own mutations. No automation
+// simulation lives here at all anymore — credit consumption on create (formerly
+// Automation C) and freeing a credit on undo (formerly Automation D) are both plain
+// application code now (services/checkins.ts), so the mock just needs to serve
+// listRecords/updateRecord calls like any other write. See mockClient.ts for how
+// these get wired into createRecords/updateRecord/listRecords/getRecord.
 //
 // Deliberately NOT computed here (fixture-static instead — seed data sets them
 // directly, same as Airtable would have already resolved them): Members.Access
@@ -52,6 +51,29 @@ function linksTo(fields: Record<string, unknown>, field: string, id: string): bo
   return ((fields[field] as string[] | undefined) ?? []).includes(id);
 }
 
+// Real Airtable auto-syncs both sides of a link (setting Credits.Consumed By
+// Check-in also populates that Check-in's own Credits reverse link, and vice versa)
+// — this mock doesn't simulate that generally, but services/checkins.ts now reads
+// the reverse link directly (undoCheckIn, to find which credit to free without a
+// table scan), so it needs to be right here specifically. `previous` is the credit's
+// Consumed By Check-in value *before* this update was applied.
+export function syncCreditCheckinLink(store: Store, creditId: string, previous: string[] | undefined): void {
+  const credit = table(store, TABLES.credits).get(creditId);
+  if (!credit) return;
+  const oldCheckinId = previous?.[0];
+  const newCheckinId = (credit.fields["Consumed By Check-in"] as string[] | undefined)?.[0];
+  if (oldCheckinId === newCheckinId) return;
+
+  if (oldCheckinId) {
+    const oldCheckin = table(store, TABLES.checkins).get(oldCheckinId);
+    if (oldCheckin) delete oldCheckin.fields.Credits;
+  }
+  if (newCheckinId) {
+    const newCheckin = table(store, TABLES.checkins).get(newCheckinId);
+    if (newCheckin) newCheckin.fields.Credits = [creditId];
+  }
+}
+
 // "Checked In Today (Live)" — count of this member's non-undone check-ins on dateStr.
 function checkedInCountOn(store: Store, memberId: string, dateStr: string): number {
   let count = 0;
@@ -85,9 +107,8 @@ export function computeMemberFields(member: RawRecord, store: Store): Record<str
   };
 }
 
-// Credits.Available — true iff Consumed By Check-in is unlinked (matches
-// docs/airtable-schema.md exactly: not based on Consumed At, so a credit self-heals
-// if its consuming check-in is ever deleted directly rather than undone).
+// Credits.Available — true iff Consumed By Check-in is unlinked, so a credit
+// self-heals if its consuming check-in is ever deleted directly rather than undone.
 export function computeCreditFields(credit: RawRecord): Record<string, unknown> {
   return {
     ...credit.fields,
@@ -95,13 +116,3 @@ export function computeCreditFields(credit: RawRecord): Record<string, unknown> 
   };
 }
 
-// Automation D — a Check-ins record's Undone At becomes non-blank -> frees whichever
-// credit it had consumed (clears Consumed At/Consumed By Check-in).
-export function applyUndoAutomation(store: Store, checkinId: string): void {
-  for (const credit of table(store, TABLES.credits).values()) {
-    if (linksTo(credit.fields, "Consumed By Check-in", checkinId)) {
-      delete credit.fields["Consumed At"];
-      delete credit.fields["Consumed By Check-in"];
-    }
-  }
-}

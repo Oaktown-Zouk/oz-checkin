@@ -31,9 +31,10 @@ export interface StudentStatus {
   tierName: string | null;
   classesAllowed: number;
   // "Remaining" for the viewed date. For live/today, read straight from Airtable's
-  // Remaining Today (Automation C already keeps it correct). For a backdated view,
-  // Airtable's live fields can't represent a past date, so the app computes it itself —
-  // see docs/airtable-schema.md, "Credits" (backdated gating).
+  // Remaining Today, a live rollup of today's check-in count against Classes Allowed
+  // — self-correcting on its own regardless of credit consumption. For a backdated
+  // view, Airtable's live fields can't represent a past date, so the app computes it
+  // itself — see docs/airtable-schema.md, "Credits" (backdated gating).
   remaining: number;
   // Always the current count, even for a backdated view — credits aren't
   // reconstructed for a past date the way `remaining` above is.

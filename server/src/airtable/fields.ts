@@ -47,7 +47,7 @@ export interface CheckinFields {
   "Needs Review"?: boolean;
   "Review Reason"?: string;
   "Undone At"?: string;
-  Credits?: string[]; // link -> Credits, set once Automation C/backdated-path consumes one
+  Credits?: string[]; // link -> Credits, set once gateCheckIns consumes one (services/checkins.ts)
   Method?: "Form" | "Staff" | "Kiosk";
 }
 
@@ -72,7 +72,6 @@ export interface CreditFields {
   Reason?: "New Member" | "Drop-in Purchase" | "Comp";
   "Source Transaction"?: string[];
   "Granted At"?: string;
-  "Consumed At"?: string;
   "Consumed By Check-in"?: string[];
   Available?: number;
 }
