@@ -78,6 +78,12 @@ describe("getPasswordAuthForIdentifier", () => {
     assert.equal(auth?.role, "Kiosk");
   });
 
+  it("returns the row's own canonical casing, not whatever was typed", async () => {
+    seedRoles();
+    const auth = await getPasswordAuthForIdentifier("FRONT-DESK-KIOSK");
+    assert.equal(auth?.email, "front-desk-kiosk");
+  });
+
   it("returns null for a User Roles row with no Password Hash set (an OAuth-only row)", async () => {
     seedRoles();
     assert.equal(await getPasswordAuthForIdentifier("kiosk@example.com"), null);

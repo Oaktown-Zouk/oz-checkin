@@ -53,18 +53,29 @@ export async function getAccessForEmail(email: string): Promise<UserAccess | nul
 }
 
 // Fetches "Password Hash" too — unlike getAccessForEmail, which never pulls that
-// field since every OAuth login goes through it and never needs it.
+// field since every OAuth login goes through it and never needs it. Also fetches and
+// returns the row's own canonical "Email" — the lookup above already matches
+// case-insensitively, but without this the caller would otherwise mint a session
+// carrying back whatever case the person typed at the login screen, which can vary
+// login to login on a shared device like a kiosk tablet even though it's the same
+// account every time (OAuth doesn't have this problem — Google's own email is always
+// consistently cased).
 export async function getPasswordAuthForIdentifier(
   identifier: string
-): Promise<(UserAccess & { passwordHash: string }) | null> {
-  const userRoleRecord = await findUserRoleRecord(identifier, ["Role", "Password Hash"]);
+): Promise<(UserAccess & { passwordHash: string; email: string }) | null> {
+  const userRoleRecord = await findUserRoleRecord(identifier, ["Role", "Password Hash", "Email"]);
   const passwordHash = userRoleRecord?.fields["Password Hash"];
   if (!userRoleRecord || !passwordHash) return null;
 
   const access = await resolveAccessForRoleRecordId(userRoleRecord.fields.Role?.[0]);
   if (!access) return null;
 
-  return { ...access, userRoleId: userRoleRecord.id, passwordHash };
+  return {
+    ...access,
+    userRoleId: userRoleRecord.id,
+    passwordHash,
+    email: userRoleRecord.fields.Email ?? identifier,
+  };
 }
 
 // Resolves a Google login to a *student's own* record, for the separate read-only
