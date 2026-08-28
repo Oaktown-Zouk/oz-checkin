@@ -91,6 +91,12 @@ plan amount at all. Two things handle this:
 - `Role` (single select: `Lead` / `Follow`) — one per row; a member checking into a
   program as both Lead and Follow needs two check-in rows (matches the check-in UX:
   one row per Program, one role choice per row).
+- `Method` (single select: `Form` / `Staff` / `Kiosk` / `Backfill`) — which UI created
+  the row. The app sets `Staff`/`Kiosk` on every check-in it creates
+  (`POST /api/checkins`'s `method` field, sent by each frontend — see
+  `services/checkins.ts`'s `createCheckIns`); `Form` and `Backfill` are never written
+  by this app (a Givebutter form submission and a manual historical import,
+  respectively).
 - `Undone At` (dateTime) — set by the app on undo instead of deleting the row,
   preserving history.
 - `Is Counted` (formula) — `1` if `Checked In At` is today (studio timezone) and

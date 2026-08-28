@@ -81,7 +81,7 @@ async function gateCheckIns(
 export async function createCheckIns(
   studentId: string,
   selections: CheckInSelection[],
-  opts: { effectiveAt?: Date } = {}
+  opts: { effectiveAt?: Date; method?: CheckinFields["Method"] } = {}
 ): Promise<StudentStatus> {
   if (selections.length === 0) {
     throw new ConflictError("At least one program/role selection is required.");
@@ -97,6 +97,7 @@ export async function createCheckIns(
       "Checked In At": checkedInAt.toISOString(),
       "Class Level": [s.programId],
       Role: s.role,
+      ...(opts.method ? { Method: opts.method } : {}),
     }))
   );
 

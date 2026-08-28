@@ -196,7 +196,7 @@ export function App() {
   async function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
     try {
       const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
-      await api.checkIn(studentId, selections, effectiveIso);
+      await api.checkIn(studentId, selections, effectiveIso, "Staff");
       await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);

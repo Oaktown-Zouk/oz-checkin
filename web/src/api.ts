@@ -98,10 +98,12 @@ export const api = {
   // Fetched once on load (see App.tsx), not per check-in dialog open — filtered by
   // date client-side, see programSchedule.ts.
   programs: () => request<ProgramSchedule[]>("/api/programs"),
-  checkIn: (studentId: string, selections: CheckInSelection[], effectiveAt?: string) =>
+  // `checkInMethod` records which UI created the check-in (Checkins.Method) — distinct
+  // from the fetch `method: "POST"` below, which is the HTTP verb.
+  checkIn: (studentId: string, selections: CheckInSelection[], effectiveAt?: string, checkInMethod?: "Staff" | "Kiosk") =>
     request<StudentStatus>("/api/checkins", {
       method: "POST",
-      body: JSON.stringify({ studentId, selections, effectiveAt }),
+      body: JSON.stringify({ studentId, selections, effectiveAt, method: checkInMethod }),
     }),
   undoCheckIn: (checkinId: string) =>
     request<StudentStatus>(`/api/checkins/${checkinId}`, { method: "DELETE" }),

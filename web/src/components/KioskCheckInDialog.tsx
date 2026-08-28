@@ -56,7 +56,7 @@ export function KioskCheckInDialog({
       // /api/kiosk/students/:id is eligibility-gated, and using up the student's last
       // credit/allowance (which this tap might just have done) is exactly what makes
       // them stop being kiosk-eligible, so that endpoint isn't safe to rely on here.
-      const updated = await api.checkIn(student.id, [{ programId, role }], effectiveDate?.toISOString());
+      const updated = await api.checkIn(student.id, [{ programId, role }], effectiveDate?.toISOString(), "Kiosk");
       setStudent(updated);
       setCheckedInAny(true);
 

@@ -1,7 +1,9 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { resetMockStore } from "../airtable/mockClient.js";
+import { listRecords } from "../airtable/client.js";
 import { TABLES } from "../airtable/tableIds.js";
+import type { CheckinFields } from "../airtable/fields.js";
 import { createCheckIns, undoCheckIn } from "./checkins.js";
 import { NotFoundError, ConflictError } from "../lib/errors.js";
 import { today } from "../lib/date.js";
@@ -51,6 +53,23 @@ describe("createCheckIns (live, no effectiveAt)", () => {
     const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
     assert.equal(status.checkinsToday[0].needsReview, true);
     assert.equal(status.checkinsToday[0].reviewReason, "Beyond tier allowance, no credit available");
+  });
+
+  it("sets Method to whatever the caller passed (Staff vs Kiosk)", async () => {
+    seedMember({ "Classes Allowed": 2 });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { method: "Kiosk" });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }], { method: "Staff" });
+    const checkins = await listRecords<CheckinFields>(TABLES.checkins, { fields: ["Method"] });
+    assert.deepEqual(
+      checkins.map((c) => c.fields.Method).sort(),
+      ["Kiosk", "Staff"]
+    );
+  });
+
+  it("leaves Method unset when the caller doesn't specify one", async () => {
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
+    const checkins = await listRecords<CheckinFields>(TABLES.checkins, { fields: ["Method"] });
+    assert.equal(checkins[0].fields.Method, undefined);
   });
 
   it("two selections in one call: only the one that crosses the allowance line consumes a credit", async () => {
