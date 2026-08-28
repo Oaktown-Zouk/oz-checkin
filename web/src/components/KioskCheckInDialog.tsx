@@ -111,7 +111,10 @@ export function KioskCheckInDialog({
             {visiblePrograms.map((p) => {
               // A student can't be in two classes at once — once one program in a
               // timeslot has a role picked (or already checked into today), the
-              // others in that same slot are disabled.
+              // others in that same slot are disabled. And within this same program,
+              // they can't be Lead and Follow at once either — once one role is
+              // checked in, the other role of this same class is disabled too.
+              const takenToday = isTakenAtAll(student, p.id);
               const conflict = hasConflictingSelection(visiblePrograms, p.id, (id) => !!roles[id] || isTakenAtAll(student, id));
               return (
                 <div className="kiosk-program-row" key={p.id}>
@@ -126,7 +129,7 @@ export function KioskCheckInDialog({
                           key={role}
                           type="button"
                           className={`kiosk-role-btn${done ? " kiosk-role-btn-done" : ""}${selected ? " kiosk-role-btn-selected" : ""}${recent ? " kiosk-role-btn-recent" : ""}`}
-                          disabled={done || conflict}
+                          disabled={done || takenToday || conflict}
                           onClick={() => toggle(p.id, role)}
                         >
                           {done ? `✓ ${role}` : role}

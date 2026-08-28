@@ -92,7 +92,10 @@ plan amount at all. Two things handle this:
   for.
 - `Role` (single select: `Lead` / `Follow`) — one per row; a member checking into a
   program as both Lead and Follow needs two check-in rows (matches the check-in UX:
-  one row per Program, one role choice per row).
+  one row per Program, one role choice per row). The app's own check-in dialogs won't
+  create a second row for the same Program on the same day, though — see SPEC.md's
+  "Check-in semantics" — so two rows for the same program/day only happen via
+  `Backfill` or a direct Airtable edit.
 - `Method` (single select: `Form` / `Staff` / `Kiosk` / `Backfill`) — which UI created
   the row. The app sets `Staff`/`Kiosk` on every check-in it creates
   (`POST /api/checkins`'s `method` field, sent by each frontend — see

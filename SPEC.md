@@ -182,16 +182,23 @@ someone else's write-up.
 
 - **Program + Role, not a single "Check In" button.** Front desk opens the check-in
   picker, sees that day's active `Programs` (today, or the backdated date if viewing
-  one), and for each program picks Lead or Follow (one or the other, not both —
-  checking in as both requires two separate rows/submissions). Selecting several
-  programs and submitting creates one `Check-ins` record per selection; each is
-  independently gated (checking into 2 classes when the tier only allows 1/day
-  correctly consumes/flags for the second one).
+  one), and for each program picks Lead or Follow — one or the other, not both; a
+  student can't dance a given class as both roles at once, so once either role for a
+  program is checked in for the day, the other role of that same program is disabled
+  too (see below). Selecting several *different* programs and submitting creates one
+  `Check-ins` record per selection; each is independently gated (checking into 2
+  classes when the tier only allows 1/day correctly consumes/flags for the second
+  one).
 - **Programs are listed by start time** (`Programs.Start Time`), grouped with a divider
   between timeslots — classes sharing a slot sort alphabetically within it. Since a
   student can't be in two classes at once, picking a role for one class in a timeslot
   grays out and disables the Lead/Follow buttons for every other class in that same
   slot, until it's deselected again.
+- **A class already checked into today shows checked off (✓) and disabled** — not a
+  clickable toggle — in both the front desk and kiosk dialogs. This disables the
+  *other* role of that same class too, not just the exact role already taken: a
+  student can't be Lead and Follow in the same class at the same time any more than
+  they can be in two different classes in the same timeslot at once.
 - **Preselected from the student's most recent visit** (`StudentStatus.
   lastCheckinSelections`, computed once per roster fetch, not per dialog-open) — the
   programs/roles they picked last time are checked by default, restricted to whichever

@@ -111,19 +111,23 @@ export function CheckInDialog({
               {activePrograms.map((p, i) => {
                 // A student can't be in two classes at once — once one program in a
                 // timeslot has a role picked (or already checked into today), the others
-                // in that same slot are disabled (not just visually; the toggle handlers
-                // below never fire for them).
+                // in that same slot are disabled. And within this same program, they
+                // can't be Lead and Follow at once either — once one role is checked in,
+                // the other role of this same class is disabled too, not just the exact
+                // role that was already taken.
+                const programTakenToday = isTakenTodayAtAll(student, p.id);
                 const conflictSelected = hasConflictingSelection(
                   activePrograms,
                   p.id,
                   (id) => !!roles[id] || isTakenTodayAtAll(student, id)
                 );
+                const rowDisabled = conflictSelected || programTakenToday;
                 const showDivider = i > 0 && p.startTime !== activePrograms[i - 1].startTime;
 
                 return (
                   <Fragment key={p.id}>
                     {showDivider && <hr className="program-picker-divider" />}
-                    <div className={`program-picker-row${conflictSelected ? " program-picker-row-disabled" : ""}`}>
+                    <div className={`program-picker-row${rowDisabled ? " program-picker-row-disabled" : ""}`}>
                       <span className="program-picker-name">{p.name}</span>
                       <div className="program-picker-roles">
                         {(["Lead", "Follow"] as const).map((role) => {
@@ -133,7 +137,7 @@ export function CheckInDialog({
                               key={role}
                               type="button"
                               className={`role-toggle${roles[p.id] === role ? " role-toggle-selected" : ""}${done ? " role-toggle-done" : ""}`}
-                              disabled={done || conflictSelected}
+                              disabled={done || programTakenToday || conflictSelected}
                               onClick={() => toggle(p.id, role)}
                             >
                               {done ? `✓ ${role}` : role}
