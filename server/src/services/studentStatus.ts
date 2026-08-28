@@ -51,7 +51,9 @@ export interface StudentStatus {
   // platform limit: rollups of dateTime values via MAX() always collapse to date-only
   // precision, and grouping by date-only risks a UTC-vs-studio-timezone mismatch this
   // app is otherwise careful about — see lib/date.ts. Doing it here reuses that already-
-  // correct timezone handling instead).
+  // correct timezone handling instead). Empty if that most recent visit was more than a
+  // week ago — see computeLastCheckinSelections — so the front desk dialog doesn't
+  // preselect a stale guess from a month-old visit as if it were relevant today.
   lastCheckinSelections: RecentCheckinSelection[];
 }
 
@@ -80,6 +82,11 @@ export function computeLastCheckinSelections(
     const d = dateStringFor(new Date(c.fields["Checked In At"]));
     if (!mostRecentDate || d > mostRecentDate) mostRecentDate = d;
   }
+  // A visit from a month ago isn't a useful guess at what a student wants checked in
+  // for today — worse, preselecting it in the front desk dialog reads as "this is
+  // still current" when it's stale. Only worth surfacing if it was within the last
+  // week (also what the kiosk dialog bolds — see KioskCheckInDialog.tsx).
+  if (!mostRecentDate || mostRecentDate < daysAgo(7)) return [];
   return checkinsForMember
     .filter((c) => c.fields["Checked In At"] && dateStringFor(new Date(c.fields["Checked In At"]!)) === mostRecentDate)
     .filter((c) => c.fields["Class Level"]?.[0] && c.fields.Role)

@@ -829,6 +829,12 @@ body {
   opacity: 0.5;
 }
 
+.role-toggle-done {
+  background: var(--green-bg);
+  border-color: var(--green);
+  color: var(--green);
+}
+
 .program-picker-row-disabled .program-picker-name {
   color: var(--gray);
 }

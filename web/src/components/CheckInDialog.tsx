@@ -5,6 +5,17 @@ import { MembershipBadge, Portal } from "shared";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
+// Mirrors KioskCheckInDialog's isDone/isTakenAtAll — "already checked in today" needs
+// the same checked-off + conflict-disabling treatment here, since the front desk can
+// check a student in twice for the same class just as easily as a kiosk tap can.
+function isDoneToday(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
+  return student.checkinsToday.some((c) => c.programId === programId && c.role === role);
+}
+
+function isTakenTodayAtAll(student: StudentStatus, programId: string) {
+  return student.checkinsToday.some((c) => c.programId === programId);
+}
+
 export function CheckInDialog({
   student,
   effectiveDate,
@@ -35,7 +46,10 @@ export function CheckInDialog({
     const activeIds = new Set(activePrograms.map((p) => p.id));
     const initial: RoleByProgram = {};
     for (const s of student.lastCheckinSelections) {
-      if (activeIds.has(s.programId)) initial[s.programId] = s.role;
+      // Skip a program+role the student is already checked into today (lastCheckinSelections
+      // can reflect today's own visit) — that's rendered as done/disabled below, not
+      // preselected as if still pending.
+      if (activeIds.has(s.programId) && !isDoneToday(student, s.programId, s.role)) initial[s.programId] = s.role;
     }
     return initial;
   });
@@ -92,9 +106,14 @@ export function CheckInDialog({
             <div className="program-picker">
               {activePrograms.map((p, i) => {
                 // A student can't be in two classes at once — once one program in a
-                // timeslot has a role picked, the others in that same slot are disabled
-                // (not just visually; the toggle handlers below never fire for them).
-                const conflictSelected = hasConflictingSelection(activePrograms, p.id, (id) => !!roles[id]);
+                // timeslot has a role picked (or already checked into today), the others
+                // in that same slot are disabled (not just visually; the toggle handlers
+                // below never fire for them).
+                const conflictSelected = hasConflictingSelection(
+                  activePrograms,
+                  p.id,
+                  (id) => !!roles[id] || isTakenTodayAtAll(student, id)
+                );
                 const showDivider = i > 0 && p.startTime !== activePrograms[i - 1].startTime;
 
                 return (
@@ -103,22 +122,20 @@ export function CheckInDialog({
                     <div className={`program-picker-row${conflictSelected ? " program-picker-row-disabled" : ""}`}>
                       <span className="program-picker-name">{p.name}</span>
                       <div className="program-picker-roles">
-                        <button
-                          type="button"
-                          className={`role-toggle${roles[p.id] === "Lead" ? " role-toggle-selected" : ""}`}
-                          disabled={conflictSelected}
-                          onClick={() => toggle(p.id, "Lead")}
-                        >
-                          Lead
-                        </button>
-                        <button
-                          type="button"
-                          className={`role-toggle${roles[p.id] === "Follow" ? " role-toggle-selected" : ""}`}
-                          disabled={conflictSelected}
-                          onClick={() => toggle(p.id, "Follow")}
-                        >
-                          Follow
-                        </button>
+                        {(["Lead", "Follow"] as const).map((role) => {
+                          const done = isDoneToday(student, p.id, role);
+                          return (
+                            <button
+                              key={role}
+                              type="button"
+                              className={`role-toggle${roles[p.id] === role ? " role-toggle-selected" : ""}${done ? " role-toggle-done" : ""}`}
+                              disabled={done || conflictSelected}
+                              onClick={() => toggle(p.id, role)}
+                            >
+                              {done ? `✓ ${role}` : role}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </Fragment>
