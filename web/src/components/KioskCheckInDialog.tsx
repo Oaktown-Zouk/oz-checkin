@@ -85,8 +85,7 @@ export function KioskCheckInDialog({
       <Portal>
         <div className="dialog-overlay">
           <div className="kiosk-welcome">
-            <div>Welcome {student.name}!</div>
-            <div>Have a great class!</div>
+            <div>Welcome to Oaktown Zouk, have a great class!</div>
           </div>
         </div>
       </Portal>
@@ -140,7 +139,11 @@ export function KioskCheckInDialog({
 
           {error && <p className="error">{error}</p>}
 
-          <button type="button" className="btn btn-secondary kiosk-close-btn" onClick={onClose}>
+          <button
+            type="button"
+            className="btn btn-secondary kiosk-close-btn"
+            onClick={checkedInAny ? closeWithWelcome : onClose}
+          >
             {checkedInAny ? "Done" : "Cancel"}
           </button>
         </div>

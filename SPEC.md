@@ -632,12 +632,11 @@ tablet, so a student can check themselves in with no front-desk involvement.
   from that response's own returned status directly — no separate "confirm" step, and
   no follow-up fetch (which would be eligibility-gated and could 404 right after the
   tap that used up the student's last credit/allowance). The header button reads
-  "Cancel" until the student's first successful check-in that visit, then "Done"; both
-  just close the dialog. If the student's allocation runs out (`remaining <= 0 &&
-  availableCredits <= 0`) or every visible class is already checked into, the dialog
-  instead shows "Welcome {name}! / Have a great class!" and auto-closes after
-  5 seconds — the explicit Cancel/Done tap has no such delay, since the student already
-  confirmed they're finished in that case.
+  "Cancel" until the student's first successful check-in that visit, then "Done".
+  Cancel closes immediately with no message. Done — and, identically, the allocation
+  running out (`remaining <= 0 && availableCredits <= 0`) or every visible class
+  already being checked into — instead shows "Welcome to Oaktown Zouk, have a great
+  class!" and auto-closes after 5 seconds.
 - **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
   screen as every other unauthenticated route, Google button and identifier/password
   form both included — see "Auth" below. A successful password login redirects to
