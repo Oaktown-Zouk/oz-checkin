@@ -4,7 +4,7 @@ test.beforeEach(async ({ request }) => {
   await request.post("/api/dev/reset-mock");
 });
 
-test("kiosk-role login redirects to /kiosk, and a self-check-in updates instantly", async ({ page }) => {
+test("kiosk-role login redirects to /kiosk, and a self-check-in submits on Done", async ({ page }) => {
   await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
   await expect(page).toHaveURL("/kiosk");
 
@@ -16,9 +16,16 @@ test("kiosk-role login redirects to /kiosk, and a self-check-in updates instantl
   await expect(page.getByText("Loading…")).toBeVisible({ timeout: 1000 }).catch(() => {});
 
   await expect(page.getByRole("heading", { name: "Active Amy" })).toBeVisible();
-  await page.locator(".kiosk-program-row", { hasText: "Zouk L1" }).getByRole("button", { name: "Lead" }).click();
+  const leadButton = page.locator(".kiosk-program-row", { hasText: "Zouk L1" }).getByRole("button", { name: "Lead" });
+  await leadButton.click();
 
-  // The dialog must reflect the fresh state after a tap, not go stale.
-  await expect(page.locator(".kiosk-program-row", { hasText: "Zouk L1" }).getByRole("button", { name: "✓ Lead" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Done" })).toBeVisible();
+  // Tapping only picks locally — no check-in exists yet, so the button reads
+  // "selected" rather than "✓ Lead", and the close button counts the pending pick.
+  await expect(leadButton).toHaveClass(/kiosk-role-btn-selected/);
+  const doneButton = page.getByRole("button", { name: "Done (1)" });
+  await expect(doneButton).toBeVisible();
+
+  // Only pressing Done actually submits the check-in and shows the welcome message.
+  await doneButton.click();
+  await expect(page.getByText("Welcome to Oaktown Zouk, have a great class!")).toBeVisible();
 });

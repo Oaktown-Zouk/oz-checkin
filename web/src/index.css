@@ -937,6 +937,12 @@ body {
   color: var(--green);
 }
 
+.kiosk-role-btn-selected {
+  background: #111827;
+  border-color: #111827;
+  color: white;
+}
+
 /* Nudges a student toward what they picked last week — bold text only, so it doesn't
    compete visually with the done/conflict states above. */
 .kiosk-role-btn-recent {

@@ -627,16 +627,16 @@ tablet, so a student can check themselves in with no front-desk involvement.
   shows a generic "please see the front desk" instead. Every decline auto-closes after
   5 seconds with no user action required.
 - **Check-in dialog** (`KioskCheckInDialog`): large, touch-friendly buttons, one per
-  {class, role} still available today. Tapping a button immediately creates that one
-  check-in (`POST /api/checkins`, the same endpoint the front desk uses) and updates
-  from that response's own returned status directly — no separate "confirm" step, and
-  no follow-up fetch (which would be eligibility-gated and could 404 right after the
-  tap that used up the student's last credit/allowance). The header button reads
-  "Cancel" until the student's first successful check-in that visit, then "Done".
-  Cancel closes immediately with no message. Done — and, identically, the allocation
-  running out (`remaining <= 0 && availableCredits <= 0`) or every visible class
-  already being checked into — instead shows "Welcome to Oaktown Zouk, have a great
-  class!" and auto-closes after 5 seconds.
+  {class, role} still available today — same pick-then-submit shape as the front
+  desk's `CheckInDialog`, not an immediate per-tap check-in. Tapping a button only
+  toggles a local selection; the header button reads "Cancel" while nothing is
+  selected and "Done (N)" once at least one is, and only pressing it actually submits
+  every selection in one request (`POST /api/checkins`, the same endpoint the front
+  desk uses) and updates from that response's own returned status directly — no
+  follow-up fetch (which would be eligibility-gated and could 404 right after
+  submitting used up the student's last credit/allowance). Cancel closes immediately
+  with no message and no submission. Done shows "Welcome to Oaktown Zouk, have a
+  great class!" and auto-closes after 5 seconds.
 - **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
   screen as every other unauthenticated route, Google button and identifier/password
   form both included — see "Auth" below. A successful password login redirects to
