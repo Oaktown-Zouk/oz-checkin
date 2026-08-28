@@ -541,6 +541,13 @@ permissions don't include the one that route needs). See "Permissions" above.
 - "Check In" opens the Program + Role picker (see "Check-in semantics"); once checked
   in, the button becomes "Check in to another class" and the row shows each check-in's
   time, class, and role, with an Undo link and a `Needs review` flag when applicable.
+  Submitting doesn't block on the server: the dialog closes and the row updates
+  immediately with the picked classes (an optimistic guess — see `shared`'s
+  `applyOptimisticCheckin`), while the actual write and a follow-up roster read happen
+  in the background and reconcile the row with the real numbers once they land. If the
+  write fails, a dismissible banner at the top of the page shows the error and stays
+  until closed — the row itself has already moved on by then, so there's nothing left
+  to show it inline.
 - Checked-in-today rows sink to the bottom, grayed out. Above that, students whose
   `Members."Recently Active"` (Airtable formula, 30-day window) is false sort below
   recently-active ones — see `docs/airtable-schema.md`.
@@ -630,13 +637,15 @@ tablet, so a student can check themselves in with no front-desk involvement.
   {class, role} still available today — same pick-then-submit shape as the front
   desk's `CheckInDialog`, not an immediate per-tap check-in. Tapping a button only
   toggles a local selection; the header button reads "Cancel" while nothing is
-  selected and "Done (N)" once at least one is, and only pressing it actually submits
-  every selection in one request (`POST /api/checkins`, the same endpoint the front
-  desk uses) and updates from that response's own returned status directly — no
-  follow-up fetch (which would be eligibility-gated and could 404 right after
-  submitting used up the student's last credit/allowance). Cancel closes immediately
-  with no message and no submission. Done shows "Welcome to Oaktown Zouk, have a
-  great class!" and auto-closes after 5 seconds.
+  selected and "Done (N)" once at least one is. Cancel closes immediately with no
+  message and no submission. Pressing Done doesn't block on the server: it shows
+  "Welcome to Oaktown Zouk, have a great class!" and auto-closes after 5 seconds right
+  away, while the actual write (`POST /api/checkins`, the same endpoint the front desk
+  uses) and a follow-up roster refresh (so search/eligibility reflect it next time)
+  happen in the background, not blocking the tablet for the next student. If the write
+  fails, a dismissible banner shows the error and stays until closed; by then the
+  student has likely already walked away, so the banner is there for staff to notice
+  and follow up on, not the student.
 - **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
   screen as every other unauthenticated route, Google button and identifier/password
   form both included — see "Auth" below. A successful password login redirects to

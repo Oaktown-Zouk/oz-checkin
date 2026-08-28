@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import banner from "../../assets/banner.png";
-import { api, UnauthorizedError, ForbiddenError, type KioskRosterEntry, type ProgramSchedule, type StudentStatus } from "../api.js";
+import {
+  api,
+  UnauthorizedError,
+  ForbiddenError,
+  type CheckInSelection,
+  type KioskRosterEntry,
+  type ProgramSchedule,
+  type StudentStatus,
+} from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { useQrScanner } from "../useQrScanner.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
-import { Portal } from "shared";
+import { ErrorBanner, Portal } from "shared";
 
 const ERROR_DISPLAY_MS = 5000;
 const MAX_SEARCH_RESULTS = 8;
@@ -74,6 +82,11 @@ export function KioskPage({
   const [roster, setRoster] = useState<KioskRosterEntry[]>([]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [query, setQuery] = useState("");
+  // Surfaces a failed check-in write after the fact — by the time a background write
+  // could fail, the dialog that started it has already shown the welcome message and
+  // closed (see KioskCheckInDialog's onSubmit), so this is the only place left to show
+  // it. Stays up until dismissed, not auto-hidden.
+  const [checkinError, setCheckinError] = useState<string | null>(null);
 
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -144,8 +157,29 @@ export function KioskPage({
     refreshRoster();
   }
 
+  // Fire-and-forget, called from KioskCheckInDialog's Done button — the dialog has
+  // already shown the welcome message and started closing by the time this runs, so
+  // there's nothing to update optimistically here (unlike the front desk's roster
+  // grid, nothing about this student stays visible on screen). Just starts the write,
+  // then queues the roster refresh (the "read") once it settles, and surfaces a
+  // failure via the banner since the dialog itself is gone by then.
+  function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
+    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    api
+      .checkIn(studentId, selections, effectiveIso, "Kiosk")
+      .catch((err) => {
+        if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
+          onUnauthorized();
+          return;
+        }
+        setCheckinError(err instanceof Error ? err.message : "Check-in failed");
+      })
+      .then(() => refreshRoster());
+  }
+
   return (
     <div className="kiosk-page">
+      {checkinError && <ErrorBanner message={checkinError} onDismiss={() => setCheckinError(null)} />}
       <div className="kiosk-header-controls">
         {canBackdate && (
           <div className="kiosk-backdate-control">
@@ -212,7 +246,13 @@ export function KioskPage({
       )}
 
       {dialog?.kind === "student" && (
-        <KioskCheckInDialog student={dialog.status} programs={programs} effectiveAt={effectiveAt} onClose={closeDialog} />
+        <KioskCheckInDialog
+          student={dialog.status}
+          programs={programs}
+          effectiveAt={effectiveAt}
+          onSubmit={(selections) => handleCheckIn(dialog.status.id, selections)}
+          onClose={closeDialog}
+        />
       )}
     </div>
   );

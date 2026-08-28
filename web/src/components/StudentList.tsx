@@ -17,7 +17,7 @@ export function StudentList({
   loading: boolean;
   effectiveDate?: string;
   programs: ProgramSchedule[];
-  onCheckIn: (studentId: string, selections: CheckInSelection[]) => Promise<void>;
+  onCheckIn: (studentId: string, selections: CheckInSelection[]) => void;
   onUndo: (checkinId: string) => Promise<void>;
   onOpenStudent: (studentId: string) => void;
   onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;

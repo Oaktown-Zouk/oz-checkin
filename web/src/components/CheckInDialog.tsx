@@ -30,7 +30,10 @@ export function CheckInDialog({
   // Fetched once on load (see App.tsx), not re-fetched here — filtered against the
   // relevant date below instead of asking the server every time the dialog opens.
   programs: ProgramSchedule[];
-  onSubmit: (selections: CheckInSelection[]) => Promise<void>;
+  // Fire-and-forget — the caller starts the write in the background and reconciles
+  // the roster once it (and the read that follows it) settle; see App.tsx's
+  // handleCheckIn. This dialog never waits on it, so it can close immediately.
+  onSubmit: (selections: CheckInSelection[]) => void;
   onClose: () => void;
 }) {
   const viewedDate = effectiveDate ?? todayInStudioTz();
@@ -53,9 +56,6 @@ export function CheckInDialog({
     }
     return initial;
   });
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
   function toggle(programId: string, role: "Lead" | "Follow") {
     setRoles((prev) => ({ ...prev, [programId]: prev[programId] === role ? undefined : role }));
   }
@@ -69,7 +69,7 @@ export function CheckInDialog({
   // piece of state, so it can never drift from the selections that produce it.
   const localRemaining = student.remaining - selections.length;
 
-  async function handleSubmit() {
+  function handleSubmit() {
     if (selections.length === 0) return;
 
     // A heads-up before submitting, not a hard block — the server allows the check-in
@@ -81,16 +81,10 @@ export function CheckInDialog({
       if (!ok) return;
     }
 
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      await onSubmit(selections);
-      onClose();
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Check-in failed");
-    } finally {
-      setSubmitting(false);
-    }
+    // Doesn't wait for the write — the dialog closes immediately, and any failure
+    // surfaces later via the page-level error banner (see App.tsx), not here.
+    onSubmit(selections);
+    onClose();
   }
 
   return (
@@ -154,20 +148,13 @@ export function CheckInDialog({
             </div>
           )}
 
-          {submitError && <p className="error">{submitError}</p>}
-
           <div className="dialog-actions">
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
             {activePrograms.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleSubmit}
-                disabled={submitting || selections.length === 0}
-              >
-                {submitting ? "Checking in…" : `Check in (${selections.length})`}
+              <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={selections.length === 0}>
+                {`Check in (${selections.length})`}
               </button>
             )}
           </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, ApiError, type CheckInSelection, type ProgramSchedule, type StudentStatus } from "../api.js";
+import { type CheckInSelection, type ProgramSchedule, type StudentStatus } from "../api.js";
 import { activeProgramsForDate, hasConflictingSelection, todayInStudioTz, withinVisibleWindow } from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
 
@@ -28,13 +28,16 @@ function isFromLastWeek(student: StudentStatus, programId: string, role: "Lead" 
 // different enough from CheckInDialog (no email/undo/transfer affordances, no
 // backdating-eligibility confirm prompt) to warrant its own component rather than a
 // shared one with a "kiosk mode" prop. Otherwise the same pick-then-submit shape as
-// the front desk: picks are purely local until Done is pressed, which submits every
-// selection in one request. Shares the same conflict-disabling and visible-window
-// logic via programSchedule.ts.
+// the front desk: picks are purely local until Done is pressed, and submission itself
+// is fire-and-forget — see onSubmit below and KioskPage.tsx's handleCheckIn — so
+// pressing Done shows the welcome message right away rather than waiting on the
+// network. Shares the same conflict-disabling and visible-window logic via
+// programSchedule.ts.
 export function KioskCheckInDialog({
-  student: initialStudent,
+  student,
   programs,
   effectiveAt,
+  onSubmit,
   onClose,
 }: {
   student: StudentStatus;
@@ -43,12 +46,13 @@ export function KioskCheckInDialog({
   // KioskPage.tsx. "" or undefined means live, same convention as the front desk's
   // effectiveAt.
   effectiveAt?: string;
+  // Fire-and-forget — the caller starts the write in the background and reconciles
+  // its own roster cache once it (and the read that follows it) settle; any failure
+  // surfaces later via KioskPage's error banner, not here.
+  onSubmit: (selections: CheckInSelection[]) => void;
   onClose: () => void;
 }) {
-  const [student, setStudent] = useState(initialStudent);
   const [roles, setRoles] = useState<RoleByProgram>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
 
   const effectiveDate = effectiveAt ? new Date(effectiveAt) : undefined;
@@ -64,28 +68,15 @@ export function KioskCheckInDialog({
     setRoles((prev) => ({ ...prev, [programId]: prev[programId] === role ? undefined : role }));
   }
 
-  function closeWithWelcome() {
-    setShowWelcome(true);
-    setTimeout(onClose, WELCOME_MS);
-  }
-
-  async function handleDone() {
+  function handleDone() {
     if (selections.length === 0) {
       onClose();
       return;
     }
 
-    setSubmitting(true);
-    setError(null);
-    try {
-      const updated = await api.checkIn(student.id, selections, effectiveDate?.toISOString(), "Kiosk");
-      setStudent(updated);
-      closeWithWelcome();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Check-in failed — please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+    onSubmit(selections);
+    setShowWelcome(true);
+    setTimeout(onClose, WELCOME_MS);
   }
 
   if (showWelcome) {
@@ -135,7 +126,7 @@ export function KioskCheckInDialog({
                           key={role}
                           type="button"
                           className={`kiosk-role-btn${done ? " kiosk-role-btn-done" : ""}${selected ? " kiosk-role-btn-selected" : ""}${recent ? " kiosk-role-btn-recent" : ""}`}
-                          disabled={done || conflict || submitting}
+                          disabled={done || conflict}
                           onClick={() => toggle(p.id, role)}
                         >
                           {done ? `✓ ${role}` : role}
@@ -148,10 +139,8 @@ export function KioskCheckInDialog({
             })}
           </div>
 
-          {error && <p className="error">{error}</p>}
-
-          <button type="button" className="btn btn-secondary kiosk-close-btn" onClick={handleDone} disabled={submitting}>
-            {submitting ? "Checking in…" : selections.length === 0 ? "Cancel" : `Done (${selections.length})`}
+          <button type="button" className="btn btn-secondary kiosk-close-btn" onClick={handleDone}>
+            {selections.length === 0 ? "Cancel" : `Done (${selections.length})`}
           </button>
         </div>
       </div>

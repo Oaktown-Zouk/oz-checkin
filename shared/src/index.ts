@@ -5,3 +5,5 @@ export { LevelBadge } from "./components/LevelBadge.js";
 export { MembershipBadge } from "./components/MembershipBadge.js";
 export { Timeline } from "./components/Timeline.js";
 export { NoteDetailModal } from "./components/NoteDetailModal.js";
+export { ErrorBanner } from "./components/ErrorBanner.js";
+export { applyOptimisticCheckin } from "./optimisticCheckin.js";
