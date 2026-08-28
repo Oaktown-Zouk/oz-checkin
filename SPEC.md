@@ -92,7 +92,8 @@ architecture-level, that one is the technical schema reference.
 ## Credits system
 
 The old app's "buy a pass, redeem it at check-in" model is now a first-class `Credits`
-table, populated and consumed entirely by Airtable automations (not application code):
+table. Granting is still entirely Airtable automations; **consumption is now
+application code**, not an automation:
 
 - **`Credits`** — `Member` (holder), `Purchased By` (payer, for a future transfer
   feature), `Reason` (`New Member` / `Drop-in Purchase` / `Comp`), `Source Transaction`,
@@ -103,21 +104,29 @@ table, populated and consumed entirely by Airtable automations (not application 
 - **Automation A** grants a credit when a new `Members` record is created.
 - **Automation B** grants a credit when a `Transactions` record qualifies as a
   drop-in purchase (succeeded, one-time, no plan).
-- **Automation C** runs on every new `Check-ins` record whose `Checked In At` is
-  literally today: if the member's `Remaining Today` (post-check-in) is negative, it
-  consumes their oldest `Available` credit, or sets `Needs Review`/`Review Reason` on
-  the check-in if none exists.
+- ~~**Automation C**~~ — retired. It used to run on every new `Check-ins` record whose
+  `Checked In At` was literally today, consuming the member's oldest `Available` credit
+  (or flagging `Needs Review`) whenever `Remaining Today` went negative. In practice it
+  was slow and occasionally unreliable, and — since this app's own backdated-check-in
+  code path already had to reimplement the identical logic (see below) and manual/QA
+  testing leans on that path — the live path's reliance on the real automation wasn't
+  getting regularly exercised either, letting failures go unnoticed. `createCheckIns`
+  (`services/checkins.ts`) now calls that same logic itself, synchronously, for every
+  check-in it creates — live or backdated — instead of leaning on Automation C for the
+  live case. **Automation C must be disabled in Airtable**, or a live over-allowance
+  check-in will be double-gated: the app consumes a credit, and the still-active
+  automation, independently seeing a negative `Remaining Today`, consumes a second one
+  for the same check-in.
 - **Automation D** runs whenever a `Check-ins` record's `Undone At` gets set: it frees
-  any credit that check-in had consumed.
+  any credit that check-in had consumed. Unchanged — undo doesn't need the same
+  same-day restriction Automation C had, so there was never a reason to bring this one
+  in-app too.
 
-**Backdated check-in creation is the one place this app computes gating itself** —
-Automation C only fires for same-day check-ins, since Airtable's live fields
-(`Remaining Today`, the `Checked In Today (Live)` rollup) are hardcoded to literal
-"today" and can't evaluate allowance for a past date. For a backdated check-in the
-server counts that student's existing non-undone check-ins on the target date, compares
-against their current `Classes Allowed`, and — mirroring Automation C exactly — either
-does nothing, consumes the oldest available credit, or flags the check-in for review.
-Undo needs no such split: Automation D already works for any date.
+The app's own gating logic (`gateCheckIns`, `services/checkins.ts`) counts that
+student's existing non-undone check-ins on the target date (live or backdated),
+compares against their current `Classes Allowed`, and either does nothing, consumes
+the oldest available credit, or flags the check-in for review — one implementation
+for both cases now, where previously only the backdated path used it.
 
 ## Dance levels
 

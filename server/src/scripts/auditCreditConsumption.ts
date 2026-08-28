@@ -6,6 +6,13 @@
 // hit a rollup-timing race. The user suspects this may recur, hence a real script
 // instead of a one-off.
 //
+// services/checkins.ts now consumes/flags credits itself synchronously for every
+// check-in it creates (see gateCheckIns), rather than relying on Automation C at all —
+// this specific failure mode shouldn't recur for check-ins created going forward. This
+// script stays useful regardless: for auditing check-ins that predate that change, and
+// as a general sanity check against drift from causes other than a flaky automation
+// (e.g. a check-in created directly in Airtable, bypassing the app entirely).
+//
 // A gap is only auto-fixed if the member already has an unclaimed Available credit —
 // this script never creates new credits (that's a judgment call, see the Dvij Patel
 // case in docs/airtable-schema.md, which needed a specific transaction/backstory this
@@ -42,7 +49,7 @@ async function main() {
   for (const c of credits) for (const id of c.fields["Consumed By Check-in"] ?? []) checkinsWithCredit.add(id);
 
   // Oldest-first per member, matching the "consume oldest available credit" convention
-  // used everywhere else in this app (Automation C, gateBackdatedCheckIns).
+  // used everywhere else in this app (services/checkins.ts's gateCheckIns).
   const availableCreditsByMember = new Map<string, { id: string; grantedAt: string }[]>();
   for (const c of credits) {
     if (!c.fields.Available) continue;

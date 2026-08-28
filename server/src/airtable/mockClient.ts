@@ -8,7 +8,6 @@ import { evaluateFormula } from "./mockFormula.js";
 import {
   computeMemberFields,
   computeCreditFields,
-  applyLiveCheckinAutomation,
   applyUndoAutomation,
   type RawRecord,
   type SeedData,
@@ -127,10 +126,10 @@ export async function createRecords<F = Record<string, unknown>>(
     return record;
   });
 
-  // Automation C only ever triggers off new Check-ins rows — see mockCompute.ts.
-  if (table === TABLES.checkins) {
-    applyLiveCheckinAutomation(store, created.map((r) => r.id));
-  }
+  // No Automation-C simulation here — services/checkins.ts now gates and
+  // consumes/flags credits itself for every check-in (live or backdated), via plain
+  // listRecords/updateRecord calls this mock already serves. See mockCompute.ts's
+  // applyUndoAutomation comment for why Automation D is still simulated.
 
   return created.map((r) => toAirtableRecord<F>(table, r));
 }

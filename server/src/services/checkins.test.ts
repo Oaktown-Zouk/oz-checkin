@@ -31,7 +31,7 @@ describe("createCheckIns (live, no effectiveAt)", () => {
     assert.equal(status.checkinsToday[0].needsReview, false);
   });
 
-  it("over allowance with an available credit: consumes the oldest one (Automation C)", async () => {
+  it("over allowance with an available credit: consumes the oldest one", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
       [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
@@ -87,7 +87,7 @@ describe("createCheckIns (backdated)", () => {
     assert.equal(status.availableCredits, 0);
   });
 
-  it("over allowance for the target date with a credit available: consumes it (mirrors Automation C)", async () => {
+  it("over allowance for the target date with a credit available: consumes it", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
       [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],

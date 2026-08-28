@@ -44,10 +44,16 @@ async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): 
   }
 }
 
-// Backdated path only — Automation C's same-day guard means it no-ops for these, so
-// the app mirrors its gating logic itself, parameterized by the backdated date instead
-// of literal "today." See docs/airtable-schema.md, "Credits" (backdated gating).
-async function gateBackdatedCheckIns(
+// Runs for every check-in creation, live or backdated — the app computes gating and
+// consumes/flags credits itself rather than relying on Airtable's Automation C. That
+// automation proved unreliable and slow in practice, and since this app's own testing
+// and manual QA lean heavily on the backdated path (Automation C never fires for a
+// non-today date — see docs/airtable-schema.md), the live path's reliance on it wasn't
+// getting regularly exercised either. Automation C should be disabled in Airtable once
+// this ships, or a live over-allowance check-in will get double-gated: this function
+// consumes a credit, and then Automation C — still seeing a negative Remaining Today —
+// independently consumes a *second* one for the same check-in.
+async function gateCheckIns(
   studentId: string,
   effectiveAt: Date,
   createdCheckins: AirtableRecord<CheckinFields>[]
@@ -64,8 +70,7 @@ async function gateBackdatedCheckIns(
   const classesAllowed = member?.fields["Classes Allowed"] ?? 0;
 
   // createRecords (batch create) preserves request order, so index+1 is this row's
-  // position among today's check-ins for this student — same semantics as Automation
-  // C's nthToday.
+  // position among this date's check-ins for this student.
   for (let i = 0; i < createdCheckins.length; i++) {
     const nth = priorCount + i + 1;
     if (nth > classesAllowed) {
@@ -96,11 +101,7 @@ export async function createCheckIns(
     }))
   );
 
-  if (!isLive) {
-    await gateBackdatedCheckIns(studentId, checkedInAt, created);
-  }
-  // Live path: Automation C (same-day guarded) handles gating/credit-consumption on
-  // its own once these records land — nothing more to do here.
+  await gateCheckIns(studentId, checkedInAt, created);
 
   const updated = await getStudentStatusById(studentId, isLive ? undefined : dateStringFor(checkedInAt));
   if (!updated) throw new NotFoundError("Student not found");

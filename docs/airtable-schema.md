@@ -97,8 +97,9 @@ plan amount at all. Two things handle this:
   `Undone At` is blank, else `0`.
 - `Checked In At (Valid)` (formula) — `Checked In At` unless undone, else blank; feeds
   `Members.Last Check-in At`.
-- `Needs Review` / `Review Reason` — set by Automation C when a check-in exceeds the
-  member's tier allowance and no credit is available to cover it.
+- `Needs Review` / `Review Reason` — set by the app (`services/checkins.ts`'s
+  `gateCheckIns`, formerly Automation C — see "Credits" below) when a check-in exceeds
+  the member's tier allowance and no credit is available to cover it.
 - `Credits` — reverse link, populated once a `Credits` record consumes this check-in.
 
 The check-in dialog preselects a student's most recent visit's programs/roles by
@@ -120,20 +121,19 @@ directly in Airtable rather than undone through the app).
 The app never reimplements "is this credit valid" — it filters `Credits` by `Member` +
 `Available = 1`.
 
-Four Airtable automations maintain this table:
+Granting is still Airtable automations; consumption is application code (see
+SPEC.md's "Credits system" for why):
 - **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
 - **B** — a `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
   not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
-- **C** — a new `Check-ins` record → reads `Member.Remaining Today` post-creation; if
-  negative, consumes the member's oldest `Available` credit, or sets `Needs Review`/
-  `Review Reason` if none exists. Doesn't write to `Members` at all.
+- ~~**C**~~ — retired; disable this in Airtable. It used to read `Member.Remaining
+  Today` post-creation on every new `Check-ins` record and consume/flag accordingly,
+  same-day only. `services/checkins.ts`'s `gateCheckIns` now does this for every
+  check-in it creates, live or backdated, and leaving the real automation active
+  alongside it double-consumes a credit for the same over-allowance check-in.
 - **D** — `Check-ins.Undone At` becomes non-blank → finds the `Credits` record
   consumed by that check-in and clears `Consumed At`/`Consumed By Check-in`.
-
-Automation C only fires for same-day check-ins (Airtable's live fields are hardcoded
-to literal "today"), so **backdated check-in creation is the one place this app
-computes gating itself** — mirroring Automation C's logic, parameterized by the target
-date. Undo needs no such split; Automation D works for any date.
+  Unchanged, still an Airtable automation.
 
 ## Programs (`tblB90zwd3OjKxxDs`)
 
