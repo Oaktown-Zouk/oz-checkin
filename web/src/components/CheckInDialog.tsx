@@ -1,20 +1,9 @@
 import { Fragment, useMemo, useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
-import { activeProgramsForDate, hasConflictingSelection, todayInStudioTz } from "../programSchedule.js";
+import { activeProgramsForDate, isCheckedInToday, isProgramCheckedInToday, timeslotGroup, todayInStudioTz } from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
-
-// Mirrors KioskCheckInDialog's isDone/isTakenAtAll — "already checked in today" needs
-// the same checked-off + conflict-disabling treatment here, since the front desk can
-// check a student in twice for the same class just as easily as a kiosk tap can.
-function isDoneToday(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
-  return student.checkinsToday.some((c) => c.programId === programId && c.role === role);
-}
-
-function isTakenTodayAtAll(student: StudentStatus, programId: string) {
-  return student.checkinsToday.some((c) => c.programId === programId);
-}
 
 export function CheckInDialog({
   student,
@@ -49,15 +38,36 @@ export function CheckInDialog({
     const activeIds = new Set(activePrograms.map((p) => p.id));
     const initial: RoleByProgram = {};
     for (const s of student.lastCheckinSelections) {
-      // Skip a program+role the student is already checked into today (lastCheckinSelections
-      // can reflect today's own visit) — that's rendered as done/disabled below, not
-      // preselected as if still pending.
-      if (activeIds.has(s.programId) && !isDoneToday(student, s.programId, s.role)) initial[s.programId] = s.role;
+      if (!activeIds.has(s.programId) || isCheckedInToday(student, s.programId, s.role)) continue;
+      // Guard against historical data (e.g. a Backfill import) predating this
+      // one-pick-per-timeslot rule — never seed two picks in the same group even if
+      // a past visit's own records somehow have them.
+      const group = timeslotGroup(activePrograms, s.programId);
+      if (group.some((g) => g.id in initial)) continue;
+      initial[s.programId] = s.role;
     }
     return initial;
   });
+
+  // Only one {class, role} pick allowed per timeslot — a student can't be in two
+  // classes at once, or dance one class as both Lead and Follow at once. Picking a
+  // new one in a slot replaces whatever was picked elsewhere in that same slot
+  // (including a different role for the same class) rather than adding to it.
   function toggle(programId: string, role: "Lead" | "Follow") {
-    setRoles((prev) => ({ ...prev, [programId]: prev[programId] === role ? undefined : role }));
+    setRoles((prev) => {
+      if (prev[programId] === role) {
+        const next = { ...prev };
+        delete next[programId];
+        return next;
+      }
+      const group = timeslotGroup(activePrograms, programId);
+      const next: RoleByProgram = {};
+      for (const [pid, r] of Object.entries(prev)) {
+        if (!group.some((g) => g.id === pid)) next[pid] = r;
+      }
+      next[programId] = role;
+      return next;
+    });
   }
 
   const selections: CheckInSelection[] = Object.entries(roles)
@@ -109,35 +119,32 @@ export function CheckInDialog({
           {activePrograms.length > 0 && (
             <div className="program-picker">
               {activePrograms.map((p, i) => {
-                // A student can't be in two classes at once — once one program in a
-                // timeslot has a role picked (or already checked into today), the others
-                // in that same slot are disabled. And within this same program, they
-                // can't be Lead and Follow at once either — once one role is checked in,
-                // the other role of this same class is disabled too, not just the exact
-                // role that was already taken.
-                const programTakenToday = isTakenTodayAtAll(student, p.id);
-                const conflictSelected = hasConflictingSelection(
-                  activePrograms,
-                  p.id,
-                  (id) => !!roles[id] || isTakenTodayAtAll(student, id)
-                );
-                const rowDisabled = conflictSelected || programTakenToday;
+                const group = timeslotGroup(activePrograms, p.id);
+                // If any class in this timeslot already has a real check-in today, the
+                // whole group is locked — that choice was already made and can't be
+                // changed here (Undo is the only way back). Otherwise, a pending local
+                // pick anywhere in the group just grays out the rest of the group
+                // rather than disabling it — clicking one of them switches the pick.
+                const groupCommitted = group.some((g) => isProgramCheckedInToday(student, g.id));
+                const pickedProgramId = group.find((g) => roles[g.id])?.id;
                 const showDivider = i > 0 && p.startTime !== activePrograms[i - 1].startTime;
 
                 return (
                   <Fragment key={p.id}>
                     {showDivider && <hr className="program-picker-divider" />}
-                    <div className={`program-picker-row${rowDisabled ? " program-picker-row-disabled" : ""}`}>
+                    <div className={`program-picker-row${groupCommitted ? " program-picker-row-disabled" : ""}`}>
                       <span className="program-picker-name">{p.name}</span>
                       <div className="program-picker-roles">
                         {(["Lead", "Follow"] as const).map((role) => {
-                          const done = isDoneToday(student, p.id, role);
+                          const done = isCheckedInToday(student, p.id, role);
+                          const isSelected = roles[p.id] === role;
+                          const grayed = !groupCommitted && pickedProgramId !== undefined && !isSelected;
                           return (
                             <button
                               key={role}
                               type="button"
-                              className={`role-toggle${roles[p.id] === role ? " role-toggle-selected" : ""}${done ? " role-toggle-done" : ""}`}
-                              disabled={done || programTakenToday || conflictSelected}
+                              className={`role-toggle${isSelected ? " role-toggle-selected" : ""}${done ? " role-toggle-done" : ""}${grayed ? " role-toggle-grayed" : ""}`}
+                              disabled={groupCommitted}
                               onClick={() => toggle(p.id, role)}
                             >
                               {done ? `✓ ${role}` : role}

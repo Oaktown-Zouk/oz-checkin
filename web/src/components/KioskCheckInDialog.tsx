@@ -1,20 +1,19 @@
 import { useState } from "react";
 import { type CheckInSelection, type ProgramSchedule, type StudentStatus } from "../api.js";
-import { activeProgramsForDate, hasConflictingSelection, todayInStudioTz, withinVisibleWindow } from "../programSchedule.js";
+import {
+  activeProgramsForDate,
+  isCheckedInToday,
+  isProgramCheckedInToday,
+  timeslotGroup,
+  todayInStudioTz,
+  withinVisibleWindow,
+} from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
 
 const ROLES = ["Lead", "Follow"] as const;
 const WELCOME_MS = 5000;
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
-
-function isDone(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
-  return student.checkinsToday.some((c) => c.programId === programId && c.role === role);
-}
-
-function isTakenAtAll(student: StudentStatus, programId: string) {
-  return student.checkinsToday.some((c) => c.programId === programId);
-}
 
 // lastCheckinSelections is already bounded to the student's last 7 days (see
 // computeLastCheckinSelections) — used here purely as a visual nudge ("you did this
@@ -31,7 +30,7 @@ function isFromLastWeek(student: StudentStatus, programId: string, role: "Lead" 
 // the front desk: picks are purely local until Done is pressed, and submission itself
 // is fire-and-forget — see onSubmit below and KioskPage.tsx's handleCheckIn — so
 // pressing Done shows the welcome message right away rather than waiting on the
-// network. Shares the same conflict-disabling and visible-window logic via
+// network. Shares the same conflict-graying and visible-window logic via
 // programSchedule.ts.
 export function KioskCheckInDialog({
   student,
@@ -64,8 +63,25 @@ export function KioskCheckInDialog({
     .map(([programId, role]) => ({ programId, role }));
   const localRemaining = student.remaining - selections.length;
 
+  // Only one {class, role} pick allowed per timeslot — a student can't be in two
+  // classes at once, or dance one class as both Lead and Follow at once. Picking a
+  // new one in a slot replaces whatever was picked elsewhere in that same slot
+  // (including a different role for the same class) rather than adding to it.
   function toggle(programId: string, role: "Lead" | "Follow") {
-    setRoles((prev) => ({ ...prev, [programId]: prev[programId] === role ? undefined : role }));
+    setRoles((prev) => {
+      if (prev[programId] === role) {
+        const next = { ...prev };
+        delete next[programId];
+        return next;
+      }
+      const group = timeslotGroup(visiblePrograms, programId);
+      const next: RoleByProgram = {};
+      for (const [pid, r] of Object.entries(prev)) {
+        if (!group.some((g) => g.id === pid)) next[pid] = r;
+      }
+      next[programId] = role;
+      return next;
+    });
   }
 
   function handleDone() {
@@ -109,27 +125,29 @@ export function KioskCheckInDialog({
 
           <div className="kiosk-program-list">
             {visiblePrograms.map((p) => {
-              // A student can't be in two classes at once — once one program in a
-              // timeslot has a role picked (or already checked into today), the
-              // others in that same slot are disabled. And within this same program,
-              // they can't be Lead and Follow at once either — once one role is
-              // checked in, the other role of this same class is disabled too.
-              const takenToday = isTakenAtAll(student, p.id);
-              const conflict = hasConflictingSelection(visiblePrograms, p.id, (id) => !!roles[id] || isTakenAtAll(student, id));
+              const group = timeslotGroup(visiblePrograms, p.id);
+              // If any class in this timeslot already has a real check-in today, the
+              // whole group is locked — that choice was already made and can't be
+              // changed here. Otherwise, a pending local pick anywhere in the group
+              // just grays out the rest of the group rather than disabling it —
+              // tapping one of them switches the pick.
+              const groupCommitted = group.some((g) => isProgramCheckedInToday(student, g.id));
+              const pickedProgramId = group.find((g) => roles[g.id])?.id;
               return (
                 <div className="kiosk-program-row" key={p.id}>
                   <span className="kiosk-program-name">{p.name}</span>
                   <div className="kiosk-role-buttons">
                     {ROLES.map((role) => {
-                      const done = isDone(student, p.id, role);
+                      const done = isCheckedInToday(student, p.id, role);
                       const selected = roles[p.id] === role;
+                      const grayed = !groupCommitted && pickedProgramId !== undefined && !selected;
                       const recent = !done && isFromLastWeek(student, p.id, role);
                       return (
                         <button
                           key={role}
                           type="button"
-                          className={`kiosk-role-btn${done ? " kiosk-role-btn-done" : ""}${selected ? " kiosk-role-btn-selected" : ""}${recent ? " kiosk-role-btn-recent" : ""}`}
-                          disabled={done || takenToday || conflict}
+                          className={`kiosk-role-btn${done ? " kiosk-role-btn-done" : ""}${selected ? " kiosk-role-btn-selected" : ""}${grayed ? " kiosk-role-btn-grayed" : ""}${recent ? " kiosk-role-btn-recent" : ""}`}
+                          disabled={groupCommitted}
                           onClick={() => toggle(p.id, role)}
                         >
                           {done ? `✓ ${role}` : role}

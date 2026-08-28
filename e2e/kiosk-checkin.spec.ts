@@ -56,3 +56,39 @@ test("checking in as one role disables the other role of the same class, not jus
   // must be disabled too, not just shown as a plain unchecked option.
   await expect(zoukL1Row.getByRole("button", { name: "Follow" })).toBeDisabled();
 });
+
+test("picking a class grays out (but doesn't disable) the rest of that timeslot, and picking another switches the choice", async ({
+  page,
+}) => {
+  await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
+  await expect(page).toHaveURL("/kiosk");
+
+  // Fixture: Bachata L1 shares Zouk L1's 19:00 slot.
+  await page.getByPlaceholder("Or type your name…").fill("Active Amy");
+  await page.getByRole("button", { name: "Active Amy" }).click();
+  await expect(page.getByRole("heading", { name: "Active Amy" })).toBeVisible();
+
+  const zoukL1Row = page.locator(".kiosk-program-row", { hasText: "Zouk L1" });
+  const bachataL1Row = page.locator(".kiosk-program-row", { hasText: "Bachata L1" });
+
+  await zoukL1Row.getByRole("button", { name: "Lead" }).click();
+  await expect(zoukL1Row.getByRole("button", { name: "Lead" })).toHaveClass(/kiosk-role-btn-selected/);
+
+  // The rest of the slot — including Zouk L1's own Follow — grays out, but stays
+  // tappable rather than being disabled outright.
+  await expect(zoukL1Row.getByRole("button", { name: "Follow" })).toHaveClass(/kiosk-role-btn-grayed/);
+  await expect(zoukL1Row.getByRole("button", { name: "Follow" })).toBeEnabled();
+  await expect(bachataL1Row.getByRole("button", { name: "Lead" })).toHaveClass(/kiosk-role-btn-grayed/);
+  await expect(bachataL1Row.getByRole("button", { name: "Follow" })).toHaveClass(/kiosk-role-btn-grayed/);
+  await expect(bachataL1Row.getByRole("button", { name: "Follow" })).toBeEnabled();
+
+  // Picking a different option in the same slot switches the choice rather than
+  // adding a second one.
+  await bachataL1Row.getByRole("button", { name: "Follow" }).click();
+  await expect(bachataL1Row.getByRole("button", { name: "Follow" })).toHaveClass(/kiosk-role-btn-selected/);
+  await expect(zoukL1Row.getByRole("button", { name: "Lead" })).not.toHaveClass(/kiosk-role-btn-selected/);
+  await expect(zoukL1Row.getByRole("button", { name: "Lead" })).toHaveClass(/kiosk-role-btn-grayed/);
+
+  await page.getByRole("button", { name: "Done (1)" }).click();
+  await expect(page.getByText("Welcome to Oaktown Zouk, have a great class!")).toBeVisible();
+});

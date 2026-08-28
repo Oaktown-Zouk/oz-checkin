@@ -944,6 +944,13 @@ body {
   color: var(--green);
 }
 
+/* A pending (not yet submitted) pick exists elsewhere in this class's timeslot —
+   still clickable (picking this one switches the selection), just visually
+   deprioritized against whichever option is actually selected right now. */
+.role-toggle-grayed {
+  opacity: 0.5;
+}
+
 .program-picker-row-disabled .program-picker-name {
   color: var(--gray);
 }
@@ -1025,6 +1032,13 @@ body {
   background: #111827;
   border-color: #111827;
   color: white;
+}
+
+/* A pending (not yet submitted) pick exists elsewhere in this class's timeslot —
+   still tappable (picking this one switches the selection), just visually
+   deprioritized against whichever option is actually selected right now. */
+.kiosk-role-btn-grayed {
+  opacity: 0.5;
 }
 
 /* Nudges a student toward what they picked last week — bold text only, so it doesn't

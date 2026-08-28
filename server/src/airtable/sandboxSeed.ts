@@ -46,6 +46,8 @@ export const FIXTURE_IDS = {
   programs: {
     zoukL1: "recProgramZoukL1",
     zoukL2: "recProgramZoukL2",
+    // Same start time as zoukL1 — the sandbox's one same-timeslot pair.
+    bachataL1: "recProgramBachataL1",
   },
   credits: {
     trialTinaCredit: "recCreditTrialTina",
@@ -204,6 +206,22 @@ export function buildSandboxSeed(): SeedData {
           Status: "Active",
           Weekdays: ALL_WEEKDAYS,
           "Start Time": "20:00",
+        },
+      },
+      {
+        id: programs.bachataL1,
+        fields: {
+          // Deliberately doesn't contain "Zouk L1" as a substring (unlike a name like
+          // "Zouk L1 Alt" would) — several e2e specs match rows by hasText: "Zouk L1"
+          // and would become ambiguous (strict-mode violation) against a same-slot
+          // program whose name also contains that string.
+          "Program Name": "Bachata L1",
+          Status: "Active",
+          Weekdays: ALL_WEEKDAYS,
+          // Same start time as Zouk L1 on purpose — the one same-timeslot pair the
+          // default seed has, for specs exercising the "pick one class in a slot,
+          // the rest of the slot grays out" behavior (see e2e/*-checkin.spec.ts).
+          "Start Time": "19:00",
         },
       },
     ],
