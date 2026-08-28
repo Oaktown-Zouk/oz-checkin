@@ -169,6 +169,15 @@ a modal with the full note (Summary, Strengths under "Doing well", Opportunities
 under "Should work on"). See `docs/airtable-schema.md`'s "Notes" section for the
 full field list.
 
+Only the note's own author can edit it — the detail modal shows an **Edit** button
+(reusing the same add-note dialog, prefilled) only when the signed-in session's own
+`userRoleId` matches that note's `Issuer`, both client-side (`StudentPage.tsx`
+compares against `/api/session`'s now-exposed `userRoleId`) and server-side
+(`PATCH /api/students/:id/notes/:noteId` → `updateNote`, which 403s if the caller
+isn't the original issuer, regardless of what the client shows). Other staff can
+still read every note on a student's timeline, same as always — just not alter
+someone else's write-up.
+
 ## Check-in semantics
 
 - **Program + Role, not a single "Check In" button.** Front desk opens the check-in

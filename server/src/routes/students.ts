@@ -4,7 +4,7 @@ import { listStudentStatuses } from "../services/studentStatus.js";
 import { updateStudentLevel } from "../services/levelups.js";
 import { getStudentTimeline } from "../services/studentTimeline.js";
 import { transferMembership, heldMemberships } from "../services/transfers.js";
-import { createNote } from "../services/notes.js";
+import { createNote, updateNote } from "../services/notes.js";
 import { isValidDateString } from "../lib/date.js";
 import { handleError } from "../lib/respond.js";
 
@@ -84,6 +84,30 @@ studentRoutes.post("/:id/notes", requirePermission("Write Student Data"), async 
     // (the only role without userRoleId) never has that permission, so this is safe.
     await createNote(
       id,
+      { summary: summary.trim(), strengths: strengths?.trim() ?? "", opportunities: opportunities?.trim() ?? "" },
+      c.get("user").userRoleId!
+    );
+    return c.json({ ok: true });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+studentRoutes.patch("/:id/notes/:noteId", requirePermission("Write Student Data"), async (c) => {
+  const noteId = c.req.param("noteId") ?? "";
+  const body = await c.req.json().catch(() => ({}));
+  const { summary, strengths, opportunities } = body as {
+    summary?: string;
+    strengths?: string;
+    opportunities?: string;
+  };
+  if (!summary?.trim()) return c.json({ error: "summary is required" }, 400);
+  try {
+    // Guarded by requirePermission("Write Student Data") above — a "Student" session
+    // (the only role without userRoleId) never has that permission, so this is safe.
+    // updateNote itself rejects editing another issuer's note (403).
+    await updateNote(
+      noteId,
       { summary: summary.trim(), strengths: strengths?.trim() ?? "", opportunities: opportunities?.trim() ?? "" },
       c.get("user").userRoleId!
     );

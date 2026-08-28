@@ -293,7 +293,9 @@ UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
 - `Member` (link → `Members`, exactly one) — the student the note is about.
 - `Issuer` (link → `User Roles`, exactly one) — whoever wrote it, from the signed-in
   session's `userRoleId` (see "User Roles & Role Permissions" above) — same
-  zero-extra-lookup pattern as `Levelups.Issuer`.
+  zero-extra-lookup pattern as `Levelups.Issuer`. Also the edit gate: `updateNote`
+  (`PATCH /students/:id/notes/:noteId`) 403s unless the caller's own `userRoleId`
+  matches this field — see `SPEC.md`'s "Notes" section.
 - `Summary` (single line text) — the only required field; shown inline on the
   student timeline.
 - `Strengths` (long text) — "What `<Student>` is doing well," optional.

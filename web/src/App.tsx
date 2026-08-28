@@ -53,6 +53,7 @@ export function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<Set<Permission>>(new Set());
+  const [userRoleId, setUserRoleId] = useState<string | undefined>(undefined);
   // A session with Create Checkins but not View Student Data (i.e. the Kiosk role) —
   // restricted to /kiosk entirely, never the roster. Distinct from `authenticated`,
   // which still means "has View Student Data" exactly as before.
@@ -136,9 +137,11 @@ export function App() {
           setAuthenticated(true);
           setUserEmail(s.email ?? null);
           setPermissions(new Set(s.permissions));
+          setUserRoleId(s.userRoleId);
         } else if (s.authenticated && s.permissions?.includes("Create Checkins")) {
           setKioskOnly(true);
           setPermissions(new Set(s.permissions));
+          setUserRoleId(s.userRoleId);
         } else if (s.authenticated) {
           setForbiddenUser({ email: s.email ?? "", role: s.role ?? "" });
         }
@@ -271,7 +274,7 @@ export function App() {
   // visitor hitting /kiosk before login, since `route.type` alone doesn't imply auth.
   if (kioskOnly || (route.type === "kiosk" && authenticated)) {
     return (
-      <PermissionsProvider value={permissions}>
+      <PermissionsProvider value={{ permissions, userRoleId }}>
         <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} onLogout={handleLogout} />
       </PermissionsProvider>
@@ -290,7 +293,7 @@ export function App() {
 
   if (route.type === "student") {
     return (
-      <PermissionsProvider value={permissions}>
+      <PermissionsProvider value={{ permissions, userRoleId }}>
         <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
       </PermissionsProvider>
@@ -298,7 +301,7 @@ export function App() {
   }
 
   return (
-    <PermissionsProvider value={permissions}>
+    <PermissionsProvider value={{ permissions, userRoleId }}>
       <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
       {checkinError && <ErrorBanner message={checkinError} onDismiss={() => setCheckinError(null)} />}
       <div className="app">

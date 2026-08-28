@@ -56,7 +56,8 @@ export function StudentPage({
   const [transferOpen, setTransferOpen] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [viewingNote, setViewingNote] = useState<NoteDetails | null>(null);
-  const { has } = usePermissions();
+  const [editingNote, setEditingNote] = useState<NoteDetails | null>(null);
+  const { has, userRoleId } = usePermissions();
   const canEditLevels = has("Write Student Data");
   const canTransfer = has("Write Memberships");
   const canAddNotes = has("Write Student Data");
@@ -103,6 +104,16 @@ export function StudentPage({
   async function handleAddNote(summary: string, strengths: string, opportunities: string) {
     try {
       await api.addNote(studentId, summary, strengths, opportunities);
+      await load();
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
+      throw err;
+    }
+  }
+
+  async function handleUpdateNote(noteId: string, summary: string, strengths: string, opportunities: string) {
+    try {
+      await api.updateNote(studentId, noteId, summary, strengths, opportunities);
       await load();
     } catch (err) {
       if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
@@ -198,7 +209,32 @@ export function StudentPage({
         />
       )}
 
-      {viewingNote && <NoteDetailModal note={viewingNote} onClose={() => setViewingNote(null)} />}
+      {viewingNote && (
+        <NoteDetailModal
+          note={viewingNote}
+          onClose={() => setViewingNote(null)}
+          // Only the note's own author can edit it — other staff can view every note
+          // but not change someone else's write-up (see routes/students.ts's
+          // PATCH /:id/notes/:noteId, which enforces the same rule server-side).
+          onEdit={
+            canAddNotes && !!userRoleId && userRoleId === viewingNote.issuerRoleId
+              ? () => {
+                  setEditingNote(viewingNote);
+                  setViewingNote(null);
+                }
+              : undefined
+          }
+        />
+      )}
+
+      {editingNote && timeline && (
+        <AddNoteDialog
+          studentName={timeline.status.name}
+          initialValues={editingNote}
+          onSubmit={(summary, strengths, opportunities) => handleUpdateNote(editingNote.id, summary, strengths, opportunities)}
+          onClose={() => setEditingNote(null)}
+        />
+      )}
     </div>
   );
 }

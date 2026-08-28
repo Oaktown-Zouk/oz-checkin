@@ -86,6 +86,7 @@ export const api = {
       email?: string;
       role?: "Staff" | "Volunteer" | "Kiosk" | "Admin";
       permissions?: Permission[];
+      userRoleId?: string;
     }>("/api/session"),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
   // No `q` — the frontend fetches the full roster and filters locally (see App.tsx) so
@@ -129,6 +130,11 @@ export const api = {
   addNote: (studentId: string, summary: string, strengths: string, opportunities: string) =>
     request<{ ok: true }>(`/api/students/${studentId}/notes`, {
       method: "POST",
+      body: JSON.stringify({ summary, strengths, opportunities }),
+    }),
+  updateNote: (studentId: string, noteId: string, summary: string, strengths: string, opportunities: string) =>
+    request<{ ok: true }>(`/api/students/${studentId}/notes/${noteId}`, {
+      method: "PATCH",
       body: JSON.stringify({ summary, strengths, opportunities }),
     }),
   // Kiosk mode — fetched once and cached client-side (see KioskPage.tsx) so search

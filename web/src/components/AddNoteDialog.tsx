@@ -3,16 +3,20 @@ import { Portal } from "shared";
 
 export function AddNoteDialog({
   studentName,
+  initialValues,
   onSubmit,
   onClose,
 }: {
   studentName: string;
+  // Present for editing an existing note — prefills the fields and swaps the
+  // heading/submit-button copy; absent means the ordinary add-note flow.
+  initialValues?: { summary: string; strengths: string; opportunities: string };
   onSubmit: (summary: string, strengths: string, opportunities: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [summary, setSummary] = useState("");
-  const [strengths, setStrengths] = useState("");
-  const [opportunities, setOpportunities] = useState("");
+  const [summary, setSummary] = useState(initialValues?.summary ?? "");
+  const [strengths, setStrengths] = useState(initialValues?.strengths ?? "");
+  const [opportunities, setOpportunities] = useState(initialValues?.opportunities ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,7 +39,7 @@ export function AddNoteDialog({
     <Portal>
       <div className="dialog-overlay" onClick={onClose}>
         <form className="dialog-card note-dialog" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
-          <h2>Add note</h2>
+          <h2>{initialValues ? "Edit note" : "Add note"}</h2>
 
           <label className="dialog-field-label" htmlFor="note-summary">
             Summary
@@ -69,7 +73,7 @@ export function AddNoteDialog({
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={submitting || !summary.trim()}>
-              {submitting ? "Saving…" : "Save"}
+              {submitting ? "Saving…" : initialValues ? "Save changes" : "Save"}
             </button>
           </div>
         </form>

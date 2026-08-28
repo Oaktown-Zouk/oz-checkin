@@ -192,5 +192,9 @@ authRoutes.get("/session", (c) => {
     email: session.email,
     role: session.role,
     permissions: session.permissions,
+    // Lets the frontend tell "a note this signed-in account wrote" apart from anyone
+    // else's — see NoteDetails.issuerRoleId and StudentPage.tsx. Undefined for a
+    // Student session, which never holds one.
+    userRoleId: session.userRoleId,
   });
 });

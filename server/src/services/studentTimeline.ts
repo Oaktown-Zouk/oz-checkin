@@ -11,10 +11,14 @@ import { fetchProgramNames, buildStatus, computeLastCheckinSelections, type Stud
 import { today, dateStringFor } from "../lib/date.js";
 
 export interface NoteDetails {
+  id: string;
   summary: string;
   strengths: string;
   opportunities: string;
   issuerName: string;
+  // The User Roles record id that wrote this note — see routes/students.ts's
+  // PATCH /:id/notes/:noteId, and shared's NoteDetails for why the frontend needs it.
+  issuerRoleId: string;
 }
 
 export interface TimelineEvent {
@@ -64,7 +68,7 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       fields: ["Member", "Checked In At", "Class Level", "Role", "Needs Review", "Review Reason"],
     }),
     listRecords<NoteFields>(TABLES.notes, {
-      fields: ["Member", "Summary", "Strengths", "Opportunities", "Issuer Name"],
+      fields: ["Member", "Summary", "Strengths", "Opportunities", "Issuer", "Issuer Name"],
     }),
     fetchProgramNames(),
   ]);
@@ -167,10 +171,12 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       at: n.createdTime,
       label: `Note from ${issuerName}: ${summary}`,
       note: {
+        id: n.id,
         summary,
         strengths: n.fields.Strengths ?? "",
         opportunities: n.fields.Opportunities ?? "",
         issuerName,
+        issuerRoleId: n.fields.Issuer?.[0] ?? "",
       },
     });
   }
