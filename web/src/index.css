@@ -1108,22 +1108,15 @@ body {
   z-index: 0;
 }
 
-/* Wraps "Scan QR Code to Check In" + the camera feed + the search bar as one group.
-   No margin-top of its own — .kiosk-page's flex gap is enough, so this sits right
-   under the banner on any screen size, not just a specific known kiosk tablet. */
+/* Wraps the search bar + sign-up/buy-a-pass buttons as one group. No margin-top of
+   its own — .kiosk-page's flex gap is enough, so this sits right under the banner on
+   any screen size, not just a specific known kiosk tablet. */
 .kiosk-main {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-}
-
-.kiosk-camera-label {
-  margin: 0;
-  font-size: 1.75rem;
-  font-weight: 600;
-  text-align: center;
 }
 
 .kiosk-search-wrap {
@@ -1162,26 +1155,68 @@ body {
   background: var(--gray-bg);
 }
 
-.kiosk-camera-wrap {
+.kiosk-action-buttons {
   width: 100%;
   max-width: 640px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.kiosk-video {
-  width: 100%;
-  max-height: 70vh;
-  border-radius: 16px;
-  background: #111827;
-  object-fit: cover;
-}
-
-.kiosk-camera-error {
-  color: var(--gray);
-  text-align: center;
+.kiosk-action-btn {
+  padding: 18px 24px;
   font-size: 1.1rem;
+}
+
+/* One full-screen "page" of the sign-up/purchase flow (KioskPurchaseFlow.tsx) —
+   replaces .kiosk-main entirely while active, rather than overlaying it. */
+.kiosk-flow-screen {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.kiosk-flow-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.kiosk-flow-options {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kiosk-flow-option {
+  padding: 24px;
+  font-size: 1.3rem;
+}
+
+.kiosk-flow-back {
+  margin-top: 4px;
+}
+
+.kiosk-widget-wrap {
+  width: 100%;
+  min-height: 320px;
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.kiosk-qr-image {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  border-radius: 12px;
+  background: white;
+  padding: 12px;
 }
 
 /* Loading/decline states shown inside the same dialog shell as the real check-in

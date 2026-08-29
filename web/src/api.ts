@@ -32,7 +32,6 @@ export type Permission =
 
 export interface KioskRosterEntry {
   id: string;
-  contactId: string | null;
   name: string;
   membershipStatus: string;
   availableCredits: number;

@@ -653,7 +653,8 @@ clicking a name.
 ## Kiosk mode
 
 `/kiosk` — a self-serve check-in station meant to be left running unattended on a
-tablet, so a student can check themselves in with no front-desk involvement.
+tablet, so a student can check themselves in — or sign up, or buy a pass — with no
+front-desk involvement.
 
 - **Login redirect**: a `Kiosk`-role account (only `Create Checkins`/`Undo Checkins`,
   no `View Student Data`) is confined to `/kiosk` entirely, not just defaulted there —
@@ -661,45 +662,41 @@ tablet, so a student can check themselves in with no front-desk involvement.
   accounts can also reach `/kiosk` directly via `NavMenu` (they hold `Create Checkins`
   too); it's just not their default landing page.
 - **Roster cache**: on load, the page fetches every non-duplicate student once
-  (`GET /api/kiosk/roster`) into local state — id, Contact ID, full name, membership
-  status, available credits, and remaining allowance. Both name search and QR-scan
-  matching run against this local snapshot, not a per-keystroke/per-scan server round
-  trip. Names are shown in full — no more privacy here than other studio-management
-  tools already show on a shared device — but email/tier/badges/full status still
-  aren't in the cache; those only appear once a specific student is resolved by id
-  (`GET /api/kiosk/students/:id`), after a scan match or a search-result tap.
-- **QR scanning**: the page opens the device's front (`user`-facing) camera — the
-  same side as the screen, since the kiosk is a fixed tablet the student walks up to
-  and holds their code up to — and continuously decodes frames with `jsqr` (a
-  bundled, all-JS decoder — chosen over the Chrome-only `BarcodeDetector` API so this
-  works on any tablet/browser). The QR
-  payload is expected to be a student's Givebutter contact id (`Members.Contact ID`),
-  printed on cards handed out to students. A decoded id is matched against the cached
-  roster's `contactId` field locally, instantly, before ever hitting the network.
-- **Name search**: a search bar above the camera feed, filtered client-side against
-  the cached roster's `name` — matches everyone, not just eligible students (see
-  below), so a decline can name the actual reason instead of a blanket "not found."
-- **Loading feedback**: a scan match or a search-result tap opens a loading dialog
-  instantly (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
+  (`GET /api/kiosk/roster`) into local state — id, full name, membership status,
+  available credits, and remaining allowance. Name search runs against this local
+  snapshot, not a per-keystroke server round trip. Names are shown in full — no more
+  privacy here than other studio-management tools already show on a shared device —
+  but email/tier/badges/full status still aren't in the cache; those only appear once
+  a specific student is resolved by id (`GET /api/kiosk/students/:id`), after a
+  search-result tap.
+- **Name search**: a search bar, filtered client-side against the cached roster's
+  `name` — matches everyone, not just eligible students (see below), so a decline can
+  name the actual reason instead of a blanket "not found." (An earlier version of
+  this page also had a QR-code camera scanner as an alternative to typing a name —
+  removed since people didn't seem to need it; `Members.Contact ID` is unused by this
+  page now, though the separate student self-service app still has its own "show my
+  QR code" view, kept as-is even though nothing currently reads it.)
+- **Loading feedback**: a search-result tap opens a loading dialog instantly
+  (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
   `GET /api/kiosk/students/:id` round trip that resolves it completes — there's never
   a silent gap between "the student was recognized" and something appearing on
   screen.
 - **Eligibility**: something left to spend today — `remaining > 0` or
   `availableCredits > 0` (`isEligible`, `KioskPage.tsx`). Deliberately not gated on an
   active membership — a drop-in/trial student who only ever bought credits can still
-  self-check-in, same as at the front desk. Both a scan match and a search-result tap
-  resolve the same way — always a fresh `GET /api/kiosk/students/:id` call, never a
-  decision made off the cached roster snapshot — since that snapshot can go stale
-  between when it was fetched and when a student is actually resolved (e.g. a credit
-  bought or a membership renewed moments ago), and that endpoint isn't
-  eligibility-gated (see `routes/kiosk.ts`), so it always returns the student's full,
-  current status either way. An ineligible result shows a specific reason built
-  client-side from that status (`ineligibleReason`) — "already checked in for X today"
-  if they have a check-in today, else "no active membership/credits" vs. "used up
-  today's classes and credits" — since it's the matched student's own status being
-  shown to them, not another student's. A scan/search that matches *no one at all*
-  shows a generic "please see the front desk" instead. Every decline auto-closes after
-  5 seconds with no user action required.
+  self-check-in, same as at the front desk. A search-result tap always resolves via a
+  fresh `GET /api/kiosk/students/:id` call, never a decision made off the cached
+  roster snapshot — since that snapshot can go stale between when it was fetched and
+  when a student is actually resolved (e.g. a credit bought or a membership renewed
+  moments ago), and that endpoint isn't eligibility-gated (see `routes/kiosk.ts`), so
+  it always returns the student's full, current status either way. An ineligible
+  result shows a specific reason built client-side from that status
+  (`ineligibleReason`) — "already checked in for X today" if they have a check-in
+  today, else "no active membership/credits" vs. "used up today's classes and
+  credits" — since it's the matched student's own status being shown to them, not
+  another student's. A search that matches *no one at all* shows a generic "please
+  see the front desk" instead. Every decline auto-closes after 5 seconds with no user
+  action required.
 - **Check-in dialog** (`KioskCheckInDialog`): large, touch-friendly buttons, one per
   {class, role} still available today — same pick-then-submit shape as the front
   desk's `CheckInDialog`, not an immediate per-tap check-in. Tapping a button only
@@ -713,6 +710,37 @@ tablet, so a student can check themselves in with no front-desk involvement.
   fails, a dismissible banner shows the error and stays until closed; by then the
   student has likely already walked away, so the banner is there for staff to notice
   and follow up on, not the student.
+- **Sign-up and purchase flow** (`KioskPurchaseFlow.tsx`): below the search bar, two
+  buttons — "First time? Sign up for a free class" and "Buy a pass" — take over the
+  home screen with their own small page stack (`KioskScreen`/`KioskFlowScreen`,
+  `kioskProducts.ts`). No backend involvement at all: every step is either static
+  client-side navigation or one of Givebutter's own hosted forms.
+  - **Sign up** goes straight to an embedded Givebutter widget (a contact-info form,
+    no payment) — no QR step, since there's nothing to scan-and-pay.
+  - **Buy a pass** branches into **drop-in** ("How many classes would you like to
+    take today?") or **membership** ("...per week?"), each offering One or Two
+    classes. Every one of those four combinations maps to its own Givebutter
+    product — a hosted page URL plus a widget id (`kioskProducts.ts`'s
+    `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`).
+  - Picking a class count lands on a QR screen: a locally-generated QR code (the
+    `qrcode` package, same as the student self-service app's own QR page) pointing
+    at that product's hosted Givebutter page, so the student can finish on their own
+    phone, plus an "Or pay on this tablet" button that swaps in the same product's
+    embedded widget instead.
+  - **Givebutter's widget script** (`useGivebutterWidgetScript.ts`) is injected once
+    into the document and defines the `<givebutter-widget>` custom element every
+    widget screen renders; `GIVEBUTTER_WIDGET_SCRIPT_SRC` in `kioskProducts.ts` is
+    account-specific.
+  - **Idle reset** (`useIdleTimer.ts`): every screen in this flow times back out to
+    the kiosk home screen after a stretch of no activity, since it's a public,
+    unattended tablet — a contact form or payment screen left on-screen shouldn't sit
+    there for the next person to stumble onto. Sign-up, the menu screens, and the QR
+    screens reset after 60s; the two widget (pay-on-tablet) screens use a longer
+    120s, extended further for as long as focus sits inside the embedded widget
+    (about as much activity as this page can observe inside what's expected to be a
+    cross-origin iframe it can't see click/keystroke events within) — see
+    `KioskPurchaseFlow.tsx`'s `WIDGET_IDLE_MS` for why that number may need
+    revisiting once tested against the real widget.
 - **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
   screen as every other unauthenticated route, Google button and identifier/password
   form both included — see "Auth" below. A successful password login redirects to

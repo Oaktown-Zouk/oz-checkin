@@ -18,9 +18,11 @@ doc. `Check-ins.Class Level` links directly to `Programs`, not a specific dated
 
 Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
 `Follow Level` (the last two are app-writable, via the level-edit dialogs),
-`Contact ID` (Givebutter's contact id, read-only here — printed on a student's kiosk
-QR code so `/kiosk` can resolve a scan straight to a Member, see
-`server/src/services/kiosk.ts`). `Email` also drives the separate student
+`Contact ID` (Givebutter's contact id, read-only here — shown on the student
+self-service app's own QR code page, though `/kiosk` no longer reads it back: it
+used to resolve a camera scan straight to a Member, but that scanner was removed in
+favor of just typing a name, see SPEC.md's "Kiosk mode"). `Email` also drives the
+separate student
 self-service app's login (`services/userAccess.ts`'s `getStudentAccessForEmail`,
 case-insensitive, excluding `Duplicate`-flagged rows, and requiring at least one
 `Transactions` or `Recurring Plans` link — both `multipleRecordLinks` to their

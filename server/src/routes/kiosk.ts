@@ -26,10 +26,10 @@ kioskRoutes.get("/roster", async (c) => {
 });
 
 // Deliberately not eligibility-gated — by the time this is called, a specific student
-// has already been positively identified (a QR scan matched their Contact ID, or they
-// were tapped from a name search), so there's no "who is this" privacy question left
-// to guard. The frontend needs the full status regardless of eligibility, so it can
-// build a specific decline message (e.g. "you've already checked in for X today").
+// has already been positively identified (tapped from a name search), so there's no
+// "who is this" privacy question left to guard. The frontend needs the full status
+// regardless of eligibility, so it can build a specific decline message (e.g.
+// "you've already checked in for X today").
 kioskRoutes.get("/students/:id", async (c) => {
   const parsed = checkDateParam(c);
   if (parsed.error) return c.json({ error: "Forbidden" }, 403);

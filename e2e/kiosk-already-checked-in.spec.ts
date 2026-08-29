@@ -10,7 +10,7 @@ test("scanning/searching a student already checked in today shows the specific d
   await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
   await expect(page).toHaveURL("/kiosk");
 
-  await page.getByPlaceholder("Or type your name…").fill("Checked-In Chris");
+  await page.getByPlaceholder("Type your name…").fill("Checked-In Chris");
   await page.getByRole("button", { name: "Checked-In Chris" }).click();
 
   const message = page.locator(".kiosk-dialog-message");

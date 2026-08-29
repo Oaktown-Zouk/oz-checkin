@@ -8,7 +8,7 @@ test("kiosk-role login redirects to /kiosk, and a self-check-in submits on Done"
   await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
   await expect(page).toHaveURL("/kiosk");
 
-  await page.getByPlaceholder("Or type your name…").fill("Active Amy");
+  await page.getByPlaceholder("Type your name…").fill("Active Amy");
   await page.getByRole("button", { name: "Active Amy" }).click();
 
   // Instant loading feedback before the fetch resolves — see KioskPage.tsx's
@@ -36,7 +36,7 @@ test("checking in as one role disables the other role of the same class, not jus
   await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
   await expect(page).toHaveURL("/kiosk");
 
-  await page.getByPlaceholder("Or type your name…").fill("Active Amy");
+  await page.getByPlaceholder("Type your name…").fill("Active Amy");
   await page.getByRole("button", { name: "Active Amy" }).click();
   await expect(page.getByRole("heading", { name: "Active Amy" })).toBeVisible();
   await page.locator(".kiosk-program-row", { hasText: "Zouk L1" }).getByRole("button", { name: "Lead" }).click();
@@ -46,7 +46,7 @@ test("checking in as one role disables the other role of the same class, not jus
   // kiosk-already-checked-in.spec.ts) so the dialog can be reopened fresh.
   await expect(page.getByText("Welcome to Oaktown Zouk, have a great class!")).not.toBeVisible({ timeout: 7000 });
 
-  await page.getByPlaceholder("Or type your name…").fill("Active Amy");
+  await page.getByPlaceholder("Type your name…").fill("Active Amy");
   await page.getByRole("button", { name: "Active Amy" }).click();
   await expect(page.getByRole("heading", { name: "Active Amy" })).toBeVisible();
 
@@ -64,7 +64,7 @@ test("picking a class grays out (but doesn't disable) the rest of that timeslot,
   await expect(page).toHaveURL("/kiosk");
 
   // Fixture: Bachata L1 shares Zouk L1's 19:00 slot.
-  await page.getByPlaceholder("Or type your name…").fill("Active Amy");
+  await page.getByPlaceholder("Type your name…").fill("Active Amy");
   await page.getByRole("button", { name: "Active Amy" }).click();
   await expect(page.getByRole("heading", { name: "Active Amy" })).toBeVisible();
 
