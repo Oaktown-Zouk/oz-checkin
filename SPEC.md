@@ -28,9 +28,9 @@ handful of things that are genuinely this app's own business logic.
   than reimplementing that logic — a formula change in Airtable takes effect without a
   code deploy. See `docs/airtable-schema.md`.
 - **Credits system**: a `Credits` table (granted on new-member signup, on a qualifying
-  one-time Givebutter payment, or manually as a comp) gets auto-consumed by Airtable
-  automations whenever a check-in exceeds the day's tier allowance, or flagged for
-  front-desk review if none is available.
+  one-time Givebutter payment, or manually as a comp), consumed or flagged for
+  front-desk review by application code (not Airtable automations) whenever a
+  check-in exceeds the day's tier allowance. See "Credits system" below.
 - **Dance level tracking** — a Lead level and a Follow level (1–4 or unset) per
   student, shown as small badges and editable inline, with every actual change logged
   to a `Levelups` table (who signed off on it, and when).
@@ -50,8 +50,9 @@ handful of things that are genuinely this app's own business logic.
 - **Google OAuth or password login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/
   `Admin`) looked up in Airtable, stateless signed-cookie session.
 - **Kiosk mode** (`/kiosk`) — a self-serve check-in station for a tablet: a student
-  scans a QR code (their Givebutter contact id) or types their name, taps Lead/Follow,
-  and walks in with no staff involvement. See "Kiosk mode" below.
+  types their name, taps Lead/Follow, and walks in with no staff involvement. Also
+  offers a self-serve sign-up/purchase flow for new and paying students. See "Kiosk
+  mode" below.
 - **Student self-service login** — a completely separate app (its own frontend,
   backend, and deployment) where a student can sign in with the same Google account
   their Member record uses (provided they've actually transacted or hold a recurring
@@ -599,12 +600,13 @@ permissions don't include the one that route needs). See "Permissions" above.
 ## Webpage (front desk view)
 
 - Search bar (name), filters the already-fetched roster client-side.
-- Rows: name · badges (dance levels, then either a membership-tier badge or a
-  credits-remaining badge — never both, see "Tier Rule gaps" (under Members) in
-  `docs/airtable-schema.md` for when a nominal member shows credits instead) · Check
-  In button · 3-dot menu. Each of Check In/Undo/level-edit/Transfer only renders for a
-  session with the matching permission (see "Permissions" above) — a lower-permission
-  session simply doesn't see the control, not a disabled version of it.
+- Rows: name · badges (dance levels, then a membership-tier badge or a
+  credits-remaining badge — one or the other, never both, to keep a list of many rows
+  scannable; see "Tier Rule gaps" (under Members) in `docs/airtable-schema.md` for
+  when a nominal member shows credits instead) · Check In button · 3-dot menu. Each of
+  Check In/Undo/level-edit/Transfer only renders for a session with the matching
+  permission (see "Permissions" above) — a lower-permission session simply doesn't see
+  the control, not a disabled version of it.
 - "Check In" opens the Program + Role picker (see "Check-in semantics"); once checked
   in, the button becomes "Check in to another class" and the row shows each check-in's
   time, class, and role, with an Undo link and a `Needs review` flag when applicable.
@@ -631,7 +633,10 @@ permissions don't include the one that route needs). See "Permissions" above.
 clicking a name.
 
 - Header: name, email, the same status badges as the list row (dance levels are
-  clickable here too), and a "Transfer membership" button.
+  clickable here too), and a "Transfer membership" button — except a member who also
+  holds an unused credit sees both the membership and credit badge here (and on the
+  check-in dialogs), unlike the roster row above, which stays one badge per row on
+  purpose; see `MembershipBadge`'s `showBothWhenApplicable` prop.
 - Stat boxes: **most recent check-in** ("Never" if none), **total check-ins** (real
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
@@ -710,37 +715,68 @@ front-desk involvement.
   fails, a dismissible banner shows the error and stays until closed; by then the
   student has likely already walked away, so the banner is there for staff to notice
   and follow up on, not the student.
+  - **"Remaining" counter**: unlike the front desk's version of this dialog (which
+    shows membership allowance and drop-in credits as two separate numbers, trusting
+    staff to weigh them), the kiosk shows a student one blended number they can act on
+    directly: `availableCredits + classesAllowed − today's check-ins − picks made so
+    far in this dialog`, capped at however many distinct class timeslots are still
+    visible on the kiosk right now (a student can never have more "remaining" than
+    there are actual classes left to check into today, no matter how large their
+    credit/allowance pool is). See `KioskCheckInDialog.tsx`'s `localRemaining`.
 - **Sign-up and purchase flow** (`KioskPurchaseFlow.tsx`): below the search bar, two
   buttons — "First time? Sign up for a free class" and "Buy a pass" — take over the
   home screen with their own small page stack (`KioskScreen`/`KioskFlowScreen`,
   `kioskProducts.ts`). No backend involvement at all: every step is either static
   client-side navigation or one of Givebutter's own hosted forms.
-  - **Sign up** goes straight to an embedded Givebutter widget (a contact-info form,
-    no payment) — no QR step, since there's nothing to scan-and-pay.
-  - **Buy a pass** branches into **drop-in** ("How many classes would you like to
-    take today?") or **membership** ("...per week?"), each offering One or Two
-    classes. Every one of those four combinations maps to its own Givebutter
-    product — a hosted page URL plus a widget id (`kioskProducts.ts`'s
-    `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`).
-  - Picking a class count lands on a QR screen: a locally-generated QR code (the
-    `qrcode` package, same as the student self-service app's own QR page) pointing
-    at that product's hosted Givebutter page, so the student can finish on their own
-    phone, plus an "Or pay on this tablet" button that swaps in the same product's
-    embedded widget instead.
+  - **First time?** asks "How many classes would you like to take on your first
+    day?" (One/Two), mirroring the public sign-up widget's own first-time flow (see
+    "Public sign-up widget" under "Student self-service app" below) rather than going
+    straight to a free-class form: a first-timer who actually wants two classes needs
+    to pay for the second one regardless, so it's faster to buy it now than to fill
+    out the free-class contact form and come back separately.
+    - **One** shows the studio's waiver notice (Code of Conduct / Waiver of Liability
+      links, `shared`'s `WAIVER_NOTICE`) with a Continue button, then the free-class
+      contact-info embed (no payment).
+    - **Two** skips the waiver and goes straight to the embedded widget for
+      `DROPIN_PRODUCTS[1]` — the same product/price a returning student's single
+      drop-in uses, since the first class is free and only the second is actually
+      charged — with a fixed heading explaining that instead of the usual pricing
+      disclaimer (`shared`'s `FIRST_DAY_SECOND_CLASS_NOTE`).
+  - **Buy a pass** shows a QR code first — pointing at the public sign-up widget
+    (`kioskProducts.ts`'s `KIOSK_SIGNUP_PAGE_URL`, `my.oaktownzouk.com/signup`), so a
+    student can finish on their own phone from the very first tap — then "Or buy on
+    this tablet" with the drop-in/membership choice below it.
+  - **Drop-in** ("How many classes would you like to take today?") or **membership**
+    ("...per week?"), each offering One or Two classes. Every one of those four
+    combinations maps to its own Givebutter product/widget id (`kioskProducts.ts`'s
+    `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`). Picking a count goes straight to that
+    product's embedded widget — there's no longer a second, per-product QR step here;
+    the one QR code on the "Buy a pass" screen already covers every product, since the
+    public widget it points at offers the same drop-in/membership/count choice on its
+    own.
+  - **Pricing disclaimers**: the drop-in and membership widget screens show the same
+    sliding-scale wording the public widget shows above its own embeds (`shared/src/
+    purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_DISCLAIMER`/
+    `MEMBERSHIP_SLIDING_SCALE_DISCLAIMER`) — except the "need a lower price?" line
+    ends differently on each surface: the public widget (used remotely) can only
+    suggest emailing, while the kiosk (used in person, at the studio) suggests asking
+    the front desk directly too (`KIOSK_PRICING_CONTACT_CLAUSE` vs.
+    `PRICING_CONTACT_CLAUSE`). The free-class and first-day-second-class screens have
+    their own fixed copy instead (see above) and show no separate disclaimer.
   - **Givebutter's widget script** (`useGivebutterWidgetScript.ts`) is injected once
     into the document and defines the `<givebutter-widget>` custom element every
-    widget screen renders; `GIVEBUTTER_WIDGET_SCRIPT_SRC` in `kioskProducts.ts` is
-    account-specific.
+    widget screen renders; `GIVEBUTTER_WIDGET_SCRIPT_SRC` (`shared/src/givebutter.ts`,
+    shared with the public sign-up widget) is account-specific.
   - **Idle reset** (`useIdleTimer.ts`): every screen in this flow times back out to
     the kiosk home screen after a stretch of no activity, since it's a public,
     unattended tablet — a contact form or payment screen left on-screen shouldn't sit
-    there for the next person to stumble onto. Sign-up, the menu screens, and the QR
-    screens reset after 60s; the two widget (pay-on-tablet) screens use a longer
-    120s, extended further for as long as focus sits inside the embedded widget
-    (about as much activity as this page can observe inside what's expected to be a
-    cross-origin iframe it can't see click/keystroke events within) — see
-    `KioskPurchaseFlow.tsx`'s `WIDGET_IDLE_MS` for why that number may need
-    revisiting once tested against the real widget.
+    there for the next person to stumble onto. Every screen except the embedded-widget
+    ones resets after 60s; the widget (pay-on-tablet) screens use a longer 120s,
+    extended further for as long as focus sits inside the embedded widget (about as
+    much activity as this page can observe inside what's expected to be a cross-origin
+    iframe it can't see click/keystroke events within) — see `KioskPurchaseFlow.tsx`'s
+    `WIDGET_IDLE_MS` for why that number may need revisiting once tested against the
+    real widget.
 - **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
   screen as every other unauthenticated route, Google button and identifier/password
   form both included — see "Auth" below. A successful password login redirects to
@@ -756,10 +792,6 @@ front-desk involvement.
   `web/src/programSchedule.ts`. This filter is deliberately kiosk-only: the front
   desk's `CheckInDialog` still shows every class regardless of time, since staff need
   to be able to fix or add check-ins after a class ends.
-- Camera access and the decode loop persist for the page's whole lifetime (not
-  re-requested per dialog open/close); an `enabled` flag just pauses whether decoded
-  frames are acted on while a dialog or error message is on screen
-  (`web/src/useQrScanner.ts`).
 - **Testing: simulate now (Admin only)**. A session with **Backdate Kiosk** (only
   `Admin` has it) sees a small "simulate now" date/time control tucked in a corner of
   `/kiosk` (reusing the front desk's `EffectiveDateControl`/`BackdateDialog`). Setting
@@ -855,11 +887,12 @@ between two local views, plain `useState`, nothing worth deep-linking to:
   backend having nowhere to send one anyway.
 - **QR Code** (`StudentQrPage.tsx`) — renders the student's kiosk check-in QR code
   client-side (the `qrcode` package, browser build), encoding the bare Givebutter
-  Contact ID — the exact same payload `web/src/useQrScanner.ts` decodes at the kiosk
-  and `server/src/scripts/generateQrCode.ts` prints. No backend change was needed:
-  `GET /api/me/timeline` already returned `status.contactId`. A member with no
-  Contact ID yet (Givebutter sync gap) sees a plain "ask the front desk" message
-  instead of a broken image.
+  Contact ID — the same payload `server/src/scripts/generateQrCode.ts` prints. No
+  backend change was needed: `GET /api/me/timeline` already returned
+  `status.contactId`. A member with no Contact ID yet (Givebutter sync gap) sees a
+  plain "ask the front desk" message instead of a broken image. (The kiosk itself no
+  longer has a QR camera scanner to decode this against — removed in favor of typing
+  a name; this page is kept as-is even though nothing currently reads its code back.)
 
 Log out lives inside the nav menu now too, rather than its own standalone button —
 one control at the top of the page instead of two.
@@ -905,4 +938,34 @@ locally too, since `dev:netlify-student` discovers and resolves this exact file 
 same way. Needs its own custom domain/subdomain and its own Google OAuth "Authorized
 redirect URI" entry (same OAuth client as the staff app works fine — reused for the
 extra redirect URI registered) — both are account-level setup steps, not something
-this repo's code can do on its own.
+this repo's code can do on its own. Live at `my.oaktownzouk.com`.
+
+**Public sign-up widget** (`web-student/signup.html`) — a completely separate, public,
+unauthenticated page built and deployed as part of this same Netlify site, with
+nothing in common with the student self-service app above beyond sharing its
+build/deploy. It's a step-by-step sign-up/purchase form (first-time vs. returning,
+drop-in vs. membership, class count → an embedded Givebutter widget) that used to be
+hand-authored HTML/CSS/JS pasted separately into oaktownzouk.com (Google Sites) and
+theoaklandgrove.com/zouk (Squarespace) — kept in source control now instead, at
+`my.oaktownzouk.com/signup`, with both of those sites meant to `<iframe>` it rather
+than carry their own copy, so an update here reaches every surface without needing to
+touch either site by hand. Google Sites needs "Embed → By URL," not "Embed code" —
+the latter wraps arbitrary pasted HTML in a sandboxed `gstatic.com` iframe that's
+confirmed to break at least one third-party embed (YouTube, elsewhere on that same
+site) under Safari specifically; "By URL" is a plainer iframe of an external page and
+hasn't shown that problem, but wasn't exhaustively verified against the Givebutter
+widget before this was written — worth a real check on Safari once live. Squarespace's
+Code Block embeds a plain iframe with no such wrapper, confirmed no issue there.
+- **Vite multi-page build**: `web-student/vite.config.ts` adds `signup.html` as a
+  second `rollupOptions.input` alongside the app's own `index.html` — same build, same
+  Netlify deploy, no extra site or extra deploy cost. Plain TS/DOM
+  (`src/signup/signup.ts`), not React: steps are toggled by `hidden` rather than
+  mounted/unmounted, the same approach the kiosk's own dialogs use for local picks
+  (see `KioskCheckInDialog.tsx`), simple enough here that no framework is needed to
+  keep it correct.
+- **Shared copy** (`shared/src/purchaseCopy.ts`, `shared/src/givebutter.ts`) — pricing
+  disclaimers, the waiver notice, the first-day-second-class note, and the Givebutter
+  script URL are constants imported by both this page and the kiosk's
+  `KioskPurchaseFlow.tsx`, so the two can't drift out of sync (see "Sign-up and
+  purchase flow" under "Kiosk mode" above for the kiosk side, including the one place
+  the wording deliberately differs — how to ask for a lower price).

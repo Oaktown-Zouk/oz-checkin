@@ -24,6 +24,17 @@ previous week's deploy.
   student has enough classes left before you finish picking.
 - **Kiosk bolds any class the student attended in the last week**, as a hint toward
   what they probably want to check into today.
+- **Kiosk sign-up now offers the same first-day-second-class option as the public
+  sign-up page**: choosing "First time? Sign up for a free class!" now asks how many
+  classes you want on your first day. Picking two goes straight to paying for the
+  (already-priced) second class instead of a return trip after filling out the
+  free-class contact form. Picking one now also shows the studio's waiver/code-of-
+  conduct links before the free-class form, matching the public sign-up page.
+- **The public sign-up/purchase page (used on oaktownzouk.com and
+  theoaklandgrove.com) now lives in this repo**, served from the student site
+  (`my.oaktownzouk.com/signup`), instead of being hand-pasted HTML separately
+  maintained on each site. Its pricing/policy text is now the same source the kiosk
+  pulls from, so the two can no longer say different things.
 
 ### Improvements
 
@@ -36,6 +47,16 @@ previous week's deploy.
   network requests, and it's easier to change your mind before committing.
 - **Kiosk's "Welcome" message now shows whenever Done is pressed**, not only when the
   screen auto-closes after using up your last class/credit.
+- **Kiosk's "Buy a pass" screen now leads with a QR code to the public sign-up page**
+  (so a student can finish on their own phone from the very first tap) instead of
+  showing a separate QR code after every individual product choice — picking a class
+  count on the tablet now goes straight to the embedded checkout widget.
+- **Kiosk checkout screens now show the same sliding-scale/refund/cancellation
+  disclaimers the public sign-up page always has** — previously the kiosk showed no
+  pricing context at all before a purchase. Since the kiosk is used in person, its
+  version points to "ask the front desk" instead of only an email address.
+- Both purchase widgets' embedded Givebutter forms are now horizontally centered
+  (previously left-aligned).
 
 ### Bugfixes
 
@@ -49,6 +70,15 @@ previous week's deploy.
   automation this used to depend on for consuming a credit on check-in was unreliable
   and impossible to test — it's fully retired now, and undoing a check-in immediately
   frees its credit again instead of leaving it in limbo.
+- **The kiosk's "remaining" counter now accounts for drop-in credits, not just
+  membership allowance.** A student with a purchased/comp credit but no membership
+  used to see "0 remaining" even with a credit available — it now correctly shows
+  credits plus membership allowance, minus today's check-ins and picks so far, capped
+  at however many class timeslots are actually still on today's schedule.
+- **A member who also holds an unused credit (e.g. a leftover signup credit) now sees
+  both their membership and credit badges** on the check-in dialogs and student
+  pages — previously the credit was hidden entirely once a membership badge showed.
+  The roster list still shows one badge per row on purpose, to avoid clutter.
 
 ### Performance
 

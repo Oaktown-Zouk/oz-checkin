@@ -12,6 +12,12 @@ server/                     Hono APIs — both apps' backends live here (server/
 web/                         React + Vite front-desk SPA
 web-student/                 React + Vite student self-service SPA — a separate app, not
                              a page in web/. See SPEC.md's "Student self-service app".
+web-student/signup.html      Public, unauthenticated sign-up/purchase widget — a second
+                             Vite entry built alongside the student app above (same
+                             build/deploy, no separate site), served at
+                             my.oaktownzouk.com/signup and meant to be <iframe>'d from
+                             the studio's other websites. See SPEC.md's "Public sign-up
+                             widget".
 shared/                      Types + read-only presentational components used by both
                              web/ and web-student/ — TS source, no build step of its own.
 netlify/functions/           The staff app's Netlify Function (wraps server/src/app.ts)
