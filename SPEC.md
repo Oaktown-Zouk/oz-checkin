@@ -705,16 +705,18 @@ front-desk involvement.
 - **Check-in dialog** (`KioskCheckInDialog`): large, touch-friendly buttons, one per
   {class, role} still available today — same pick-then-submit shape as the front
   desk's `CheckInDialog`, not an immediate per-tap check-in. Tapping a button only
-  toggles a local selection; the header button reads "Cancel" while nothing is
-  selected and "Done (N)" once at least one is. Cancel closes immediately with no
-  message and no submission. Pressing Done doesn't block on the server: it shows
-  "Welcome to Oaktown Zouk, have a great class!" and auto-closes after 5 seconds right
-  away, while the actual write (`POST /api/checkins`, the same endpoint the front desk
-  uses) and a follow-up roster refresh (so search/eligibility reflect it next time)
-  happen in the background, not blocking the tablet for the next student. If the write
-  fails, a dismissible banner shows the error and stays until closed; by then the
-  student has likely already walked away, so the banner is there for staff to notice
-  and follow up on, not the student.
+  toggles a local selection. Separate Cancel/Check In buttons, same as the front
+  desk's dialog: Cancel always closes immediately with no submission, regardless of
+  any pending picks (e.g. a student who started picking classes for the wrong
+  person); Check In reads "Check In (N)" and is disabled until at least one class is
+  picked. Pressing Check In doesn't block on the server: it shows "Welcome to Oaktown
+  Zouk, have a great class!" and auto-closes after 5 seconds right away, while the
+  actual write (`POST /api/checkins`, the same endpoint the front desk uses) and a
+  follow-up roster refresh (so search/eligibility reflect it next time) happen in the
+  background, not blocking the tablet for the next student. If the write fails, a
+  dismissible banner shows the error and stays until closed; by then the student has
+  likely already walked away, so the banner is there for staff to notice and follow
+  up on, not the student.
   - **"Remaining" counter**: unlike the front desk's version of this dialog (which
     shows membership allowance and drop-in credits as two separate numbers, trusting
     staff to weigh them), the kiosk shows a student one blended number they can act on

@@ -42,11 +42,15 @@ previous week's deploy.
   into today as checked off and grayed out**, and disable the other classes in that
   same time slot — instead of letting you pick it again or silently pre-selecting a
   class from a visit weeks ago as if it were still relevant.
-- **Kiosk now works like the front desk**: pick your class(es), then press Done once
-  to submit — instead of creating a check-in the instant you tap a button. Fewer
+- **Kiosk now works like the front desk**: pick your class(es), then press Check In
+  once to submit — instead of creating a check-in the instant you tap a button. Fewer
   network requests, and it's easier to change your mind before committing.
-- **Kiosk's "Welcome" message now shows whenever Done is pressed**, not only when the
-  screen auto-closes after using up your last class/credit.
+- **Kiosk's "Welcome" message now shows whenever Check In is pressed**, not only when
+  the screen auto-closes after using up your last class/credit.
+- **Kiosk check-in dialog now has separate Cancel and Check In buttons**, matching the
+  front desk — Check In is disabled until at least one class is picked, and Cancel
+  always closes with no submission regardless of any pending picks, for a student who
+  started picking classes on the wrong person's dialog.
 - **Kiosk's "Buy a pass" screen now leads with a QR code to the public sign-up page**
   (so a student can finish on their own phone from the very first tap) instead of
   showing a separate QR code after every individual product choice — picking a class

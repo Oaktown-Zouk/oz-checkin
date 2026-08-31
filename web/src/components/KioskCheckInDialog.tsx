@@ -27,11 +27,13 @@ function isFromLastWeek(student: StudentStatus, programId: string, role: "Lead" 
 // different enough from CheckInDialog (no email/undo/transfer affordances, no
 // backdating-eligibility confirm prompt) to warrant its own component rather than a
 // shared one with a "kiosk mode" prop. Otherwise the same pick-then-submit shape as
-// the front desk: picks are purely local until Done is pressed, and submission itself
-// is fire-and-forget — see onSubmit below and KioskPage.tsx's handleCheckIn — so
-// pressing Done shows the welcome message right away rather than waiting on the
-// network. Shares the same conflict-graying and visible-window logic via
-// programSchedule.ts.
+// the front desk, separate Cancel/Check In buttons included (Check In disabled until
+// at least one class is picked, Cancel always closes with no submission — e.g. a
+// student who started picking classes for the wrong person): picks are purely local
+// until Check In is pressed, and submission itself is fire-and-forget — see onSubmit
+// below and KioskPage.tsx's handleCheckIn — so pressing Check In shows the welcome
+// message right away rather than waiting on the network. Shares the same
+// conflict-graying and visible-window logic via programSchedule.ts.
 export function KioskCheckInDialog({
   student,
   programs,
@@ -94,12 +96,7 @@ export function KioskCheckInDialog({
     });
   }
 
-  function handleDone() {
-    if (selections.length === 0) {
-      onClose();
-      return;
-    }
-
+  function handleCheckIn() {
     onSubmit(selections);
     setShowWelcome(true);
     setTimeout(onClose, WELCOME_MS);
@@ -170,9 +167,19 @@ export function KioskCheckInDialog({
             })}
           </div>
 
-          <button type="button" className="btn btn-secondary kiosk-close-btn" onClick={handleDone}>
-            {selections.length === 0 ? "Cancel" : `Done (${selections.length})`}
-          </button>
+          <div className="kiosk-dialog-actions">
+            <button type="button" className="btn btn-secondary kiosk-close-btn" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary kiosk-close-btn"
+              onClick={handleCheckIn}
+              disabled={selections.length === 0}
+            >
+              {`Check In (${selections.length})`}
+            </button>
+          </div>
         </div>
       </div>
     </Portal>
