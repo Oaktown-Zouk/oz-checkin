@@ -2,16 +2,14 @@
 // a member with no Tier Rule (so Classes Allowed is 0 — any check-in is "over
 // allowance"), and has no Credits record consumed by it. Written after a manual sweep
 // (2026-08-23) turned up 5 such check-ins from a batch of Form-submitted trial-class
-// sign-ins, whose credits sat unlinked — Automation C either didn't fire for them or
-// hit a rollup-timing race. The user suspects this may recur, hence a real script
-// instead of a one-off.
+// sign-ins, whose credits sat unlinked. The user suspects this may recur, hence a real
+// script instead of a one-off.
 //
-// services/checkins.ts now consumes/flags credits itself synchronously for every
-// check-in it creates (see gateCheckIns), rather than relying on Automation C at all —
-// this specific failure mode shouldn't recur for check-ins created going forward. This
-// script stays useful regardless: for auditing check-ins that predate that change, and
-// as a general sanity check against drift from causes other than a flaky automation
-// (e.g. a check-in created directly in Airtable, bypassing the app entirely).
+// services/checkins.ts consumes/flags credits itself synchronously for every check-in
+// it creates (see gateCheckIns). This script stays useful regardless: for auditing
+// check-ins that predate that becoming the only consumption path, and as a general
+// sanity check against drift (e.g. a check-in created directly in Airtable, bypassing
+// the app entirely).
 //
 // A gap is only auto-fixed if the member already has an unclaimed Available credit —
 // this script never creates new credits (that's a judgment call, see the Dvij Patel

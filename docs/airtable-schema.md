@@ -111,8 +111,8 @@ plan amount at all. Two things handle this:
 - `Checked In At (Valid)` (formula) — `Checked In At` unless undone, else blank; feeds
   `Members.Last Check-in At`.
 - `Needs Review` / `Review Reason` — set by the app (`services/checkins.ts`'s
-  `gateCheckIns`, formerly Automation C — see "Credits" below) when a check-in exceeds
-  the member's tier allowance and no credit is available to cover it.
+  `gateCheckIns`) when a check-in exceeds the member's tier allowance and no credit is
+  available to cover it.
 - `Credits` — reverse link, populated once a `Credits` record consumes this check-in.
   `services/checkins.ts`'s `undoCheckIn` reads this directly to find which credit to
   free on undo, rather than scanning the whole `Credits` table.
@@ -142,21 +142,14 @@ reassigned, so the merged student doesn't end up with two signup credits — see
 `SPEC.md`'s "Merging duplicate students".
 
 Granting is still Airtable automations; consuming and freeing a credit are both
-application code now (see SPEC.md's "Credits system" for why):
+application code (see SPEC.md's "Credits system" for why):
 - **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
 - **B** — a `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
   not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
-- ~~**C**~~ — retired; disable this in Airtable. It used to read `Member.Remaining
-  Today` post-creation on every new `Check-ins` record and consume/flag accordingly,
-  same-day only. `services/checkins.ts`'s `gateCheckIns` now does this for every
-  check-in it creates, live or backdated, and leaving the real automation active
-  alongside it double-consumes a credit for the same over-allowance check-in.
-- ~~**D**~~ — also retired, lower urgency. It used to run whenever `Check-ins.Undone
-  At` became non-blank, finding the `Credits` record consumed by that check-in and
-  clearing `Consumed By Check-in`. `services/checkins.ts`'s `undoCheckIn` now does
-  this itself immediately, via the check-in's own `Credits` reverse link. Leaving this
-  one active isn't a correctness bug like C — it'd just find nothing to clear — but
-  it's dead weight; disable when convenient.
+
+Consuming (`services/checkins.ts`'s `gateCheckIns`, run for every check-in it
+creates, live or backdated) and freeing (`undoCheckIn`, via the check-in's own
+`Credits` reverse link) are both handled the same way regardless of path.
 
 ## Programs (`tblB90zwd3OjKxxDs`)
 
@@ -318,14 +311,6 @@ UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
   Name`, read by `services/studentTimeline.ts` to attribute the note in the student
   timeline without a second lookup), and `Created` (Airtable's own auto-set creation
   timestamp) — none of these are ever written by the app.
-- `json` (formula, read-only) — an attempt at packing `Summary`/`Strengths`/
-  `Opportunities` into one string for a `Members`-side Lookup to pull through
-  (`json (from Teacher Notes)`), the same idea as `Levelups`' `From (safe)`/
-  `To (safe)`. Not used by the app: Airtable's formula language has no JSON-escaping
-  function, and this one is confirmed broken by testing it directly — an embedded
-  quote in `Summary` breaks the string, and `Opportunities`' value is missing its
-  opening quote (a formula typo, not a fundamental limit). Harmless to leave; not
-  worth fixing given `Notes` is empty in the real base as of this writing.
 
 ## Sessions / Events
 

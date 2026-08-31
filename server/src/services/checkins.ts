@@ -44,14 +44,10 @@ async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): 
 }
 
 // Runs for every check-in creation, live or backdated — the app computes gating and
-// consumes/flags credits itself rather than relying on Airtable's Automation C. That
-// automation proved unreliable and slow in practice, and since this app's own testing
-// and manual QA lean heavily on the backdated path (Automation C never fires for a
-// non-today date — see docs/airtable-schema.md), the live path's reliance on it wasn't
-// getting regularly exercised either. Automation C should be disabled in Airtable once
-// this ships, or a live over-allowance check-in will get double-gated: this function
-// consumes a credit, and then Automation C — still seeing a negative Remaining Today —
-// independently consumes a *second* one for the same check-in.
+// consumes/flags credits itself rather than relying on an Airtable automation, which
+// proved unreliable and slow in practice. Since this app's own testing and manual QA
+// lean heavily on the backdated path, an automation reacting only to live check-ins
+// wasn't getting regularly exercised either, letting failures go unnoticed.
 async function gateCheckIns(
   studentId: string,
   effectiveAt: Date,
@@ -121,14 +117,10 @@ export async function undoCheckIn(checkinId: string): Promise<StudentStatus> {
   });
 
   // Free any credit this check-in had consumed, immediately — mirrors gateCheckIns's
-  // move off of an Airtable automation (formerly Automation D) for the same reason:
-  // no waiting on a separate async trigger. checkin.fields.Credits is the check-in's
-  // own reverse link to whichever Credits record consumed it (set by
-  // consumeOldestCreditOrFlag), already in hand from the getRecordOrNull above — no
-  // extra read needed to find it. Automation D is now redundant for check-ins undone
-  // through the app (safe to leave enabled, unlike Automation C: clearing an
-  // already-clear link is a no-op, not a double-consume), but there's no reason to
-  // keep relying on it either.
+  // move off of an Airtable automation for the same reason: no waiting on a separate
+  // async trigger. checkin.fields.Credits is the check-in's own reverse link to
+  // whichever Credits record consumed it (set by consumeOldestCreditOrFlag), already
+  // in hand from the getRecordOrNull above — no extra read needed to find it.
   const consumedCreditId = checkin.fields.Credits?.[0];
   if (consumedCreditId) {
     await updateRecord<CreditFields>(TABLES.credits, consumedCreditId, {

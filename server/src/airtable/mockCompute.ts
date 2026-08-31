@@ -1,10 +1,10 @@
 // Computes the subset of Airtable's formula/rollup fields this app's own logic
 // actually depends on staying live/consistent with its own mutations. No automation
-// simulation lives here at all anymore — credit consumption on create (formerly
-// Automation C) and freeing a credit on undo (formerly Automation D) are both plain
-// application code now (services/checkins.ts), so the mock just needs to serve
-// listRecords/updateRecord calls like any other write. See mockClient.ts for how
-// these get wired into createRecords/updateRecord/listRecords/getRecord.
+// simulation lives here at all — credit consumption on create and freeing a credit
+// on undo are both plain application code (services/checkins.ts), so the mock just
+// needs to serve listRecords/updateRecord calls like any other write. See
+// mockClient.ts for how these get wired into
+// createRecords/updateRecord/listRecords/getRecord.
 //
 // Deliberately NOT computed here (fixture-static instead — seed data sets them
 // directly, same as Airtable would have already resolved them): Members.Access
