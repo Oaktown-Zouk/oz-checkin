@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { GIVEBUTTER_WIDGET_SCRIPT_SRC } from "./kioskProducts.js";
+import { GIVEBUTTER_WIDGET_SCRIPT_SRC } from "shared";
 
 // Injects Givebutter's widget-loader script once per document — it defines the
 // <givebutter-widget> custom element that KioskPurchaseFlow renders. Idempotent

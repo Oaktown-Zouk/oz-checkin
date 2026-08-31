@@ -1209,6 +1209,22 @@ body {
   background: white;
   border-radius: 16px;
   padding: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.kiosk-flow-subtitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.kiosk-flow-disclaimer {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--gray);
+  text-align: center;
 }
 
 .kiosk-qr-image {

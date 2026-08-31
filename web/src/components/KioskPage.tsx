@@ -210,7 +210,7 @@ export function KioskPage({
           </div>
 
           <div className="kiosk-action-buttons">
-            <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "signup" })}>
+            <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "signupCount" })}>
               First time? Sign up for a free class!
             </button>
             <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "buyAPass" })}>
