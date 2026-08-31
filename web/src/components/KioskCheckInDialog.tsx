@@ -61,7 +61,17 @@ export function KioskCheckInDialog({
   const selections: CheckInSelection[] = Object.entries(roles)
     .filter((entry): entry is [string, "Lead" | "Follow"] => Boolean(entry[1]))
     .map(([programId, role]) => ({ programId, role }));
-  const localRemaining = student.remaining - selections.length;
+  // Unlike the front desk dialog, the kiosk shows one merged number a drop-in
+  // student can act on directly: student.remaining already accounts for membership
+  // allowance minus today's check-ins (see studentStatus.ts), so adding
+  // availableCredits folds in a drop-in credit pool the same way. Capped by how many
+  // distinct class timeslots are still visible today — credits/allowance can't let a
+  // student check into more classes than actually exist to check into.
+  const timeslotsAvailableToday = new Set(visiblePrograms.map((p) => p.startTime)).size;
+  const localRemaining = Math.min(
+    student.remaining + student.availableCredits - selections.length,
+    timeslotsAvailableToday
+  );
 
   // Only one {class, role} pick allowed per timeslot — a student can't be in two
   // classes at once, or dance one class as both Lead and Follow at once. Picking a
@@ -113,7 +123,7 @@ export function KioskCheckInDialog({
         <div className="kiosk-dialog-card">
           <h1 className="kiosk-dialog-title">{student.name}</h1>
           <div className="badges">
-            <MembershipBadge student={student} />
+            <MembershipBadge student={student} showBothWhenApplicable />
           </div>
 
           <div className="remaining-counter remaining-counter-kiosk">

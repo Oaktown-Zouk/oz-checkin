@@ -106,7 +106,7 @@ export function CheckInDialog({
           {/* Shows remaining classes/credits while picking, so front desk can see at a
               glance how many the student has left before checking them into more. */}
           <div className="badges">
-            <MembershipBadge student={student} />
+            <MembershipBadge student={student} showBothWhenApplicable />
           </div>
 
           <div className="remaining-counter">

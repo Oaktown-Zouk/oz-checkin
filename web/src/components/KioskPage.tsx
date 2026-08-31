@@ -211,10 +211,10 @@ export function KioskPage({
 
           <div className="kiosk-action-buttons">
             <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "signup" })}>
-              First time? Sign up for a free class
+              First time? Sign up for a free class!
             </button>
             <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "buyAPass" })}>
-              Buy a pass
+              Buy a pass or membership
             </button>
           </div>
         </div>

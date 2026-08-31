@@ -1,9 +1,20 @@
 import type { StudentStatus } from "../types.js";
 
-// The membership tier or credits-remaining badge — shared between the roster row and
-// the check-in dialog (where it helps front desk see how many classes are left before
-// picking classes for the student).
-export function MembershipBadge({ student }: { student: StudentStatus }) {
+// The membership tier or credits-remaining badge — shared between the roster row, the
+// check-in dialogs, and the student pages.
+export function MembershipBadge({
+  student,
+  // Roster rows stay one-badge-per-student on purpose — a member's leftover credit
+  // is real but secondary information there, and showing it on every row would be
+  // clutter across a whole list. The check-in dialogs and the student detail/self-
+  // service pages are single-student contexts where that same credit is actionable
+  // (front desk/the student themselves deciding what a check-in will consume), so
+  // they opt in explicitly. Defaults to off so any new call site starts conservative.
+  showBothWhenApplicable = false,
+}: {
+  student: StudentStatus;
+  showBothWhenApplicable?: boolean;
+}) {
   // "Active" — a live membership covers check-in, nothing gets spent. "Paid" — no
   // active membership, but a recent drop-in/check-in means they're not a stranger.
   // "Inactive" gets no badge at all (dropped per product decision) — check-in still
@@ -34,9 +45,13 @@ export function MembershipBadge({ student }: { student: StudentStatus }) {
       : (accessLabel ?? student.tierName);
   const combinedClass = isMember ? "badge-green badge-prominent" : accessLabel ? accessClass : "badge-blue";
 
-  // Credits only matter once a membership isn't already covering check-in — showing
-  // them alongside an active membership would just be confusing, unused information.
-  const showCredits = !isMember;
+  // Non-members always see their credits state (including "No credits remaining" —
+  // that's actionable for them). A member's active membership already covers
+  // check-in, so a credit-less member gets no redundant badge — but a member who
+  // also has a credit on file (e.g. an unused signup credit, or a drop-in bought
+  // before they upgraded to a membership) should still see it where that's not
+  // clutter — see showBothWhenApplicable above.
+  const showCredits = !isMember || (showBothWhenApplicable && student.availableCredits > 0);
 
   return (
     <>

@@ -140,7 +140,7 @@ export function StudentPage({
                 see StudentBadges.tsx for the roster row, which has no such boxes and
                 still needs them. */}
             <div className="badges">
-              <MembershipBadge student={timeline.status} />
+              <MembershipBadge student={timeline.status} showBothWhenApplicable />
             </div>
             {canTransfer && (
               <button

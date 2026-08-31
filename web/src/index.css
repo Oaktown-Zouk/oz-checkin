@@ -1103,7 +1103,7 @@ body {
   max-width: 640px;
   height: auto;
   border-radius: 12px;
-  margin: 0 auto -40px;
+  margin: 0 auto;
   position: relative;
   z-index: 0;
 }
@@ -1123,6 +1123,7 @@ body {
   position: relative;
   width: 100%;
   max-width: 640px;
+  margin-bottom: 100px;
 }
 
 .kiosk-search-results {
