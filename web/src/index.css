@@ -491,7 +491,8 @@ body {
   border-radius: 12px;
   padding: 24px;
   width: 100%;
-  max-width: 360px;
+  max-width: 60vw;
+  max-height: 80vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -904,12 +905,13 @@ body {
 .program-picker-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: space-evenly;
   gap: 12px;
+  margin: 4px;
 }
 
 .program-picker-name {
-  font-size: 0.9rem;
+  font-size: 2rem;
 }
 
 .program-picker-roles {
@@ -919,12 +921,14 @@ body {
 
 .role-toggle {
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 20px;
   border: 1px solid var(--border);
   background: white;
   color: #111827;
-  font-size: 0.8rem;
+  font-size: 1.4rem;
   cursor: pointer;
+  margin: 0px 10px;
+  padding: 20px;
 }
 
 .role-toggle-selected {
