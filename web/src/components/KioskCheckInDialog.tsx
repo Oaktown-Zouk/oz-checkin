@@ -9,9 +9,25 @@ import {
   withinVisibleWindow,
 } from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
+import chimeUrl from "../../assets/bell_g5.opus";
 
 const ROLES = ["Lead", "Follow"] as const;
 const WELCOME_MS = 5000;
+const CHIME_INTERVAL_MS = 700;
+
+// One chime per class checked in, 0.7s apart — deliberately shorter than the clip
+// itself, so consecutive chimes overlap rather than waiting for each other to finish.
+// A new Audio instance per play (rather than reusing one) is what makes that
+// possible: each instance has its own playback position, so they can ring
+// simultaneously instead of one cutting the other off. play() can reject (e.g. no
+// audio hardware, or the browser being unusually strict about it despite this always
+// being called from a direct tap) — a missed chime isn't worth surfacing an error
+// over, so this swallows that failure and just stops repeating.
+function playChime(timesRemaining: number) {
+  if (timesRemaining <= 0) return;
+  new Audio(chimeUrl).play().catch(() => {});
+  if (timesRemaining > 1) setTimeout(() => playChime(timesRemaining - 1), CHIME_INTERVAL_MS);
+}
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
@@ -98,6 +114,7 @@ export function KioskCheckInDialog({
 
   function handleCheckIn() {
     onSubmit(selections);
+    playChime(selections.length);
     setShowWelcome(true);
     setTimeout(onClose, WELCOME_MS);
   }
