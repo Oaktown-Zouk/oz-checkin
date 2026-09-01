@@ -142,7 +142,7 @@ export function KioskCheckInDialog({
 
           <div className="remaining-counter remaining-counter-kiosk">
             <span className="remaining-counter-value">{localRemaining}</span>
-            <span className="remaining-counter-label">remaining</span>
+            <span className="remaining-counter-label">available</span>
           </div>
 
           {visiblePrograms.length === 0 && <p className="dialog-description">No classes available right now.</p>}

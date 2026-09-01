@@ -36,8 +36,8 @@ export function MembershipBadge({
   // label; shown alone (no access label) for an Inactive student who still nominally
   // has a tier from a lapsed membership. Active members get "N Class Membership"
   // (capitalized, count first, always singular "Class" regardless of count) to match
-  // the "N credits available" pattern below, in a higher-contrast badge — this is the
-  // single most important thing on the row.
+  // the "N drop-in credits" pattern below, in a higher-contrast badge — this
+  // is the single most important thing on the row.
   const combinedLabel = isMember
     ? `${student.tierName!.replace(/class(es)?/i, "Class")} Membership`
     : accessLabel && student.tierName
@@ -45,10 +45,10 @@ export function MembershipBadge({
       : (accessLabel ?? student.tierName);
   const combinedClass = isMember ? "badge-green badge-prominent" : accessLabel ? accessClass : "badge-blue";
 
-  // Non-members always see their credits state (including "No credits remaining" —
-  // that's actionable for them). A member's active membership already covers
-  // check-in, so a credit-less member gets no redundant badge — but a member who
-  // also has a credit on file (e.g. an unused signup credit, or a drop-in bought
+  // Non-members always see their credits state (including "No drop-in credits
+  // remaining" — that's actionable for them). A member's active membership already
+  // covers check-in, so a credit-less member gets no redundant badge — but a member
+  // who also has a credit on file (e.g. an unused signup credit, or a drop-in bought
   // before they upgraded to a membership) should still see it where that's not
   // clutter — see showBothWhenApplicable above.
   const showCredits = !isMember || (showBothWhenApplicable && student.availableCredits > 0);
@@ -59,8 +59,8 @@ export function MembershipBadge({
       {showCredits && (
         <span className={`badge badge-prominent ${student.availableCredits > 0 ? "badge-green" : "badge-amber"}`}>
           {student.availableCredits > 0
-            ? `${student.availableCredits} credit${student.availableCredits === 1 ? "" : "s"} available`
-            : "No credits remaining"}
+            ? `${student.availableCredits} drop-in credit${student.availableCredits === 1 ? "" : "s"}`
+            : "No drop-in credits"}
         </span>
       )}
     </>
