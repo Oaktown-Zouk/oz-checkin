@@ -1,3 +1,49 @@
+/* Default palette matches oaktownzouk.com's own look (plain black/white, system
+   sans-serif) — see signup.ts for how `?theme=` on the iframe URL swaps these via
+   `documentElement.dataset.theme`. An iframe can never inherit the embedding page's
+   actual CSS (a hard, cross-origin-proof isolation boundary — see SPEC.md's "Public
+   sign-up widget"), so matching each site's look has to happen here explicitly,
+   themed per embed rather than left to accident. */
+:root {
+  --gfw-bg: #ffffff;
+  --gfw-text: #111111;
+  --gfw-heading-font: inherit;
+  --gfw-heading-color: #111111;
+  --gfw-muted: #666666;
+  --gfw-policy-color: #555555;
+  --gfw-link-color: #1a73e8;
+  --gfw-btn-bg: #111111;
+  --gfw-btn-text: #ffffff;
+  --gfw-btn-radius: 6px;
+}
+
+/* theoaklandgrove.com/zouk (Squarespace, ?theme=oaklandgrove) — colors pulled from
+   that page's own computed styles: dark forest green section background, cream/gold
+   headings and buttons, fully-rounded pill buttons. Headings deliberately reuse the
+   same plain sans-serif as the body text (theoaklandgrove.com's own heading font is
+   a paid Squarespace-licensed face not worth licensing separately for this). */
+:root[data-theme="oaklandgrove"] {
+  --gfw-bg: #12281d;
+  --gfw-text: #ffffff;
+  --gfw-heading-font: "Helvetica Neue", Arial, sans-serif;
+  --gfw-heading-color: #efe4ae;
+  --gfw-muted: #efe4ae;
+  --gfw-policy-color: #cabf8c;
+  --gfw-link-color: #efe4ae;
+  --gfw-btn-bg: #efe4ae;
+  --gfw-btn-text: #12281d;
+  --gfw-btn-radius: 999px;
+}
+
+body {
+  background: var(--gfw-bg);
+  color: var(--gfw-text);
+}
+
+a {
+  color: var(--gfw-link-color);
+}
+
 .gfw-container {
   max-width: 600px;
   margin: 0 auto;
@@ -21,6 +67,15 @@
 .gfw-question {
   margin-bottom: 16px;
   text-align: center;
+  font-family: var(--gfw-heading-font);
+  color: var(--gfw-heading-color);
+}
+/* Plain sans-serif headings read too small/plain at the browser's default h3 size —
+   scoped to this theme only, so the default (oaktownzouk.com) theme keeps relying on
+   the browser's native bold h3 styling untouched. */
+:root[data-theme="oaklandgrove"] .gfw-question {
+  font-size: 1.2em;
+  font-weight: normal;
 }
 .gfw-options {
   display: flex;
@@ -33,11 +88,12 @@
   align-items: stretch;
 }
 .gfw-btn {
-  background: #111;
-  color: #fff;
+  background: var(--gfw-btn-bg);
+  color: var(--gfw-btn-text);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--gfw-btn-radius);
   padding: 14px 20px;
+  font-size: 1em;
   cursor: pointer;
   transition: opacity 0.15s ease;
   text-align: center;
@@ -54,7 +110,8 @@
   margin: 16px auto 0;
   background: none;
   border: none;
-  color: #666;
+  color: var(--gfw-muted);
+  font-size: 1em;
   text-decoration: underline;
   cursor: pointer;
 }
@@ -69,8 +126,8 @@
 .gfw-policy-note {
   text-align: center;
   margin-bottom: 20px;
-  font-size: 0.9rem;
-  color: #555;
+  font-size: 1em;
+  color: var(--gfw-policy-color);
 }
 .gfw-embed {
   margin: 20px 0;

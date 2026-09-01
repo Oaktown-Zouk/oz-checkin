@@ -953,3 +953,18 @@ Code Block embeds a plain iframe with no such wrapper, confirmed no issue there.
   `KioskPurchaseFlow.tsx`, so the two can't drift out of sync (see "Sign-up and
   purchase flow" under "Kiosk mode" above for the kiosk side, including the one place
   the wording deliberately differs — how to ask for a lower price).
+- **Per-site theming** (`web-student/src/signup/signup.css`): an iframe can never
+  inherit the embedding page's own CSS — that's a hard isolation boundary with no
+  workaround, cross-origin or not — so a site with a very different look (dark forest
+  green background, cream headings on theoaklandgrove.com/zouk, vs. plain
+  black-on-white matching oaktownzouk.com's own site) can't get that "just blend in"
+  look for free the way raw pasted-in HTML could. Instead, each embedding `<iframe>`'s `src` carries a
+  `?theme=` query param (e.g. `?theme=oaklandgrove`); `signup.ts` reads it and sets
+  `documentElement.dataset.theme`, which `signup.css`'s `:root[data-theme="..."]`
+  blocks key off of to swap a set of CSS custom properties (background, text/heading/
+  link colors, button shape, heading font). No `theme` param (the default, used by
+  `my.oaktownzouk.com/signup` itself and its oaktownzouk.com embed) falls through to
+  the plain palette matching oaktownzouk.com's own look. Unknown/missing theme values
+  fall through the same way rather than erroring. The embedded `<givebutter-widget>`
+  itself is unthemed either way — it's Givebutter's own styling, outside this app's
+  reach.

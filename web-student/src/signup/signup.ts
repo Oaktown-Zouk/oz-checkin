@@ -21,6 +21,17 @@ const POLICY_NOTES: Record<string, string> = {
   "new-member-membership": NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
 };
 
+// Which site embedded this page, passed as ?theme= on the iframe's own src — see
+// signup.css's :root[data-theme=...] blocks for the actual palette each one maps to.
+// Unknown/missing values fall through to the default (oaktownzouk.com's own look)
+// rather than erroring, since a stray or outdated query param shouldn't break the
+// page.
+const KNOWN_THEMES = new Set(["oaklandgrove"]);
+const requestedTheme = new URLSearchParams(location.search).get("theme");
+if (requestedTheme && KNOWN_THEMES.has(requestedTheme)) {
+  document.documentElement.dataset.theme = requestedTheme;
+}
+
 function emailLink(): HTMLAnchorElement {
   const link = document.createElement("a");
   link.href = `mailto:${PRICING_CONTACT_EMAIL}`;
