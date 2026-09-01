@@ -33,7 +33,6 @@ async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): 
 
   if (candidate) {
     await updateRecord<CreditFields>(TABLES.credits, candidate.id, {
-      "Consumed At": new Date().toISOString(),
       "Consumed By Check-in": [checkinId],
     });
   } else {
@@ -44,10 +43,12 @@ async function consumeOldestCreditOrFlag(studentId: string, checkinId: string): 
   }
 }
 
-// Backdated path only — Automation C's same-day guard means it no-ops for these, so
-// the app mirrors its gating logic itself, parameterized by the backdated date instead
-// of literal "today." See docs/airtable-schema.md, "Credits" (backdated gating).
-async function gateBackdatedCheckIns(
+// Runs for every check-in creation, live or backdated — the app computes gating and
+// consumes/flags credits itself rather than relying on an Airtable automation, which
+// proved unreliable and slow in practice. Since this app's own testing and manual QA
+// lean heavily on the backdated path, an automation reacting only to live check-ins
+// wasn't getting regularly exercised either, letting failures go unnoticed.
+async function gateCheckIns(
   studentId: string,
   effectiveAt: Date,
   createdCheckins: AirtableRecord<CheckinFields>[]
@@ -64,8 +65,7 @@ async function gateBackdatedCheckIns(
   const classesAllowed = member?.fields["Classes Allowed"] ?? 0;
 
   // createRecords (batch create) preserves request order, so index+1 is this row's
-  // position among today's check-ins for this student — same semantics as Automation
-  // C's nthToday.
+  // position among this date's check-ins for this student.
   for (let i = 0; i < createdCheckins.length; i++) {
     const nth = priorCount + i + 1;
     if (nth > classesAllowed) {
@@ -77,7 +77,7 @@ async function gateBackdatedCheckIns(
 export async function createCheckIns(
   studentId: string,
   selections: CheckInSelection[],
-  opts: { effectiveAt?: Date } = {}
+  opts: { effectiveAt?: Date; method?: CheckinFields["Method"] } = {}
 ): Promise<StudentStatus> {
   if (selections.length === 0) {
     throw new ConflictError("At least one program/role selection is required.");
@@ -93,14 +93,11 @@ export async function createCheckIns(
       "Checked In At": checkedInAt.toISOString(),
       "Class Level": [s.programId],
       Role: s.role,
+      ...(opts.method ? { Method: opts.method } : {}),
     }))
   );
 
-  if (!isLive) {
-    await gateBackdatedCheckIns(studentId, checkedInAt, created);
-  }
-  // Live path: Automation C (same-day guarded) handles gating/credit-consumption on
-  // its own once these records land — nothing more to do here.
+  await gateCheckIns(studentId, checkedInAt, created);
 
   const updated = await getStudentStatusById(studentId, isLive ? undefined : dateStringFor(checkedInAt));
   if (!updated) throw new NotFoundError("Student not found");
@@ -118,8 +115,20 @@ export async function undoCheckIn(checkinId: string): Promise<StudentStatus> {
   await updateRecord<CheckinFields>(TABLES.checkins, checkinId, {
     "Undone At": new Date().toISOString(),
   });
-  // Automation D frees any credit this check-in consumed, and the live rollup
-  // (Checked In Today (Live) -> Remaining Today) self-corrects — nothing else to do.
+
+  // Free any credit this check-in had consumed, immediately — mirrors gateCheckIns's
+  // move off of an Airtable automation for the same reason: no waiting on a separate
+  // async trigger. checkin.fields.Credits is the check-in's own reverse link to
+  // whichever Credits record consumed it (set by consumeOldestCreditOrFlag), already
+  // in hand from the getRecordOrNull above — no extra read needed to find it.
+  const consumedCreditId = checkin.fields.Credits?.[0];
+  if (consumedCreditId) {
+    await updateRecord<CreditFields>(TABLES.credits, consumedCreditId, {
+      "Consumed By Check-in": [],
+    });
+  }
+  // The live rollup (Checked In Today (Live) -> Remaining Today) self-corrects on its
+  // own once Undone At is set — nothing else to do for that part.
 
   const viewedDate = checkin.fields["Checked In At"]
     ? dateStringFor(new Date(checkin.fields["Checked In At"]))

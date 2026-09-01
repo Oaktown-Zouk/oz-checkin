@@ -65,13 +65,13 @@ export function evaluateFormula(formula: string, record: MockRecordLike): boolea
   m = expr.match(/^\{([^}]+)\}\s*=\s*(-?\d+(?:\.\d+)?)$/);
   if (m) return Number(record.fields[m[1]] ?? 0) === Number(m[2]);
 
-  m = expr.match(/^DATETIME_FORMAT\(SET_TIMEZONE\(\{([^}]+)\},\s*'([^']*)'\),\s*'YYYY-MM-DD'\)\s*=\s*'([^']*)'$/);
+  m = expr.match(/^DATETIME_FORMAT\(SET_TIMEZONE\(\{([^}]+)\},\s*'([^']*)'\),\s*'YYYY-MM-DD'\)\s*(=|>=)\s*'([^']*)'$/);
   if (m) {
-    const [, field, tz, dateStr] = m;
+    const [, field, tz, op, dateStr] = m;
     const raw = record.fields[field];
     if (isBlank(raw)) return false;
     const asDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(raw as string));
-    return asDate === dateStr;
+    return op === "=" ? asDate === dateStr : asDate >= dateStr;
   }
 
   throw new Error(`mockFormula: unsupported formula shape: ${formula}`);

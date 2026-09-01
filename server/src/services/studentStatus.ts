@@ -1,6 +1,6 @@
 import { listRecords, getRecordOrNull, TABLES, type AirtableRecord } from "../airtable/client.js";
 import type { MemberFields, CheckinFields, ProgramFields } from "../airtable/fields.js";
-import { today, dateStringFor, STUDIO_TIMEZONE } from "../lib/date.js";
+import { today, daysAgo, dateStringFor, STUDIO_TIMEZONE } from "../lib/date.js";
 
 export interface CheckInInfo {
   id: string;
@@ -31,9 +31,10 @@ export interface StudentStatus {
   tierName: string | null;
   classesAllowed: number;
   // "Remaining" for the viewed date. For live/today, read straight from Airtable's
-  // Remaining Today (Automation C already keeps it correct). For a backdated view,
-  // Airtable's live fields can't represent a past date, so the app computes it itself —
-  // see docs/airtable-schema.md, "Credits" (backdated gating).
+  // Remaining Today, a live rollup of today's check-in count against Classes Allowed
+  // — self-correcting on its own regardless of credit consumption. For a backdated
+  // view, Airtable's live fields can't represent a past date, so the app computes it
+  // itself — see docs/airtable-schema.md, "Credits" (backdated gating).
   remaining: number;
   // Always the current count, even for a backdated view — credits aren't
   // reconstructed for a past date the way `remaining` above is.
@@ -50,7 +51,9 @@ export interface StudentStatus {
   // platform limit: rollups of dateTime values via MAX() always collapse to date-only
   // precision, and grouping by date-only risks a UTC-vs-studio-timezone mismatch this
   // app is otherwise careful about — see lib/date.ts. Doing it here reuses that already-
-  // correct timezone handling instead).
+  // correct timezone handling instead). Empty if that most recent visit was more than a
+  // week ago — see computeLastCheckinSelections — so the front desk dialog doesn't
+  // preselect a stale guess from a month-old visit as if it were relevant today.
   lastCheckinSelections: RecentCheckinSelection[];
 }
 
@@ -66,13 +69,42 @@ async function fetchCheckinsForDate(viewedDate: string): Promise<AirtableRecord<
   });
 }
 
+// Pure function over one member's own (already-fetched) non-undone check-ins —
+// extracted so a caller that's already fetched a student's full check-in history for
+// its own purposes (see studentTimeline.ts) can derive this from data it already has,
+// with no separate fetch at all.
+export function computeLastCheckinSelections(
+  checkinsForMember: AirtableRecord<CheckinFields>[]
+): RecentCheckinSelection[] {
+  let mostRecentDate: string | null = null;
+  for (const c of checkinsForMember) {
+    if (!c.fields["Checked In At"]) continue;
+    const d = dateStringFor(new Date(c.fields["Checked In At"]));
+    if (!mostRecentDate || d > mostRecentDate) mostRecentDate = d;
+  }
+  // A student who hasn't been back in a month is unlikely to have changed what they
+  // usually take, so their last visit is still a reasonable guess — this is a
+  // staleness cutoff, not a performance one (the fetch above already goes back 30
+  // days regardless; see fetchMostRecentCheckinsByMember). 29 keeps it just inside
+  // that same fetched window (also what the kiosk dialog bolds — see
+  // KioskCheckInDialog.tsx).
+  if (!mostRecentDate || mostRecentDate < daysAgo(29)) return [];
+  return checkinsForMember
+    .filter((c) => c.fields["Checked In At"] && dateStringFor(new Date(c.fields["Checked In At"]!)) === mostRecentDate)
+    .filter((c) => c.fields["Class Level"]?.[0] && c.fields.Role)
+    .map((c) => ({ programId: c.fields["Class Level"]![0], role: c.fields.Role! }));
+}
+
 // No Member filter is possible via Airtable's formula language for a linked field (it
-// only exposes the linked record's primary-field text, not its id), so this scans the
-// whole non-undone Check-ins table once and groups in memory — same tradeoff already
-// made in studentTimeline.ts, just shared across the whole roster instead of per-student.
+// only exposes the linked record's primary-field text, not its id), so this scans
+// non-undone Check-ins once and groups in memory. Bounded to the last 30 days (same
+// window "Recently Active" uses) rather than the table's entire history — this is
+// only ever used to guess which classes to preselect on the check-in dialog, so a
+// check-in older than that wouldn't be a useful guess anyway, and the table only ever
+// grows (check-ins are marked undone, never deleted).
 async function fetchMostRecentCheckinsByMember(): Promise<Map<string, RecentCheckinSelection[]>> {
   const all = await listRecords<CheckinFields>(TABLES.checkins, {
-    filterByFormula: "{Undone At} = BLANK()",
+    filterByFormula: `AND({Undone At} = BLANK(), DATETIME_FORMAT(SET_TIMEZONE({Checked In At}, '${STUDIO_TIMEZONE}'), 'YYYY-MM-DD') >= '${daysAgo(30)}')`,
     fields: ["Member", "Checked In At", "Class Level", "Role"],
   });
 
@@ -87,21 +119,12 @@ async function fetchMostRecentCheckinsByMember(): Promise<Map<string, RecentChec
 
   const result = new Map<string, RecentCheckinSelection[]>();
   for (const [memberId, memberCheckins] of byMember) {
-    let mostRecentDate: string | null = null;
-    for (const c of memberCheckins) {
-      const d = dateStringFor(new Date(c.fields["Checked In At"]!));
-      if (!mostRecentDate || d > mostRecentDate) mostRecentDate = d;
-    }
-    const selections = memberCheckins
-      .filter((c) => dateStringFor(new Date(c.fields["Checked In At"]!)) === mostRecentDate)
-      .filter((c) => c.fields["Class Level"]?.[0] && c.fields.Role)
-      .map((c) => ({ programId: c.fields["Class Level"]![0], role: c.fields.Role! }));
-    result.set(memberId, selections);
+    result.set(memberId, computeLastCheckinSelections(memberCheckins));
   }
   return result;
 }
 
-function buildStatus(
+export function buildStatus(
   member: AirtableRecord<MemberFields>,
   isLiveToday: boolean,
   checkinsForMember: AirtableRecord<CheckinFields>[],

@@ -177,6 +177,7 @@ describe("getStudentTimeline", () => {
           createdTime: "2025-06-01T00:00:00Z",
           fields: {
             Member: [STUDENT],
+            Issuer: ["recRoleJane"],
             Summary: "Great progress this week",
             Strengths: "Strong frame",
             Opportunities: "Timing on turns",
@@ -193,10 +194,12 @@ describe("getStudentTimeline", () => {
     assert.equal(noteEvent?.label, "Note from Jane: Great progress this week");
     assert.equal(noteEvent?.at, "2025-06-01T00:00:00Z");
     assert.deepEqual(noteEvent?.note, {
+      id: "recNote1",
       summary: "Great progress this week",
       strengths: "Strong frame",
       opportunities: "Timing on turns",
       issuerName: "Jane",
+      issuerRoleId: "recRoleJane",
     });
     assert.equal(timeline?.events.filter((e) => e.type === "note").length, 1);
   });

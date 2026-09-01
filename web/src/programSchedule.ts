@@ -1,4 +1,4 @@
-import type { ProgramSchedule } from "./api.js";
+import type { ProgramSchedule, StudentStatus } from "./api.js";
 
 // Matches server/src/lib/date.ts's STUDIO_TIMEZONE — every date-sensitive comparison in
 // this app is Pacific-zoned, including this client-side one, so backdating against a
@@ -31,20 +31,26 @@ export function activeProgramsForDate(programs: ProgramSchedule[], dateStr: stri
   });
 }
 
-// Shared between CheckInDialog and KioskCheckInDialog: a student can't be in two
-// classes at once, so once `isTaken` is true for some other program sharing this
-// one's start time, this program should be disabled too. `isTaken` is left generic
-// (rather than assuming a particular selection-state shape) since the two dialogs
-// track "taken" differently — CheckInDialog by a pending role choice, the kiosk
-// dialog by an already-completed check-in.
-export function hasConflictingSelection(
-  programs: ProgramSchedule[],
-  programId: string,
-  isTaken: (otherProgramId: string) => boolean
-): boolean {
+// Shared between CheckInDialog and KioskCheckInDialog.
+export function isCheckedInToday(student: StudentStatus, programId: string, role: "Lead" | "Follow"): boolean {
+  return student.checkinsToday.some((c) => c.programId === programId && c.role === role);
+}
+
+export function isProgramCheckedInToday(student: StudentStatus, programId: string): boolean {
+  return student.checkinsToday.some((c) => c.programId === programId);
+}
+
+// Every program sharing `programId`'s start time, including itself — the set of
+// {class, role} options a student can only take one of. A student can't be in two
+// classes at once, and can't dance a single class as both Lead and Follow at once
+// either, so the whole group (every role of every program at that time) behaves as
+// one choice: see CheckInDialog.tsx/KioskCheckInDialog.tsx for how picking one
+// grays the rest of the group rather than disabling it outright, unless one of them
+// is already an actual check-in today, which locks the whole group.
+export function timeslotGroup(programs: ProgramSchedule[], programId: string): ProgramSchedule[] {
   const current = programs.find((p) => p.id === programId);
-  if (!current) return false;
-  return programs.some((other) => other.id !== programId && other.startTime === current.startTime && isTaken(other.id));
+  if (!current) return [];
+  return programs.filter((p) => p.startTime === current.startTime);
 }
 
 // Studio-local time as minutes since midnight, for `at` (defaulting to the real

@@ -1,7 +1,9 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { resetMockStore } from "../airtable/mockClient.js";
+import { listRecords } from "../airtable/client.js";
 import { TABLES } from "../airtable/tableIds.js";
+import type { CheckinFields } from "../airtable/fields.js";
 import { createCheckIns, undoCheckIn } from "./checkins.js";
 import { NotFoundError, ConflictError } from "../lib/errors.js";
 import { today } from "../lib/date.js";
@@ -31,7 +33,7 @@ describe("createCheckIns (live, no effectiveAt)", () => {
     assert.equal(status.checkinsToday[0].needsReview, false);
   });
 
-  it("over allowance with an available credit: consumes the oldest one (Automation C)", async () => {
+  it("over allowance with an available credit: consumes the oldest one", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
       [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
@@ -51,6 +53,23 @@ describe("createCheckIns (live, no effectiveAt)", () => {
     const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
     assert.equal(status.checkinsToday[0].needsReview, true);
     assert.equal(status.checkinsToday[0].reviewReason, "Beyond tier allowance, no credit available");
+  });
+
+  it("sets Method to whatever the caller passed (Staff vs Kiosk)", async () => {
+    seedMember({ "Classes Allowed": 2 });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { method: "Kiosk" });
+    await createCheckIns(MEMBER, [{ programId: PROGRAM_2, role: "Follow" }], { method: "Staff" });
+    const checkins = await listRecords<CheckinFields>(TABLES.checkins, { fields: ["Method"] });
+    assert.deepEqual(
+      checkins.map((c) => c.fields.Method).sort(),
+      ["Kiosk", "Staff"]
+    );
+  });
+
+  it("leaves Method unset when the caller doesn't specify one", async () => {
+    await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
+    const checkins = await listRecords<CheckinFields>(TABLES.checkins, { fields: ["Method"] });
+    assert.equal(checkins[0].fields.Method, undefined);
   });
 
   it("two selections in one call: only the one that crosses the allowance line consumes a credit", async () => {
@@ -87,7 +106,7 @@ describe("createCheckIns (backdated)", () => {
     assert.equal(status.availableCredits, 0);
   });
 
-  it("over allowance for the target date with a credit available: consumes it (mirrors Automation C)", async () => {
+  it("over allowance for the target date with a credit available: consumes it", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
       [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
@@ -173,7 +192,7 @@ describe("createCheckIns (backdated)", () => {
 });
 
 describe("undoCheckIn", () => {
-  it("frees the credit it consumed (Automation D) and updates checkedInToday", async () => {
+  it("frees the credit it consumed and updates checkedInToday", async () => {
     resetMockStore({
       [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
       [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],

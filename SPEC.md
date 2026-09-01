@@ -28,9 +28,9 @@ handful of things that are genuinely this app's own business logic.
   than reimplementing that logic — a formula change in Airtable takes effect without a
   code deploy. See `docs/airtable-schema.md`.
 - **Credits system**: a `Credits` table (granted on new-member signup, on a qualifying
-  one-time Givebutter payment, or manually as a comp) gets auto-consumed by Airtable
-  automations whenever a check-in exceeds the day's tier allowance, or flagged for
-  front-desk review if none is available.
+  one-time Givebutter payment, or manually as a comp), consumed or flagged for
+  front-desk review by application code (not Airtable automations) whenever a
+  check-in exceeds the day's tier allowance. See "Credits system" below.
 - **Dance level tracking** — a Lead level and a Follow level (1–4 or unset) per
   student, shown as small badges and editable inline, with every actual change logged
   to a `Levelups` table (who signed off on it, and when).
@@ -50,8 +50,9 @@ handful of things that are genuinely this app's own business logic.
 - **Google OAuth or password login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/
   `Admin`) looked up in Airtable, stateless signed-cookie session.
 - **Kiosk mode** (`/kiosk`) — a self-serve check-in station for a tablet: a student
-  scans a QR code (their Givebutter contact id) or types their name, taps Lead/Follow,
-  and walks in with no staff involvement. See "Kiosk mode" below.
+  types their name, taps Lead/Follow, and walks in with no staff involvement. Also
+  offers a self-serve sign-up/purchase flow for new and paying students. See "Kiosk
+  mode" below.
 - **Student self-service login** — a completely separate app (its own frontend,
   backend, and deployment) where a student can sign in with the same Google account
   their Member record uses (provided they've actually transacted or hold a recurring
@@ -92,32 +93,26 @@ architecture-level, that one is the technical schema reference.
 ## Credits system
 
 The old app's "buy a pass, redeem it at check-in" model is now a first-class `Credits`
-table, populated and consumed entirely by Airtable automations (not application code):
+table. Granting is still entirely Airtable automations; **consuming and freeing a
+credit are application code**, not automations:
 
 - **`Credits`** — `Member` (holder), `Purchased By` (payer, for a future transfer
   feature), `Reason` (`New Member` / `Drop-in Purchase` / `Comp`), `Source Transaction`,
-  `Granted At`, `Consumed At`, `Consumed By Check-in`, `Available` (formula: true iff
-  `Consumed By Check-in` is unlinked — this makes a credit self-heal if the check-in
-  that consumed it is ever deleted directly in Airtable, not just undone through the
-  app).
+  `Granted At`, `Consumed By Check-in`, `Available` (formula: true iff `Consumed By
+  Check-in` is unlinked — this makes a credit self-heal if the check-in that consumed
+  it is ever deleted directly in Airtable, not just undone through the app).
 - **Automation A** grants a credit when a new `Members` record is created.
 - **Automation B** grants a credit when a `Transactions` record qualifies as a
   drop-in purchase (succeeded, one-time, no plan).
-- **Automation C** runs on every new `Check-ins` record whose `Checked In At` is
-  literally today: if the member's `Remaining Today` (post-check-in) is negative, it
-  consumes their oldest `Available` credit, or sets `Needs Review`/`Review Reason` on
-  the check-in if none exists.
-- **Automation D** runs whenever a `Check-ins` record's `Undone At` gets set: it frees
-  any credit that check-in had consumed.
 
-**Backdated check-in creation is the one place this app computes gating itself** —
-Automation C only fires for same-day check-ins, since Airtable's live fields
-(`Remaining Today`, the `Checked In Today (Live)` rollup) are hardcoded to literal
-"today" and can't evaluate allowance for a past date. For a backdated check-in the
-server counts that student's existing non-undone check-ins on the target date, compares
-against their current `Classes Allowed`, and — mirroring Automation C exactly — either
-does nothing, consumes the oldest available credit, or flags the check-in for review.
-Undo needs no such split: Automation D already works for any date.
+The app's own gating logic (`gateCheckIns`, `services/checkins.ts`) counts that
+student's existing non-undone check-ins on the target date (live or backdated),
+compares against their current `Classes Allowed`, and either does nothing, consumes
+the oldest available credit, or flags the check-in for review — one implementation
+for both cases, called synchronously by `createCheckIns` for every check-in it
+creates. `undoCheckIn` (`services/checkins.ts`) frees a credit immediately on undo,
+reading the check-in's own `Credits` reverse link (populated by whichever credit
+consumed it) to find the credit to free — no separate table scan needed.
 
 ## Dance levels
 
@@ -157,20 +152,39 @@ a modal with the full note (Summary, Strengths under "Doing well", Opportunities
 under "Should work on"). See `docs/airtable-schema.md`'s "Notes" section for the
 full field list.
 
+Only the note's own author can edit it — the detail modal shows an **Edit** button
+(reusing the same add-note dialog, prefilled) only when the signed-in session's own
+`userRoleId` matches that note's `Issuer`, both client-side (`StudentPage.tsx`
+compares against `/api/session`'s now-exposed `userRoleId`) and server-side
+(`PATCH /api/students/:id/notes/:noteId` → `updateNote`, which 403s if the caller
+isn't the original issuer, regardless of what the client shows). Other staff can
+still read every note on a student's timeline, same as always — just not alter
+someone else's write-up.
+
 ## Check-in semantics
 
 - **Program + Role, not a single "Check In" button.** Front desk opens the check-in
   picker, sees that day's active `Programs` (today, or the backdated date if viewing
-  one), and for each program picks Lead or Follow (one or the other, not both —
-  checking in as both requires two separate rows/submissions). Selecting several
-  programs and submitting creates one `Check-ins` record per selection; each is
-  independently gated (checking into 2 classes when the tier only allows 1/day
-  correctly consumes/flags for the second one).
-- **Programs are listed by start time** (`Programs.Start Time`), grouped with a divider
-  between timeslots — classes sharing a slot sort alphabetically within it. Since a
-  student can't be in two classes at once, picking a role for one class in a timeslot
-  grays out and disables the Lead/Follow buttons for every other class in that same
-  slot, until it's deselected again.
+  one), and for each program picks Lead or Follow. Selecting several picks across
+  *different* timeslots and submitting creates one `Check-ins` record per selection;
+  each is independently gated (checking into 2 classes when the tier only allows
+  1/day correctly consumes/flags for the second one).
+- **Programs are listed by start time** (`Programs.Start Time`), grouped with a
+  divider between timeslots — classes sharing a slot sort alphabetically within it.
+  A student can only take one {class, role} per timeslot — not two different classes
+  at once, and not the same class as both Lead and Follow at once — so every
+  {class, role} option within one timeslot (`web/src/programSchedule.ts`'s
+  `timeslotGroup`) is really one choice, treated two different ways depending on
+  whether it's already committed:
+  - **Not yet submitted**: picking one option in the slot grays out the rest of that
+    slot's options (including the other role of the *same* class) but leaves them
+    clickable — picking a different one switches the choice to it rather than adding
+    a second pick, exactly like a radio button. This is purely a local UI state, not
+    yet written anywhere.
+  - **Already checked in today**: shows checked off (✓), and now the *whole slot* is
+    locked — every other option, including the other role of that same class, is
+    disabled outright rather than grayed. That choice was already made and written;
+    changing it needs Undo, not another pick here.
 - **Preselected from the student's most recent visit** (`StudentStatus.
   lastCheckinSelections`, computed once per roster fetch, not per dialog-open) — the
   programs/roles they picked last time are checked by default, restricted to whichever
@@ -224,6 +238,54 @@ transferring is just updating `Covers Member` to the new holder. Reached via the
 menu on a row, or a button on the student detail page. Credit transfers
 (`Credits.Purchased By` exists in the schema for the same purpose) aren't built —
 not requested yet.
+
+## Merging duplicate students
+
+Whatever syncs Givebutter into `Members` doesn't match emails case-insensitively, so
+the same real person can end up with two rows (e.g. `cindy@gmail.com` and
+`Cindy@gmail.com`) — a recurring problem, not a one-off. **Merge duplicate…**, next to
+Transfer membership in the roster row's 3-dot menu
+(`server/src/services/merge.ts`'s `mergeMembers`, `POST /api/students/merge`, same
+`Write Memberships` permission), fixes one pair at a time.
+
+- **Finding the other record** (`web/src/components/MergeDialog.tsx`): a local name
+  search against the roster already loaded in `App.tsx` — no extra fetch — since both
+  halves of a duplicate pair are, by definition, both still showing up on the roster
+  today (that's the visible symptom). The row the dialog was opened from is excluded
+  from its own search results.
+- **Picking the survivor**: the user always makes the final call, but the dialog
+  pre-selects whichever side has an active membership (`accessStatus === "Active"`,
+  Airtable's own formula — not re-derived here) once `heldMemberships` loads for both
+  candidates, so the common case needs no extra click. Only overrides the default (the
+  row the dialog was opened from) when exactly one side has one.
+- **What moves**: every link from the loser to the survivor — `Check-ins.Member`,
+  `Recurring Plans.Member` and `.Covers Member` (independently — see "Membership
+  transfers" above for why they can diverge), `Transactions.Member`, `Credits.Member`
+  and `.Purchased By`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
+  (`Classes Allowed`, `Tier Name`, `Available Credits`, `Remaining Today`,
+  `Recently Active`) are Airtable rollups/formulas over these same linked tables, so
+  once the links move, those numbers recompute themselves — merging is repointing
+  links, not recomputing counts by hand.
+- **The one-per-student exception**: an Airtable automation grants every new `Members`
+  row its own `New Member` signup credit. If both halves of a duplicate pair got one,
+  reassigning both would double it up — that credit specifically is left attached to
+  the loser instead (see next bullet), every other `Credits.Reason` reassigns
+  normally.
+- **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
+  (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
+  but still there to audit, including whatever didn't get reassigned (the extra
+  `New Member` credit above). Flagged last, only once every reassignment has actually
+  landed, so a failure partway through leaves it visible and the merge safely
+  retryable — Airtable has no cross-table transaction, but every reassignment is
+  independently idempotent.
+- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, and `Contact ID` copy from
+  the loser onto the survivor only when the survivor doesn't already have a value —
+  never overwrites something the survivor already has.
+- **Not automated on purpose**: if both sides have their own active Recurring Plan,
+  that's the studio actually double-billing someone — merging the `Members` rows
+  doesn't fix that, only canceling one subscription in Givebutter does. The dialog
+  shows both plans plainly (so it's hard to miss) rather than guessing which to
+  keep.
 
 ## Permissions
 
@@ -520,15 +582,23 @@ permissions don't include the one that route needs). See "Permissions" above.
 ## Webpage (front desk view)
 
 - Search bar (name), filters the already-fetched roster client-side.
-- Rows: name · badges (dance levels, then either a membership-tier badge or a
-  credits-remaining badge — never both, see "Tier Rule gaps" (under Members) in
-  `docs/airtable-schema.md` for when a nominal member shows credits instead) · Check
-  In button · 3-dot menu. Each of Check In/Undo/level-edit/Transfer only renders for a
-  session with the matching permission (see "Permissions" above) — a lower-permission
-  session simply doesn't see the control, not a disabled version of it.
+- Rows: name · badges (dance levels, then a membership-tier badge or a
+  credits-remaining badge — one or the other, never both, to keep a list of many rows
+  scannable; see "Tier Rule gaps" (under Members) in `docs/airtable-schema.md` for
+  when a nominal member shows credits instead) · Check In button · 3-dot menu. Each of
+  Check In/Undo/level-edit/Transfer only renders for a session with the matching
+  permission (see "Permissions" above) — a lower-permission session simply doesn't see
+  the control, not a disabled version of it.
 - "Check In" opens the Program + Role picker (see "Check-in semantics"); once checked
   in, the button becomes "Check in to another class" and the row shows each check-in's
   time, class, and role, with an Undo link and a `Needs review` flag when applicable.
+  Submitting doesn't block on the server: the dialog closes and the row updates
+  immediately with the picked classes (an optimistic guess — see `shared`'s
+  `applyOptimisticCheckin`), while the actual write and a follow-up roster read happen
+  in the background and reconcile the row with the real numbers once they land. If the
+  write fails, a dismissible banner at the top of the page shows the error and stays
+  until closed — the row itself has already moved on by then, so there's nothing left
+  to show it inline.
 - Checked-in-today rows sink to the bottom, grayed out. Above that, students whose
   `Members."Recently Active"` (Airtable formula, 30-day window) is false sort below
   recently-active ones — see `docs/airtable-schema.md`.
@@ -545,7 +615,10 @@ permissions don't include the one that route needs). See "Permissions" above.
 clicking a name.
 
 - Header: name, email, the same status badges as the list row (dance levels are
-  clickable here too), and a "Transfer membership" button.
+  clickable here too), and a "Transfer membership" button — except a member who also
+  holds an unused credit sees both the membership and credit badge here (and on the
+  check-in dialogs), unlike the roster row above, which stays one badge per row on
+  purpose; see `MembershipBadge`'s `showBothWhenApplicable` prop.
 - Stat boxes: **most recent check-in** ("Never" if none), **total check-ins** (real
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
@@ -567,7 +640,8 @@ clicking a name.
 ## Kiosk mode
 
 `/kiosk` — a self-serve check-in station meant to be left running unattended on a
-tablet, so a student can check themselves in with no front-desk involvement.
+tablet, so a student can check themselves in — or sign up, or buy a pass — with no
+front-desk involvement.
 
 - **Login redirect**: a `Kiosk`-role account (only `Create Checkins`/`Undo Checkins`,
   no `View Student Data`) is confined to `/kiosk` entirely, not just defaulted there —
@@ -575,57 +649,118 @@ tablet, so a student can check themselves in with no front-desk involvement.
   accounts can also reach `/kiosk` directly via `NavMenu` (they hold `Create Checkins`
   too); it's just not their default landing page.
 - **Roster cache**: on load, the page fetches every non-duplicate student once
-  (`GET /api/kiosk/roster`) into local state — id, Contact ID, full name, membership
-  status, available credits, and remaining allowance. Both name search and QR-scan
-  matching run against this local snapshot, not a per-keystroke/per-scan server round
-  trip. Names are shown in full — no more privacy here than other studio-management
-  tools already show on a shared device — but email/tier/badges/full status still
-  aren't in the cache; those only appear once a specific student is resolved by id
-  (`GET /api/kiosk/students/:id`), after a scan match or a search-result tap.
-- **QR scanning**: the page opens the device's front (`user`-facing) camera — the
-  same side as the screen, since the kiosk is a fixed tablet the student walks up to
-  and holds their code up to — and continuously decodes frames with `jsqr` (a
-  bundled, all-JS decoder — chosen over the Chrome-only `BarcodeDetector` API so this
-  works on any tablet/browser). The QR
-  payload is expected to be a student's Givebutter contact id (`Members.Contact ID`),
-  printed on cards handed out to students. A decoded id is matched against the cached
-  roster's `contactId` field locally, instantly, before ever hitting the network.
-- **Name search**: a search bar above the camera feed, filtered client-side against
-  the cached roster's `name` — matches everyone, not just eligible students (see
-  below), so a decline can name the actual reason instead of a blanket "not found."
-- **Loading feedback**: a scan match or a search-result tap opens a loading dialog
-  instantly (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
+  (`GET /api/kiosk/roster`) into local state — id, full name, membership status,
+  available credits, and remaining allowance. Name search runs against this local
+  snapshot, not a per-keystroke server round trip. Names are shown in full — no more
+  privacy here than other studio-management tools already show on a shared device —
+  but email/tier/badges/full status still aren't in the cache; those only appear once
+  a specific student is resolved by id (`GET /api/kiosk/students/:id`), after a
+  search-result tap.
+- **Name search**: a search bar, filtered client-side against the cached roster's
+  `name` — matches everyone, not just eligible students (see below), so a decline can
+  name the actual reason instead of a blanket "not found." (An earlier version of
+  this page also had a QR-code camera scanner as an alternative to typing a name —
+  removed since people didn't seem to need it; `Members.Contact ID` is unused by this
+  page now, though the separate student self-service app still has its own "show my
+  QR code" view, kept as-is even though nothing currently reads it.)
+- **Loading feedback**: a search-result tap opens a loading dialog instantly
+  (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
   `GET /api/kiosk/students/:id` round trip that resolves it completes — there's never
   a silent gap between "the student was recognized" and something appearing on
   screen.
 - **Eligibility**: something left to spend today — `remaining > 0` or
   `availableCredits > 0` (`isEligible`, `KioskPage.tsx`). Deliberately not gated on an
   active membership — a drop-in/trial student who only ever bought credits can still
-  self-check-in, same as at the front desk. Both a scan match and a search-result tap
-  resolve the same way — always a fresh `GET /api/kiosk/students/:id` call, never a
-  decision made off the cached roster snapshot — since that snapshot can go stale
-  between when it was fetched and when a student is actually resolved (e.g. a credit
-  bought or a membership renewed moments ago), and that endpoint isn't
-  eligibility-gated (see `routes/kiosk.ts`), so it always returns the student's full,
-  current status either way. An ineligible result shows a specific reason built
-  client-side from that status (`ineligibleReason`) — "already checked in for X today"
-  if they have a check-in today, else "no active membership/credits" vs. "used up
-  today's classes and credits" — since it's the matched student's own status being
-  shown to them, not another student's. A scan/search that matches *no one at all*
-  shows a generic "please see the front desk" instead. Every decline auto-closes after
-  5 seconds with no user action required.
+  self-check-in, same as at the front desk. A search-result tap always resolves via a
+  fresh `GET /api/kiosk/students/:id` call, never a decision made off the cached
+  roster snapshot — since that snapshot can go stale between when it was fetched and
+  when a student is actually resolved (e.g. a credit bought or a membership renewed
+  moments ago), and that endpoint isn't eligibility-gated (see `routes/kiosk.ts`), so
+  it always returns the student's full, current status either way. An ineligible
+  result shows a specific reason built client-side from that status
+  (`ineligibleReason`) — "already checked in for X today" if they have a check-in
+  today, else "no active membership/credits" vs. "used up today's classes and
+  credits" — since it's the matched student's own status being shown to them, not
+  another student's. A search that matches *no one at all* shows a generic "please
+  see the front desk" instead. Every decline auto-closes after 5 seconds with no user
+  action required.
 - **Check-in dialog** (`KioskCheckInDialog`): large, touch-friendly buttons, one per
-  {class, role} still available today. Tapping a button immediately creates that one
-  check-in (`POST /api/checkins`, the same endpoint the front desk uses) and updates
-  from that response's own returned status directly — no separate "confirm" step, and
-  no follow-up fetch (which would be eligibility-gated and could 404 right after the
-  tap that used up the student's last credit/allowance). The header button reads
-  "Cancel" until the student's first successful check-in that visit, then "Done"; both
-  just close the dialog. If the student's allocation runs out (`remaining <= 0 &&
-  availableCredits <= 0`) or every visible class is already checked into, the dialog
-  instead shows "Welcome {name}! / Have a great class!" and auto-closes after
-  5 seconds — the explicit Cancel/Done tap has no such delay, since the student already
-  confirmed they're finished in that case.
+  {class, role} still available today — same pick-then-submit shape as the front
+  desk's `CheckInDialog`, not an immediate per-tap check-in. Tapping a button only
+  toggles a local selection. Separate Cancel/Check In buttons, same as the front
+  desk's dialog: Cancel always closes immediately with no submission, regardless of
+  any pending picks (e.g. a student who started picking classes for the wrong
+  person); Check In reads "Check In (N)" and is disabled until at least one class is
+  picked. Pressing Check In doesn't block on the server: it shows "Welcome to Oaktown
+  Zouk, have a great class!" and auto-closes after 5 seconds right away, while the
+  actual write (`POST /api/checkins`, the same endpoint the front desk uses) and a
+  follow-up roster refresh (so search/eligibility reflect it next time) happen in the
+  background, not blocking the tablet for the next student. If the write fails, a
+  dismissible banner shows the error and stays until closed; by then the student has
+  likely already walked away, so the banner is there for staff to notice and follow
+  up on, not the student.
+  - **"Remaining" counter**: unlike the front desk's version of this dialog (which
+    shows membership allowance and drop-in credits as two separate numbers, trusting
+    staff to weigh them), the kiosk shows a student one blended number they can act on
+    directly: `availableCredits + classesAllowed − today's check-ins − picks made so
+    far in this dialog`, capped at however many distinct class timeslots are still
+    visible on the kiosk right now (a student can never have more "remaining" than
+    there are actual classes left to check into today, no matter how large their
+    credit/allowance pool is). See `KioskCheckInDialog.tsx`'s `localRemaining`.
+- **Sign-up and purchase flow** (`KioskPurchaseFlow.tsx`): below the search bar, two
+  buttons — "First time? Sign up for a free class" and "Buy a pass" — take over the
+  home screen with their own small page stack (`KioskScreen`/`KioskFlowScreen`,
+  `kioskProducts.ts`). No backend involvement at all: every step is either static
+  client-side navigation or one of Givebutter's own hosted forms.
+  - **First time?** asks "How many classes would you like to take on your first
+    day?" (One/Two), mirroring the public sign-up widget's own first-time flow (see
+    "Public sign-up widget" under "Student self-service app" below) rather than going
+    straight to a free-class form: a first-timer who actually wants two classes needs
+    to pay for the second one regardless, so it's faster to buy it now than to fill
+    out the free-class contact form and come back separately.
+    - **One** shows the studio's waiver notice (Code of Conduct / Waiver of Liability
+      links, `shared`'s `WAIVER_NOTICE`) with a Continue button, then the free-class
+      contact-info embed (no payment).
+    - **Two** skips the waiver and goes straight to the embedded widget for
+      `DROPIN_PRODUCTS[1]` — the same product/price a returning student's single
+      drop-in uses, since the first class is free and only the second is actually
+      charged — with a fixed heading explaining that instead of the usual pricing
+      policy note (`shared`'s `FIRST_DAY_SECOND_CLASS_NOTE`).
+  - **Buy a pass** shows a QR code first — pointing at the public sign-up widget
+    (`kioskProducts.ts`'s `KIOSK_SIGNUP_PAGE_URL`, `my.oaktownzouk.com/signup`), so a
+    student can finish on their own phone from the very first tap — then "Or buy on
+    this tablet" with the drop-in/membership choice below it.
+  - **Drop-in** ("How many classes would you like to take today?") or **membership**
+    ("...per week?"), each offering One or Two classes. Every one of those four
+    combinations maps to its own Givebutter product/widget id (`kioskProducts.ts`'s
+    `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`). Picking a count goes straight to that
+    product's embedded widget — there's no longer a second, per-product QR step here;
+    the one QR code on the "Buy a pass" screen already covers every product, since the
+    public widget it points at offers the same drop-in/membership/count choice on its
+    own.
+  - **Pricing policy notes**: the drop-in and membership widget screens show the same
+    sliding-scale wording the public widget shows above its own embeds (`shared/src/
+    purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_POLICY_NOTE`/
+    `MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE`) — except the "need a lower price?" line
+    ends differently on each surface: the public widget (used remotely) can only
+    suggest emailing, while the kiosk (used in person, at the studio) suggests asking
+    the front desk directly too (`KIOSK_PRICING_CONTACT_CLAUSE` vs.
+    `PRICING_CONTACT_CLAUSE`). The free-class and first-day-second-class screens have
+    their own fixed copy instead (see above) and show no separate policy note.
+  - **Givebutter's widget script** (`useGivebutterWidgetScript.ts`) is injected once
+    into the document and defines the `<givebutter-widget>` custom element every
+    widget screen renders; `GIVEBUTTER_WIDGET_SCRIPT_SRC` (`shared/src/givebutter.ts`,
+    shared with the public sign-up widget) is account-specific.
+  - **Idle reset** (`useIdleTimer.ts`): every screen in this flow times back out to
+    the kiosk home screen after a stretch of no activity, since it's a public,
+    unattended tablet — a contact form or payment screen left on-screen shouldn't sit
+    there for the next person to stumble onto. Every screen except the embedded-widget
+    ones resets after 60s; the widget (pay-on-tablet) screens use a longer 120s,
+    extended further for as long as focus sits inside the embedded widget (about as
+    much activity as this page can observe inside what's expected to be a cross-origin
+    iframe it can't see click/keystroke events within) — see `KioskPurchaseFlow.tsx`'s
+    `WIDGET_IDLE_MS` for why that number may need revisiting once tested against the
+    real widget.
 - **Password login**: visiting `/kiosk` while signed out shows the same `Login.tsx`
   screen as every other unauthenticated route, Google button and identifier/password
   form both included — see "Auth" below. A successful password login redirects to
@@ -641,10 +776,6 @@ tablet, so a student can check themselves in with no front-desk involvement.
   `web/src/programSchedule.ts`. This filter is deliberately kiosk-only: the front
   desk's `CheckInDialog` still shows every class regardless of time, since staff need
   to be able to fix or add check-ins after a class ends.
-- Camera access and the decode loop persist for the page's whole lifetime (not
-  re-requested per dialog open/close); an `enabled` flag just pauses whether decoded
-  frames are acted on while a dialog or error message is on screen
-  (`web/src/useQrScanner.ts`).
 - **Testing: simulate now (Admin only)**. A session with **Backdate Kiosk** (only
   `Admin` has it) sees a small "simulate now" date/time control tucked in a corner of
   `/kiosk` (reusing the front desk's `EffectiveDateControl`/`BackdateDialog`). Setting
@@ -740,11 +871,12 @@ between two local views, plain `useState`, nothing worth deep-linking to:
   backend having nowhere to send one anyway.
 - **QR Code** (`StudentQrPage.tsx`) — renders the student's kiosk check-in QR code
   client-side (the `qrcode` package, browser build), encoding the bare Givebutter
-  Contact ID — the exact same payload `web/src/useQrScanner.ts` decodes at the kiosk
-  and `server/src/scripts/generateQrCode.ts` prints. No backend change was needed:
-  `GET /api/me/timeline` already returned `status.contactId`. A member with no
-  Contact ID yet (Givebutter sync gap) sees a plain "ask the front desk" message
-  instead of a broken image.
+  Contact ID — the same payload `server/src/scripts/generateQrCode.ts` prints. No
+  backend change was needed: `GET /api/me/timeline` already returned
+  `status.contactId`. A member with no Contact ID yet (Givebutter sync gap) sees a
+  plain "ask the front desk" message instead of a broken image. (The kiosk itself no
+  longer has a QR camera scanner to decode this against — removed in favor of typing
+  a name; this page is kept as-is even though nothing currently reads its code back.)
 
 Log out lives inside the nav menu now too, rather than its own standalone button —
 one control at the top of the page instead of two.
@@ -790,4 +922,34 @@ locally too, since `dev:netlify-student` discovers and resolves this exact file 
 same way. Needs its own custom domain/subdomain and its own Google OAuth "Authorized
 redirect URI" entry (same OAuth client as the staff app works fine — reused for the
 extra redirect URI registered) — both are account-level setup steps, not something
-this repo's code can do on its own.
+this repo's code can do on its own. Live at `my.oaktownzouk.com`.
+
+**Public sign-up widget** (`web-student/signup.html`) — a completely separate, public,
+unauthenticated page built and deployed as part of this same Netlify site, with
+nothing in common with the student self-service app above beyond sharing its
+build/deploy. It's a step-by-step sign-up/purchase form (first-time vs. returning,
+drop-in vs. membership, class count → an embedded Givebutter widget) that used to be
+hand-authored HTML/CSS/JS pasted separately into oaktownzouk.com (Google Sites) and
+theoaklandgrove.com/zouk (Squarespace) — kept in source control now instead, at
+`my.oaktownzouk.com/signup`, with both of those sites meant to `<iframe>` it rather
+than carry their own copy, so an update here reaches every surface without needing to
+touch either site by hand. Google Sites needs "Embed → By URL," not "Embed code" —
+the latter wraps arbitrary pasted HTML in a sandboxed `gstatic.com` iframe that's
+confirmed to break at least one third-party embed (YouTube, elsewhere on that same
+site) under Safari specifically; "By URL" is a plainer iframe of an external page and
+hasn't shown that problem, but wasn't exhaustively verified against the Givebutter
+widget before this was written — worth a real check on Safari once live. Squarespace's
+Code Block embeds a plain iframe with no such wrapper, confirmed no issue there.
+- **Vite multi-page build**: `web-student/vite.config.ts` adds `signup.html` as a
+  second `rollupOptions.input` alongside the app's own `index.html` — same build, same
+  Netlify deploy, no extra site or extra deploy cost. Plain TS/DOM
+  (`src/signup/signup.ts`), not React: steps are toggled by `hidden` rather than
+  mounted/unmounted, the same approach the kiosk's own dialogs use for local picks
+  (see `KioskCheckInDialog.tsx`), simple enough here that no framework is needed to
+  keep it correct.
+- **Shared copy** (`shared/src/purchaseCopy.ts`, `shared/src/givebutter.ts`) — pricing
+  policy notes, the waiver notice, the first-day-second-class note, and the Givebutter
+  script URL are constants imported by both this page and the kiosk's
+  `KioskPurchaseFlow.tsx`, so the two can't drift out of sync (see "Sign-up and
+  purchase flow" under "Kiosk mode" above for the kiosk side, including the one place
+  the wording deliberately differs — how to ask for a lower price).

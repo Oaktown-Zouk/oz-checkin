@@ -122,7 +122,9 @@ authRoutes.post("/auth/kiosk-login", async (c) => {
     return c.json({ error: "Invalid credentials" }, 401);
   }
 
-  mintSession(c, { email: identifier, role: auth.role, permissions: auth.permissions, userRoleId: auth.userRoleId });
+  // auth.email is the row's own canonical casing, not necessarily what was typed —
+  // see getPasswordAuthForIdentifier's comment.
+  mintSession(c, { email: auth.email, role: auth.role, permissions: auth.permissions, userRoleId: auth.userRoleId });
   return c.json({ ok: true });
 });
 
@@ -190,5 +192,9 @@ authRoutes.get("/session", (c) => {
     email: session.email,
     role: session.role,
     permissions: session.permissions,
+    // Lets the frontend tell "a note this signed-in account wrote" apart from anyone
+    // else's — see NoteDetails.issuerRoleId and StudentPage.tsx. Undefined for a
+    // Student session, which never holds one.
+    userRoleId: session.userRoleId,
   });
 });

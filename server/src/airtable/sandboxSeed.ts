@@ -32,6 +32,12 @@ export const FIXTURE_IDS = {
     lapsedLarry: "recMemberLapsedLarry",
     // Flagged Duplicate — must never appear in the roster.
     duplicateDana: "recMemberDuplicateDana",
+    // An UNFLAGGED duplicate pair — same person, two rows, exactly the
+    // case-variant-email scenario the merge feature exists to fix (see
+    // e2e/merge-duplicate.spec.ts). twinTaraA holds the active membership, so it's
+    // the one MergeDialog should pre-select as the survivor by default.
+    twinTaraA: "recMemberTwinTaraA",
+    twinTaraB: "recMemberTwinTaraB",
     // The web-student/ dev-login fixture (server/src/studentApp.ts's
     // DEV_LOGIN_STUDENT_EMAIL) — not reused by any staff-facing test, so its data
     // shape is free to change without risk of colliding with what other specs assume.
@@ -40,12 +46,15 @@ export const FIXTURE_IDS = {
   programs: {
     zoukL1: "recProgramZoukL1",
     zoukL2: "recProgramZoukL2",
+    // Same start time as zoukL1 — the sandbox's one same-timeslot pair.
+    bachataL1: "recProgramBachataL1",
   },
   credits: {
     trialTinaCredit: "recCreditTrialTina",
   },
   recurringPlans: {
     activeAmyPlan: "recPlanActiveAmy",
+    twinTaraPlan: "recPlanTwinTara",
   },
   checkins: {
     checkedInChrisToday: "recCheckinChrisToday",
@@ -136,6 +145,28 @@ export function buildSandboxSeed(): SeedData {
         },
       },
       {
+        id: members.twinTaraA,
+        fields: {
+          "Full Name": "Twin Tara",
+          Email: "twin.tara@example.com",
+          "Access Status": "Active",
+          "Membership Status": "Active",
+          "Tier Name": "1 Class",
+          "Classes Allowed": 1,
+          "Recently Active": 1,
+        },
+      },
+      {
+        id: members.twinTaraB,
+        fields: {
+          "Full Name": "Twin Tara",
+          Email: "Twin.Tara@Example.com",
+          "Access Status": "Inactive",
+          "Membership Status": "Prospect",
+          "Recently Active": 0,
+        },
+      },
+      {
         id: members.testStudent,
         fields: {
           "Full Name": "Claude Test Student",
@@ -177,6 +208,22 @@ export function buildSandboxSeed(): SeedData {
           "Start Time": "20:00",
         },
       },
+      {
+        id: programs.bachataL1,
+        fields: {
+          // Deliberately doesn't contain "Zouk L1" as a substring (unlike a name like
+          // "Zouk L1 Alt" would) — several e2e specs match rows by hasText: "Zouk L1"
+          // and would become ambiguous (strict-mode violation) against a same-slot
+          // program whose name also contains that string.
+          "Program Name": "Bachata L1",
+          Status: "Active",
+          Weekdays: ALL_WEEKDAYS,
+          // Same start time as Zouk L1 on purpose — the one same-timeslot pair the
+          // default seed has, for specs exercising the "pick one class in a slot,
+          // the rest of the slot grays out" behavior (see e2e/*-checkin.spec.ts).
+          "Start Time": "19:00",
+        },
+      },
     ],
     [TABLES.credits]: [
       {
@@ -198,6 +245,17 @@ export function buildSandboxSeed(): SeedData {
           Frequency: "monthly",
           Member: [members.activeAmy],
           "Covers Member": [members.activeAmy],
+        },
+      },
+      {
+        id: recurringPlans.twinTaraPlan,
+        fields: {
+          "Plan ID": "plan-twin-tara",
+          Status: "active",
+          Amount: 60,
+          Frequency: "monthly",
+          Member: [members.twinTaraA],
+          "Covers Member": [members.twinTaraA],
         },
       },
     ],

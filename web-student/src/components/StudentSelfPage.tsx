@@ -38,7 +38,7 @@ export function StudentSelfPage({
         {/* No level badges here — the Lead/Follow stat boxes below already show the
             same levels. */}
         <div className="badges">
-          <MembershipBadge student={status} />
+          <MembershipBadge student={status} showBothWhenApplicable />
         </div>
       </div>
 

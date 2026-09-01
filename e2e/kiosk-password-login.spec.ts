@@ -25,5 +25,5 @@ test("correct identifier/password signs in and lands on the kiosk roster", async
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page).toHaveURL("/kiosk");
-  await expect(page.getByPlaceholder("Or type your name…")).toBeVisible();
+  await expect(page.getByPlaceholder("Type your name…")).toBeVisible();
 });

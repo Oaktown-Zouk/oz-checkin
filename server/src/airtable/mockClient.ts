@@ -8,8 +8,7 @@ import { evaluateFormula } from "./mockFormula.js";
 import {
   computeMemberFields,
   computeCreditFields,
-  applyLiveCheckinAutomation,
-  applyUndoAutomation,
+  syncCreditCheckinLink,
   type RawRecord,
   type SeedData,
   type Store,
@@ -127,10 +126,9 @@ export async function createRecords<F = Record<string, unknown>>(
     return record;
   });
 
-  // Automation C only ever triggers off new Check-ins rows — see mockCompute.ts.
-  if (table === TABLES.checkins) {
-    applyLiveCheckinAutomation(store, created.map((r) => r.id));
-  }
+  // No automation simulation here — services/checkins.ts gates and consumes/flags
+  // credits itself for every check-in (live or backdated), via plain
+  // listRecords/updateRecord calls this mock already serves.
 
   return created.map((r) => toAirtableRecord<F>(table, r));
 }
@@ -144,17 +142,19 @@ export async function updateRecord<F = Record<string, unknown>>(
   const record = tableMap(table).get(id);
   if (!record) throw new Error(`mockClient: no record ${id} in table ${table}`);
 
-  // Automation D fires on the Undone At blank -> non-blank transition specifically,
-  // captured before the merge below overwrites the old value.
-  const undoneTransition =
-    table === TABLES.checkins &&
-    "Undone At" in (fields as Record<string, unknown>) &&
-    !record.fields["Undone At"] &&
-    !!(fields as Record<string, unknown>)["Undone At"];
+  // No automation simulation here either — services/checkins.ts's undoCheckIn
+  // unlinks the consumed credit itself, via the same plain updateRecord call this
+  // mock already serves.
+  const previousConsumedBy =
+    table === TABLES.credits ? (record.fields["Consumed By Check-in"] as string[] | undefined) : undefined;
 
   Object.assign(record.fields, fields);
 
-  if (undoneTransition) applyUndoAutomation(store, id);
+  // See syncCreditCheckinLink's comment — real Airtable keeps both sides of a link in
+  // sync on its own; this mock has to be told to.
+  if (table === TABLES.credits && "Consumed By Check-in" in (fields as Record<string, unknown>)) {
+    syncCreditCheckinLink(store, id, previousConsumedBy);
+  }
 
   return toAirtableRecord<F>(table, record);
 }

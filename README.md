@@ -12,6 +12,12 @@ server/                     Hono APIs — both apps' backends live here (server/
 web/                         React + Vite front-desk SPA
 web-student/                 React + Vite student self-service SPA — a separate app, not
                              a page in web/. See SPEC.md's "Student self-service app".
+web-student/signup.html      Public, unauthenticated sign-up/purchase widget — a second
+                             Vite entry built alongside the student app above (same
+                             build/deploy, no separate site), served at
+                             my.oaktownzouk.com/signup and meant to be <iframe>'d from
+                             the studio's other websites. See SPEC.md's "Public sign-up
+                             widget".
 shared/                      Types + read-only presentational components used by both
                              web/ and web-student/ — TS source, no build step of its own.
 netlify/functions/           The staff app's Netlify Function (wraps server/src/app.ts)
@@ -219,5 +225,5 @@ maintenance script that runs against the **real** base (dry-run by default,
 | `npm run typecheck` | Type-check all four workspaces plus both Netlify functions |
 | `npm test` | Server unit tests, against the mock |
 | `npm run test:e2e` | Playwright E2E specs, against a sandbox Playwright boots itself |
-| `npm run audit:credits --workspace server` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Worth re-running periodically if Automation C's reliability is in question. |
-| `npx tsx server/src/scripts/setKioskPassword.ts <identifier> <newPassword>` (run from `server/`) | Sets/rotates the shared kiosk-tablet login password — see `SPEC.md`'s "Auth" section. No in-app UI for this; it's a deliberate, rare operation. |
+| `npm run audit:credits --workspace server` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Mainly useful now for auditing check-ins that predate the app taking over credit consumption itself (see `SPEC.md`'s "Credits system"), or for catching drift from a check-in created outside the app entirely. |
+| `npx tsx src/scripts/setKioskPassword.ts <identifier> <newPassword>` (run from `server/`) | Sets/rotates the shared kiosk-tablet login password — see `SPEC.md`'s "Auth" section. No in-app UI for this; it's a deliberate, rare operation. |

@@ -34,10 +34,16 @@ export interface StudentStatus {
 }
 
 export interface NoteDetails {
+  id: string;
   summary: string;
   strengths: string;
   opportunities: string;
   issuerName: string;
+  // The signed-in User Roles record id that wrote this note — compared against the
+  // viewer's own session to decide whether to show an Edit button (see
+  // StudentPage.tsx). Undefined for a session type that doesn't carry a userRoleId
+  // (e.g. a Student session), which never matches, so the button never shows there.
+  issuerRoleId: string;
 }
 
 export interface TimelineEvent {

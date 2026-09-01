@@ -17,6 +17,7 @@ import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
 import { NavMenu } from "./components/NavMenu.js";
+import { ErrorBanner, applyOptimisticCheckin } from "shared";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
@@ -52,6 +53,7 @@ export function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<Set<Permission>>(new Set());
+  const [userRoleId, setUserRoleId] = useState<string | undefined>(undefined);
   // A session with Create Checkins but not View Student Data (i.e. the Kiosk role) —
   // restricted to /kiosk entirely, never the roster. Distinct from `authenticated`,
   // which still means "has View Student Data" exactly as before.
@@ -121,6 +123,11 @@ export function App() {
   const [students, setStudents] = useState<StudentStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [programs, setPrograms] = useState<ProgramSchedule[]>([]);
+  // Surfaces a failed check-in write after the fact — the dialog that started it has
+  // already closed by the time a failure could come back (see handleCheckIn), so this
+  // is the only place left to show it. Stays up until dismissed, not auto-hidden.
+  const [checkinError, setCheckinError] = useState<string | null>(null);
+  const programNameById = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs]);
 
   useEffect(() => {
     api
@@ -130,9 +137,11 @@ export function App() {
           setAuthenticated(true);
           setUserEmail(s.email ?? null);
           setPermissions(new Set(s.permissions));
+          setUserRoleId(s.userRoleId);
         } else if (s.authenticated && s.permissions?.includes("Create Checkins")) {
           setKioskOnly(true);
           setPermissions(new Set(s.permissions));
+          setUserRoleId(s.userRoleId);
         } else if (s.authenticated) {
           setForbiddenUser({ email: s.email ?? "", role: s.role ?? "" });
         }
@@ -193,15 +202,24 @@ export function App() {
     return () => clearTimeout(handle);
   }, [authenticated, effectiveDate, refreshStudents]);
 
-  async function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
-    try {
-      const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
-      await api.checkIn(studentId, selections, effectiveIso);
-      await refreshStudents(effectiveDate);
-    } catch (err) {
-      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
-      else alert(err instanceof Error ? err.message : "Check-in failed");
-    }
+  function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
+    // Optimistic: reflects the picks immediately (no spinner, no blocked page) so the
+    // row doesn't sit stale while the write is in flight — the write, and the read
+    // queued after it, reconcile this with the server's real numbers once they land,
+    // whether or not the write actually succeeded.
+    setStudents((prev) => prev.map((s) => (s.id === studentId ? applyOptimisticCheckin(s, selections, programNameById) : s)));
+
+    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    api
+      .checkIn(studentId, selections, effectiveIso, "Staff")
+      .catch((err) => {
+        if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
+          setAuthenticated(false);
+          return;
+        }
+        setCheckinError(err instanceof Error ? err.message : "Check-in failed");
+      })
+      .then(() => refreshStudents(effectiveDate));
   }
 
   async function handleUndo(checkinId: string) {
@@ -244,6 +262,16 @@ export function App() {
     }
   }
 
+  async function handleMerge(survivorId: string, duplicateId: string) {
+    try {
+      await api.mergeStudents(survivorId, duplicateId);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   if (!authChecked) return null;
 
   if (forbiddenUser) {
@@ -256,7 +284,7 @@ export function App() {
   // visitor hitting /kiosk before login, since `route.type` alone doesn't imply auth.
   if (kioskOnly || (route.type === "kiosk" && authenticated)) {
     return (
-      <PermissionsProvider value={permissions}>
+      <PermissionsProvider value={{ permissions, userRoleId }}>
         <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} onLogout={handleLogout} />
       </PermissionsProvider>
@@ -275,7 +303,7 @@ export function App() {
 
   if (route.type === "student") {
     return (
-      <PermissionsProvider value={permissions}>
+      <PermissionsProvider value={{ permissions, userRoleId }}>
         <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
         <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
       </PermissionsProvider>
@@ -283,8 +311,9 @@ export function App() {
   }
 
   return (
-    <PermissionsProvider value={permissions}>
+    <PermissionsProvider value={{ permissions, userRoleId }}>
       <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
+      {checkinError && <ErrorBanner message={checkinError} onDismiss={() => setCheckinError(null)} />}
       <div className="app">
         <header className="app-header">
           <h1>OZ Check-In</h1>
@@ -322,6 +351,7 @@ export function App() {
 
         <StudentList
           students={visibleStudents}
+          allStudents={students}
           loading={loading}
           effectiveDate={effectiveDate}
           programs={programs}
@@ -331,6 +361,7 @@ export function App() {
           onUpdateLeadLevel={handleUpdateLeadLevel}
           onUpdateFollowLevel={handleUpdateFollowLevel}
           onTransferMembership={handleTransferMembership}
+          onMerge={handleMerge}
         />
       </div>
     </PermissionsProvider>

@@ -32,7 +32,6 @@ export type Permission =
 
 export interface KioskRosterEntry {
   id: string;
-  contactId: string | null;
   name: string;
   membershipStatus: string;
   availableCredits: number;
@@ -86,6 +85,7 @@ export const api = {
       email?: string;
       role?: "Staff" | "Volunteer" | "Kiosk" | "Admin";
       permissions?: Permission[];
+      userRoleId?: string;
     }>("/api/session"),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
   // No `q` — the frontend fetches the full roster and filters locally (see App.tsx) so
@@ -98,10 +98,12 @@ export const api = {
   // Fetched once on load (see App.tsx), not per check-in dialog open — filtered by
   // date client-side, see programSchedule.ts.
   programs: () => request<ProgramSchedule[]>("/api/programs"),
-  checkIn: (studentId: string, selections: CheckInSelection[], effectiveAt?: string) =>
+  // `checkInMethod` records which UI created the check-in (Checkins.Method) — distinct
+  // from the fetch `method: "POST"` below, which is the HTTP verb.
+  checkIn: (studentId: string, selections: CheckInSelection[], effectiveAt?: string, checkInMethod?: "Staff" | "Kiosk") =>
     request<StudentStatus>("/api/checkins", {
       method: "POST",
-      body: JSON.stringify({ studentId, selections, effectiveAt }),
+      body: JSON.stringify({ studentId, selections, effectiveAt, method: checkInMethod }),
     }),
   undoCheckIn: (checkinId: string) =>
     request<StudentStatus>(`/api/checkins/${checkinId}`, { method: "DELETE" }),
@@ -124,9 +126,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ planId, targetEmail }),
     }),
+  // Not nested under a single student id — the caller picks which of the two is the
+  // survivor in MergeDialog, so both ids are just body fields (see routes/students.ts).
+  mergeStudents: (survivorId: string, duplicateId: string) =>
+    request<StudentStatus>("/api/students/merge", {
+      method: "POST",
+      body: JSON.stringify({ survivorId, duplicateId }),
+    }),
   addNote: (studentId: string, summary: string, strengths: string, opportunities: string) =>
     request<{ ok: true }>(`/api/students/${studentId}/notes`, {
       method: "POST",
+      body: JSON.stringify({ summary, strengths, opportunities }),
+    }),
+  updateNote: (studentId: string, noteId: string, summary: string, strengths: string, opportunities: string) =>
+    request<{ ok: true }>(`/api/students/${studentId}/notes/${noteId}`, {
+      method: "PATCH",
       body: JSON.stringify({ summary, strengths, opportunities }),
     }),
   // Kiosk mode — fetched once and cached client-side (see KioskPage.tsx) so search

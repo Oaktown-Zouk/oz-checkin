@@ -1,7 +1,9 @@
 // Computes the subset of Airtable's formula/rollup fields this app's own logic
-// actually depends on staying live/consistent with its own mutations, and simulates
-// the two Airtable automations whose side effects the live (non-backdated) check-in
-// path implicitly relies on. See mockClient.ts for how these get wired into
+// actually depends on staying live/consistent with its own mutations. No automation
+// simulation lives here at all — credit consumption on create and freeing a credit
+// on undo are both plain application code (services/checkins.ts), so the mock just
+// needs to serve listRecords/updateRecord calls like any other write. See
+// mockClient.ts for how these get wired into
 // createRecords/updateRecord/listRecords/getRecord.
 //
 // Deliberately NOT computed here (fixture-static instead — seed data sets them
@@ -49,13 +51,33 @@ function linksTo(fields: Record<string, unknown>, field: string, id: string): bo
   return ((fields[field] as string[] | undefined) ?? []).includes(id);
 }
 
-// "Checked In Today (Live)" — count of this member's non-undone check-ins on dateStr,
-// optionally excluding a set of ids (used to get the *prior* count for a batch of
-// check-ins that are already sitting in the store by the time Automation C runs).
-function checkedInCountOn(store: Store, memberId: string, dateStr: string, exclude?: Set<string>): number {
+// Real Airtable auto-syncs both sides of a link (setting Credits.Consumed By
+// Check-in also populates that Check-in's own Credits reverse link, and vice versa)
+// — this mock doesn't simulate that generally, but services/checkins.ts now reads
+// the reverse link directly (undoCheckIn, to find which credit to free without a
+// table scan), so it needs to be right here specifically. `previous` is the credit's
+// Consumed By Check-in value *before* this update was applied.
+export function syncCreditCheckinLink(store: Store, creditId: string, previous: string[] | undefined): void {
+  const credit = table(store, TABLES.credits).get(creditId);
+  if (!credit) return;
+  const oldCheckinId = previous?.[0];
+  const newCheckinId = (credit.fields["Consumed By Check-in"] as string[] | undefined)?.[0];
+  if (oldCheckinId === newCheckinId) return;
+
+  if (oldCheckinId) {
+    const oldCheckin = table(store, TABLES.checkins).get(oldCheckinId);
+    if (oldCheckin) delete oldCheckin.fields.Credits;
+  }
+  if (newCheckinId) {
+    const newCheckin = table(store, TABLES.checkins).get(newCheckinId);
+    if (newCheckin) newCheckin.fields.Credits = [creditId];
+  }
+}
+
+// "Checked In Today (Live)" — count of this member's non-undone check-ins on dateStr.
+function checkedInCountOn(store: Store, memberId: string, dateStr: string): number {
   let count = 0;
   for (const c of table(store, TABLES.checkins).values()) {
-    if (exclude?.has(c.id)) continue;
     if (!linksTo(c.fields, "Member", memberId)) continue;
     if (!isBlank(c.fields["Undone At"])) continue;
     const at = c.fields["Checked In At"];
@@ -71,23 +93,40 @@ function availableCreditsFor(store: Store, memberId: string): RawRecord[] {
     .sort((a, b) => String(a.fields["Granted At"] ?? "").localeCompare(String(b.fields["Granted At"] ?? "")));
 }
 
-// Members.Available Credits / Checked In Today (Live) / Remaining Today — the three
-// fields the whole check-in/eligibility flow actually gates on. Everything else on
-// the member passes through untouched (fixture-static, see file header).
+// Members' Lookup-through-Levelups fields (see MemberFields's comment in fields.ts)
+// — same idea as availableCreditsFor, but simulating what the real Lookup fields
+// resolve to rather than something the app itself mutates. Real Airtable Lookups
+// drop an entry outright when the source is blank on that linked record (confirmed
+// against the real base, not simulated generally here) — "safe" here just means the
+// mock never produces a blank From/To to drop in the first place, matching the real
+// "From (safe)"/"To (safe)" formula fields' -1-for-blank convention.
+function levelupsFor(store: Store, memberId: string): RawRecord[] {
+  return [...table(store, TABLES.levelups).values()].filter((l) => linksTo(l.fields, "Member", memberId));
+}
+
+// Members.Available Credits / Checked In Today (Live) / Remaining Today / the
+// Levelups lookup fields — everything the whole check-in/eligibility/timeline flow
+// actually gates on. Everything else on the member passes through untouched
+// (fixture-static, see file header).
 export function computeMemberFields(member: RawRecord, store: Store): Record<string, unknown> {
   const classesAllowed = Number(member.fields["Classes Allowed"] ?? 0);
   const checkedInToday = checkedInCountOn(store, member.id, today());
+  const myLevelups = levelupsFor(store, member.id);
   return {
     ...member.fields,
     "Available Credits": availableCreditsFor(store, member.id).length,
     "Checked In Today (Live)": checkedInToday,
     "Remaining Today": classesAllowed - checkedInToday,
+    "Role (from Levelups)": myLevelups.map((l) => l.fields.Role),
+    "From (safe, from Levelups)": myLevelups.map((l) => (isBlank(l.fields.From) ? -1 : l.fields.From)),
+    "To (safe, from Levelups)": myLevelups.map((l) => (isBlank(l.fields.To) ? -1 : l.fields.To)),
+    "Issuer Name (from Levelups)": myLevelups.map((l) => (l.fields["Issuer Name"] as string[] | undefined)?.[0]),
+    "Created (from Levelups)": myLevelups.map((l) => l.createdTime),
   };
 }
 
-// Credits.Available — true iff Consumed By Check-in is unlinked (matches
-// docs/airtable-schema.md exactly: not based on Consumed At, so a credit self-heals
-// if its consuming check-in is ever deleted directly rather than undone).
+// Credits.Available — true iff Consumed By Check-in is unlinked, so a credit
+// self-heals if its consuming check-in is ever deleted directly rather than undone.
 export function computeCreditFields(credit: RawRecord): Record<string, unknown> {
   return {
     ...credit.fields,
@@ -95,68 +134,3 @@ export function computeCreditFields(credit: RawRecord): Record<string, unknown> 
   };
 }
 
-function consumeOldestCreditOrFlag(store: Store, memberId: string, checkinId: string): void {
-  const candidate = availableCreditsFor(store, memberId)[0];
-  if (candidate) {
-    candidate.fields["Consumed At"] = new Date().toISOString();
-    candidate.fields["Consumed By Check-in"] = [checkinId];
-  } else {
-    const checkin = table(store, TABLES.checkins).get(checkinId);
-    if (checkin) {
-      checkin.fields["Needs Review"] = true;
-      checkin.fields["Review Reason"] = "Beyond tier allowance, no credit available";
-    }
-  }
-}
-
-// Automation C — fires on every new Check-ins record whose Checked In At is literally
-// today: if the member's Remaining Today (post-creation) is negative, consumes their
-// oldest Available credit, or flags Needs Review if none exists. Mirrors
-// services/checkins.ts's gateBackdatedCheckIns/consumeOldestCreditOrFlag exactly,
-// just triggered automatically instead of called explicitly (that backdated path
-// still calls its own copy directly — Automation C never fires for a non-today date,
-// same as real Airtable).
-export function applyLiveCheckinAutomation(store: Store, createdCheckinIds: string[]): void {
-  const todayStr = today();
-  const createdIdSet = new Set(createdCheckinIds);
-
-  // Group today's newly-created ids by member, preserving creation order — a batch
-  // (e.g. checking into 2 classes at once) must be evaluated incrementally, exactly
-  // like gateBackdatedCheckIns's nth-today-check, not all against the same final
-  // count (which would wrongly flag the *first* selection instead of whichever one
-  // actually crosses the allowance line).
-  const idsByMember = new Map<string, string[]>();
-  for (const id of createdCheckinIds) {
-    const checkin = table(store, TABLES.checkins).get(id);
-    if (!checkin) continue;
-    const at = checkin.fields["Checked In At"];
-    if (isBlank(at) || dateStringFor(new Date(at as string)) !== todayStr) continue;
-    const memberId = (checkin.fields.Member as string[] | undefined)?.[0];
-    if (!memberId) continue;
-    const list = idsByMember.get(memberId) ?? [];
-    list.push(id);
-    idsByMember.set(memberId, list);
-  }
-
-  for (const [memberId, ids] of idsByMember) {
-    const member = table(store, TABLES.members).get(memberId);
-    if (!member) continue;
-    const classesAllowed = Number(member.fields["Classes Allowed"] ?? 0);
-    const priorCount = checkedInCountOn(store, memberId, todayStr, createdIdSet);
-    ids.forEach((id, i) => {
-      const nth = priorCount + i + 1;
-      if (nth > classesAllowed) consumeOldestCreditOrFlag(store, memberId, id);
-    });
-  }
-}
-
-// Automation D — a Check-ins record's Undone At becomes non-blank -> frees whichever
-// credit it had consumed (clears Consumed At/Consumed By Check-in).
-export function applyUndoAutomation(store: Store, checkinId: string): void {
-  for (const credit of table(store, TABLES.credits).values()) {
-    if (linksTo(credit.fields, "Consumed By Check-in", checkinId)) {
-      delete credit.fields["Consumed At"];
-      delete credit.fields["Consumed By Check-in"];
-    }
-  }
-}

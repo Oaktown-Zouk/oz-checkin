@@ -19,6 +19,16 @@ export function isValidDateString(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
+// Studio-local YYYY-MM-DD for n days before now — used to bound a filterByFormula to
+// "recent" instead of a table's entire history. A day or so of fuzziness around
+// midnight from doing the subtraction in UTC before localizing doesn't matter here;
+// this is a performance window, not a precise cutoff.
+export function daysAgo(n: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return dateStringFor(d);
+}
+
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }

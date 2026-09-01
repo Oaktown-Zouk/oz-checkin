@@ -38,15 +38,7 @@ describe("listKioskRoster", () => {
     });
 
     const [entry] = await listKioskRoster();
-    assert.deepEqual(Object.keys(entry).sort(), [
-      "availableCredits",
-      "contactId",
-      "id",
-      "membershipStatus",
-      "name",
-      "remaining",
-    ]);
-    assert.equal(entry.contactId, "contact-1");
+    assert.deepEqual(Object.keys(entry).sort(), ["availableCredits", "id", "membershipStatus", "name", "remaining"]);
     assert.equal(entry.remaining, 2);
   });
 });

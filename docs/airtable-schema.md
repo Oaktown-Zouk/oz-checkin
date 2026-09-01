@@ -18,9 +18,11 @@ doc. `Check-ins.Class Level` links directly to `Programs`, not a specific dated
 
 Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
 `Follow Level` (the last two are app-writable, via the level-edit dialogs),
-`Contact ID` (Givebutter's contact id, read-only here — printed on a student's kiosk
-QR code so `/kiosk` can resolve a scan straight to a Member, see
-`server/src/services/kiosk.ts`). `Email` also drives the separate student
+`Contact ID` (Givebutter's contact id, read-only here — shown on the student
+self-service app's own QR code page, though `/kiosk` no longer reads it back: it
+used to resolve a camera scan straight to a Member, but that scanner was removed in
+favor of just typing a name, see SPEC.md's "Kiosk mode"). `Email` also drives the
+separate student
 self-service app's login (`services/userAccess.ts`'s `getStudentAccessForEmail`,
 case-insensitive, excluding `Duplicate`-flagged rows, and requiring at least one
 `Transactions` or `Recurring Plans` link — both `multipleRecordLinks` to their
@@ -51,9 +53,11 @@ Computed fields to read directly, never recompute:
   the date type.
 - `Duplicate` (checkbox) — set by hand when Givebutter's contact-merge tool leaves a
   stray record behind (it doesn't actually delete the merged-away contact, so the sync
-  keeps recreating it as a separate Member). The roster query excludes it server-side
-  (`NOT({Duplicate})`), so it's never fetched at all; direct-by-id lookups (timeline,
-  level edits) are not filtered.
+  keeps recreating it as a separate Member), or automatically by `services/merge.ts`'s
+  `mergeMembers` on whichever side of a merge didn't survive (case-variant email
+  duplicates — see `SPEC.md`'s "Merging duplicate students"). The roster query
+  excludes it server-side (`NOT({Duplicate})`), so it's never fetched at all;
+  direct-by-id lookups (timeline, level edits) are not filtered.
 - `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation that runs when
   `Membership Amount` is updated, not this app; see "Tier Rule gaps" below for when
   it's empty.
@@ -90,16 +94,28 @@ plan amount at all. Two things handle this:
   for.
 - `Role` (single select: `Lead` / `Follow`) — one per row; a member checking into a
   program as both Lead and Follow needs two check-in rows (matches the check-in UX:
-  one row per Program, one role choice per row).
+  one row per Program, one role choice per row). The app's own check-in dialogs won't
+  create a second row for the same Program on the same day, though — see SPEC.md's
+  "Check-in semantics" — so two rows for the same program/day only happen via
+  `Backfill` or a direct Airtable edit.
+- `Method` (single select: `Form` / `Staff` / `Kiosk` / `Backfill`) — which UI created
+  the row. The app sets `Staff`/`Kiosk` on every check-in it creates
+  (`POST /api/checkins`'s `method` field, sent by each frontend — see
+  `services/checkins.ts`'s `createCheckIns`); `Form` and `Backfill` are never written
+  by this app (a Givebutter form submission and a manual historical import,
+  respectively).
 - `Undone At` (dateTime) — set by the app on undo instead of deleting the row,
   preserving history.
 - `Is Counted` (formula) — `1` if `Checked In At` is today (studio timezone) and
   `Undone At` is blank, else `0`.
 - `Checked In At (Valid)` (formula) — `Checked In At` unless undone, else blank; feeds
   `Members.Last Check-in At`.
-- `Needs Review` / `Review Reason` — set by Automation C when a check-in exceeds the
-  member's tier allowance and no credit is available to cover it.
+- `Needs Review` / `Review Reason` — set by the app (`services/checkins.ts`'s
+  `gateCheckIns`) when a check-in exceeds the member's tier allowance and no credit is
+  available to cover it.
 - `Credits` — reverse link, populated once a `Credits` record consumes this check-in.
+  `services/checkins.ts`'s `undoCheckIn` reads this directly to find which credit to
+  free on undo, rather than scanning the whole `Credits` table.
 
 The check-in dialog preselects a student's most recent visit's programs/roles by
 scanning non-undone Check-ins app-side (`StudentStatus.lastCheckinSelections`, see
@@ -112,28 +128,28 @@ viewed.
 `Member` (holder), `Purchased By` (payer — defaults same as Member, kept distinct so a
 future credit-transfer feature has somewhere to write), `Reason` (`New Member` /
 `Drop-in Purchase` / `Comp`), `Source Transaction` (link → Transactions, set only for
-`Drop-in Purchase`), `Granted At`, `Consumed At`, `Consumed By Check-in`, `Available`
-(formula — true iff `Consumed By Check-in` is unlinked, **not** based on
-`Consumed At`, so a credit self-heals if the check-in that consumed it is ever deleted
-directly in Airtable rather than undone through the app).
+`Drop-in Purchase`), `Granted At`, `Consumed By Check-in`, `Available` (formula — true
+iff `Consumed By Check-in` is unlinked, so a credit self-heals if the check-in that
+consumed it is ever deleted directly in Airtable rather than undone through the app).
 
 The app never reimplements "is this credit valid" — it filters `Credits` by `Member` +
 `Available = 1`.
 
-Four Airtable automations maintain this table:
+`services/merge.ts`'s `mergeMembers` reassigns `Member` and `Purchased By`
+independently when combining two duplicate `Members` rows, except: if both sides have
+their own `Reason = New Member` credit, the loser's is left in place rather than
+reassigned, so the merged student doesn't end up with two signup credits — see
+`SPEC.md`'s "Merging duplicate students".
+
+Granting is still Airtable automations; consuming and freeing a credit are both
+application code (see SPEC.md's "Credits system" for why):
 - **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
 - **B** — a `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
   not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
-- **C** — a new `Check-ins` record → reads `Member.Remaining Today` post-creation; if
-  negative, consumes the member's oldest `Available` credit, or sets `Needs Review`/
-  `Review Reason` if none exists. Doesn't write to `Members` at all.
-- **D** — `Check-ins.Undone At` becomes non-blank → finds the `Credits` record
-  consumed by that check-in and clears `Consumed At`/`Consumed By Check-in`.
 
-Automation C only fires for same-day check-ins (Airtable's live fields are hardcoded
-to literal "today"), so **backdated check-in creation is the one place this app
-computes gating itself** — mirroring Automation C's logic, parameterized by the target
-date. Undo needs no such split; Automation D works for any date.
+Consuming (`services/checkins.ts`'s `gateCheckIns`, run for every check-in it
+creates, live or backdated) and freeing (`undoCheckIn`, via the check-in's own
+`Credits` reverse link) are both handled the same way regardless of path.
 
 ## Programs (`tblB90zwd3OjKxxDs`)
 
@@ -245,6 +261,34 @@ Lets the studio answer "when did this student level up, and who signed off on it
   student timeline (e.g. "... by Jane") without a second lookup.
 - `Full Name (from Member)` (lookup, read-only) and `Created` (Airtable's own
   auto-set creation timestamp) — also never written by the app.
+- `From (safe)` / `To (safe)` (formula, read-only) — `IF({From} = BLANK(), -1, {From})`
+  and the `To` equivalent. Exist purely so the Members-side Lookups below have
+  something non-blank to pull through; nothing on this table itself reads them.
+
+**Members' Lookup fields through this table** (`Role (from Levelups)`,
+`From (safe, from Levelups)`, `To (safe, from Levelups)`, `Issuer Name (from
+Levelups)`, `Created (from Levelups)`) let `services/studentTimeline.ts` build a
+student's levelup events straight off their own `Members` record, with no separate
+read of this table at all. **Why `(safe)` and not plain `From`/`To`**: confirmed by
+testing directly against real data — Airtable's Lookup fields silently *drop* an
+entry when the source field is blank on that linked record, rather than keeping a
+placeholder. Since `From`/`To` are legitimately blank on a real, common subset of
+rows (first-ever level, cleared level), looking them up directly desyncs that array's
+length from `Role`/`Issuer Name`/`Created`'s — the app zips these five arrays
+together by index to reconstruct each levelup record, and a length mismatch corrupts
+that silently. Routing through `From (safe)`/`To (safe)` (which are never blank)
+keeps all five arrays the same length; the app translates `-1` back to "blank" on the
+way in. There are also `From (from Levelups)`/`To (from Levelups)` Lookups still
+sitting on `Members` from before this was diagnosed — broken in the way just
+described, unused, and harmless to leave (Airtable's API doesn't support deleting
+fields, so they're stuck until removed by hand in the UI).
+
+Same-shaped Lookups exist on `Members` for `Notes` too (`Teacher Notes` — the
+auto-generated reverse link, renamed from its default `Notes 2` since `Notes` itself
+was already a plain text field), but the app doesn't use them yet: `Strengths`/
+`Opportunities` have the identical blank-value risk described above and don't have
+`(safe)` equivalents, and `Notes` is empty in the real base as of this writing anyway
+— not worth the same fix until it's an actual bottleneck.
 
 ## Notes (`tblXfNHoBzKa3mqpB`)
 
@@ -255,7 +299,9 @@ UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
 - `Member` (link → `Members`, exactly one) — the student the note is about.
 - `Issuer` (link → `User Roles`, exactly one) — whoever wrote it, from the signed-in
   session's `userRoleId` (see "User Roles & Role Permissions" above) — same
-  zero-extra-lookup pattern as `Levelups.Issuer`.
+  zero-extra-lookup pattern as `Levelups.Issuer`. Also the edit gate: `updateNote`
+  (`PATCH /students/:id/notes/:noteId`) 403s unless the caller's own `userRoleId`
+  matches this field — see `SPEC.md`'s "Notes" section.
 - `Summary` (single line text) — the only required field; shown inline on the
   student timeline.
 - `Strengths` (long text) — "What `<Student>` is doing well," optional.

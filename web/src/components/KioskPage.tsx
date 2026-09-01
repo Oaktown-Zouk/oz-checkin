@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import banner from "../../assets/banner.png";
-import { api, UnauthorizedError, ForbiddenError, type KioskRosterEntry, type ProgramSchedule, type StudentStatus } from "../api.js";
+import {
+  api,
+  UnauthorizedError,
+  ForbiddenError,
+  type CheckInSelection,
+  type KioskRosterEntry,
+  type ProgramSchedule,
+  type StudentStatus,
+} from "../api.js";
 import { usePermissions } from "../permissions.js";
-import { useQrScanner } from "../useQrScanner.js";
+import type { KioskScreen } from "../kioskProducts.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
-import { Portal } from "shared";
+import { KioskPurchaseFlow } from "./KioskPurchaseFlow.js";
+import { ErrorBanner, Portal } from "shared";
 
 const ERROR_DISPLAY_MS = 5000;
 const MAX_SEARCH_RESULTS = 8;
@@ -44,16 +53,17 @@ function ineligibleReason(status: StudentStatus): string {
 // scan/tap is recognized — never a gap where nothing visible has happened yet.
 type DialogState = { kind: "loading" } | { kind: "student"; status: StudentStatus } | { kind: "error"; message: string };
 
-// The self-serve check-in station (`/kiosk`) — a student scans their QR code (their
-// Givebutter contact id) or types their name, taps Lead/Follow, and walks in with no
-// staff involvement. See SPEC.md's "Kiosk mode" section for the full design.
+// The self-serve check-in station (`/kiosk`) — a student types their name, taps
+// Lead/Follow, and walks in with no staff involvement — plus, layered on the same
+// home screen, a sign-up/purchase flow for new students (KioskPurchaseFlow.tsx). See
+// SPEC.md's "Kiosk mode" section for the full design.
 //
 // The full student roster (name/id/credits/membership-status/remaining) is fetched
 // once and cached in `roster` state rather than round-tripping to the server per
-// keystroke (see api.ts's kioskRoster) — search and QR-scan matching (contactId ->
-// id) both run against this local snapshot. Once a specific id is resolved, though,
-// the actual status always comes fresh from the server (see resolveId below) — the
-// cache is only ever used to find *who*, never to decide *whether*.
+// keystroke (see api.ts's kioskRoster) — the name search runs against this local
+// snapshot. Once a specific id is resolved, though, the actual status always comes
+// fresh from the server (see resolveId below) — the cache is only ever used to find
+// *who*, never to decide *whether*.
 export function KioskPage({
   programs,
   onUnauthorized,
@@ -74,6 +84,16 @@ export function KioskPage({
   const [roster, setRoster] = useState<KioskRosterEntry[]>([]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [query, setQuery] = useState("");
+  // The sign-up/purchase flow (KioskPurchaseFlow.tsx) — a separate screen stack from
+  // `dialog` above, since it's a fully client-side, non-authenticated-student flow
+  // (browsing/paying for a pass) rather than anything scoped to a resolved roster
+  // entry. "home" means the ordinary search+check-in screen below is showing.
+  const [screen, setScreen] = useState<KioskScreen>({ kind: "home" });
+  // Surfaces a failed check-in write after the fact — by the time a background write
+  // could fail, the dialog that started it has already shown the welcome message and
+  // closed (see KioskCheckInDialog's onSubmit), so this is the only place left to show
+  // it. Stays up until dismissed, not auto-hidden.
+  const [checkinError, setCheckinError] = useState<string | null>(null);
 
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -114,20 +134,6 @@ export function KioskPage({
     }
   }
 
-  async function resolveScan(contactId: string) {
-    const entry = roster.find((r) => r.contactId === contactId);
-    if (!entry) {
-      showError("We couldn't find your account — please see the front desk.");
-      return;
-    }
-    await resolveId(entry.id);
-  }
-
-  const { videoRef, cameraError } = useQrScanner({
-    enabled: dialog === null,
-    onDetect: resolveScan,
-  });
-
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -144,8 +150,29 @@ export function KioskPage({
     refreshRoster();
   }
 
+  // Fire-and-forget, called from KioskCheckInDialog's Done button — the dialog has
+  // already shown the welcome message and started closing by the time this runs, so
+  // there's nothing to update optimistically here (unlike the front desk's roster
+  // grid, nothing about this student stays visible on screen). Just starts the write,
+  // then queues the roster refresh (the "read") once it settles, and surfaces a
+  // failure via the banner since the dialog itself is gone by then.
+  function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
+    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    api
+      .checkIn(studentId, selections, effectiveIso, "Kiosk")
+      .catch((err) => {
+        if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
+          onUnauthorized();
+          return;
+        }
+        setCheckinError(err instanceof Error ? err.message : "Check-in failed");
+      })
+      .then(() => refreshRoster());
+  }
+
   return (
     <div className="kiosk-page">
+      {checkinError && <ErrorBanner message={checkinError} onDismiss={() => setCheckinError(null)} />}
       <div className="kiosk-header-controls">
         {canBackdate && (
           <div className="kiosk-backdate-control">
@@ -161,35 +188,39 @@ export function KioskPage({
 
       <img src={banner} alt="Oaktown Zouk" className="kiosk-banner" />
 
-      <div className="kiosk-main">
-        <p className="kiosk-camera-label">Scan QR Code to Check In</p>
-        <div className="kiosk-camera-wrap">
-          {cameraError ? (
-            <p className="kiosk-camera-error">{cameraError} Use the search bar below instead.</p>
-          ) : (
-            <video ref={videoRef} className="kiosk-video" muted playsInline />
-          )}
-        </div>
+      {screen.kind === "home" ? (
+        <div className="kiosk-main">
+          <div className="kiosk-search-wrap">
+            <input
+              className="search-bar"
+              type="search"
+              placeholder="Type your name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {results.length > 0 && (
+              <div className="kiosk-search-results">
+                {results.map((r) => (
+                  <button key={r.id} type="button" className="kiosk-search-result" onClick={() => handleResultTap(r)}>
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-        <div className="kiosk-search-wrap">
-          <input
-            className="search-bar"
-            type="search"
-            placeholder="Or type your name…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {results.length > 0 && (
-            <div className="kiosk-search-results">
-              {results.map((r) => (
-                <button key={r.id} type="button" className="kiosk-search-result" onClick={() => handleResultTap(r)}>
-                  {r.name}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="kiosk-action-buttons">
+            <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "signupCount" })}>
+              First time? Sign up for a free class!
+            </button>
+            <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "buyAPass" })}>
+              Buy a pass or membership
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <KioskPurchaseFlow screen={screen} onNavigate={setScreen} onExit={() => setScreen({ kind: "home" })} />
+      )}
 
       {dialog?.kind === "loading" && (
         <Portal>
@@ -212,7 +243,13 @@ export function KioskPage({
       )}
 
       {dialog?.kind === "student" && (
-        <KioskCheckInDialog student={dialog.status} programs={programs} effectiveAt={effectiveAt} onClose={closeDialog} />
+        <KioskCheckInDialog
+          student={dialog.status}
+          programs={programs}
+          effectiveAt={effectiveAt}
+          onSubmit={(selections) => handleCheckIn(dialog.status.id, selections)}
+          onClose={closeDialog}
+        />
       )}
     </div>
   );

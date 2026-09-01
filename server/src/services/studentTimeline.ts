@@ -1,19 +1,24 @@
-import { listRecords, TABLES } from "../airtable/client.js";
+import { listRecords, getRecordOrNull, TABLES } from "../airtable/client.js";
 import type {
   RecurringPlanFields,
   TransactionFields,
   CreditFields,
   CheckinFields,
-  LevelupFields,
   NoteFields,
+  MemberFields,
 } from "../airtable/fields.js";
-import { fetchProgramNames, getStudentStatusById, type StudentStatus } from "./studentStatus.js";
+import { fetchProgramNames, buildStatus, computeLastCheckinSelections, type StudentStatus } from "./studentStatus.js";
+import { today, dateStringFor } from "../lib/date.js";
 
 export interface NoteDetails {
+  id: string;
   summary: string;
   strengths: string;
   opportunities: string;
   issuerName: string;
+  // The User Roles record id that wrote this note — see routes/students.ts's
+  // PATCH /:id/notes/:noteId, and shared's NoteDetails for why the frontend needs it.
+  issuerRoleId: string;
 }
 
 export interface TimelineEvent {
@@ -36,11 +41,19 @@ function formatDollars(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+// Always a live ("today") view — no caller ever passes a date (see routes/students.ts,
+// studentApp.ts) — so this fetches everything itself in one batch rather than going
+// through getStudentStatusById, which would redundantly re-fetch Programs and re-scan
+// Check-ins for its own, narrower purposes. This function already needs this student's
+// *entire* non-undone check-in history for the timeline's own check-in events, so
+// today's check-ins (for status.checkinsToday/remaining) and the most-recent-visit
+// preselection (for status.lastCheckinSelections) are both just derived from that same
+// already-fetched list in memory — no separate fetch for either.
 export async function getStudentTimeline(studentId: string): Promise<StudentTimeline | null> {
-  const status = await getStudentStatusById(studentId);
-  if (!status) return null;
+  const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);
+  if (!member) return null;
 
-  const [plans, transactions, credits, checkins, levelups, notes, programNameById] = await Promise.all([
+  const [plans, transactions, credits, checkins, notes, programNameById] = await Promise.all([
     listRecords<RecurringPlanFields>(TABLES.recurringPlans, {
       fields: ["Covers Member", "Status", "Start Date", "Frequency", "Canceled At"],
     }),
@@ -52,13 +65,10 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
     }),
     listRecords<CheckinFields>(TABLES.checkins, {
       filterByFormula: "{Undone At} = BLANK()",
-      fields: ["Member", "Checked In At", "Class Level", "Role"],
-    }),
-    listRecords<LevelupFields>(TABLES.levelups, {
-      fields: ["Member", "Role", "From", "To", "Issuer Name"],
+      fields: ["Member", "Checked In At", "Class Level", "Role", "Needs Review", "Review Reason"],
     }),
     listRecords<NoteFields>(TABLES.notes, {
-      fields: ["Member", "Summary", "Strengths", "Opportunities", "Issuer Name"],
+      fields: ["Member", "Summary", "Strengths", "Opportunities", "Issuer", "Issuer Name"],
     }),
     fetchProgramNames(),
   ]);
@@ -67,8 +77,13 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
   const myTransactions = transactions.filter((t) => t.fields.Member?.includes(studentId) && !t.fields.Refunded);
   const myCredits = credits.filter((c) => c.fields.Member?.includes(studentId));
   const myCheckins = checkins.filter((c) => c.fields.Member?.includes(studentId));
-  const myLevelups = levelups.filter((l) => l.fields.Member?.includes(studentId));
   const myNotes = notes.filter((n) => n.fields.Member?.includes(studentId));
+
+  const todayStr = today();
+  const myCheckinsToday = myCheckins.filter(
+    (c) => c.fields["Checked In At"] && dateStringFor(new Date(c.fields["Checked In At"])) === todayStr
+  );
+  const status = buildStatus(member, true, myCheckinsToday, programNameById, computeLastCheckinSelections(myCheckins));
 
   const events: TimelineEvent[] = [];
 
@@ -117,10 +132,21 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
     });
   }
 
-  // A student's first-ever level in a role (no "From") isn't a level-*up* — nothing
-  // to have leveled up from — so it's left out of the timeline entirely.
-  for (const l of myLevelups) {
-    const { From: from, To: to, Role: role } = l.fields;
+  // Straight off the member record's own Lookup fields (through the Levelups link) —
+  // no separate Levelups table read at all. The four arrays are guaranteed the same
+  // length (see MemberFields's comment on these fields for why plain From/To lookups
+  // wouldn't be safe to zip this way), so index i across all of them is one levelup
+  // record. A student's first-ever level in a role (no "From") isn't a level-*up* —
+  // nothing to have leveled up from — so it's left out of the timeline entirely.
+  const levelupRoles = member.fields["Role (from Levelups)"] ?? [];
+  const levelupFroms = member.fields["From (safe, from Levelups)"] ?? [];
+  const levelupTos = member.fields["To (safe, from Levelups)"] ?? [];
+  const levelupIssuerNames = member.fields["Issuer Name (from Levelups)"] ?? [];
+  const levelupCreatedAts = member.fields["Created (from Levelups)"] ?? [];
+  for (let i = 0; i < levelupRoles.length; i++) {
+    const role = levelupRoles[i];
+    const from = levelupFroms[i] === -1 ? undefined : levelupFroms[i];
+    const to = levelupTos[i] === -1 ? undefined : levelupTos[i];
     if (from === undefined) continue;
     const isIncrease = to !== undefined && to > from;
     const base =
@@ -129,10 +155,10 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
         : isIncrease
           ? `Assessed into Level ${to} as a ${role}`
           : `Changed to Level ${to} as a ${role}`;
-    const issuerName = l.fields["Issuer Name"]?.[0];
+    const issuerName = levelupIssuerNames[i];
     events.push({
       type: "levelup",
-      at: l.createdTime,
+      at: levelupCreatedAts[i] ?? "",
       label: issuerName ? `${base} by ${issuerName}` : base,
     });
   }
@@ -145,10 +171,12 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       at: n.createdTime,
       label: `Note from ${issuerName}: ${summary}`,
       note: {
+        id: n.id,
         summary,
         strengths: n.fields.Strengths ?? "",
         opportunities: n.fields.Opportunities ?? "",
         issuerName,
+        issuerRoleId: n.fields.Issuer?.[0] ?? "",
       },
     });
   }

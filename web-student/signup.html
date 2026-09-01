@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="./assets/logo.png" />
+    <title>Oaktown Zouk — Sign Up</title>
+  </head>
+  <body>
+    <!--
+      The public sign-up/purchase widget — no login, no React, nothing shared with
+      the rest of this app beyond living in the same build/deploy (see
+      vite.config.ts). Meant to be loaded two ways:
+        - directly, at my.oaktownzouk.com/signup
+        - as an <iframe src="https://my.oaktownzouk.com/signup"> embed on
+          oaktownzouk.com/sign-up (Google Sites, "Embed by URL") and
+          theoaklandgrove.com/zouk (Squarespace, a Code Block iframe)
+      so it's laid out edge-to-edge with no outer page chrome of its own, matching
+      what it looked like as raw pasted-in HTML on both of those sites before this
+      moved into source control.
+    -->
+    <div id="guided-form-widget" class="gfw-container">
+      <div class="gfw-step" data-step="start">
+        <h3 class="gfw-question">Is this your first time attending?</h3>
+        <div class="gfw-options">
+          <button class="gfw-btn" data-goto="first">Yes</button>
+          <button class="gfw-btn" data-goto="returning">No</button>
+        </div>
+      </div>
+
+      <div class="gfw-step" data-step="first" hidden>
+        <div class="gfw-perk-box">
+          <p>🎉 Your first class is <strong>free</strong>!</p>
+          <p>Your first monthly membership is <strong>50% off</strong>!</p>
+        </div>
+        <h3 class="gfw-question">What would you like to do?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="first-dropin">I'm just attending a class</button>
+          <button class="gfw-btn" data-goto="first-membership">I'd like to sign up for a membership</button>
+        </div>
+        <button class="gfw-back" data-goto="start">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="first-dropin" hidden>
+        <h3 class="gfw-question">How many classes would you like to take on your first day?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="first-dropin-one">One</button>
+          <button class="gfw-btn" data-goto="first-dropin-two">Two</button>
+        </div>
+        <button class="gfw-back" data-goto="first">&larr; Back</button>
+      </div>
+
+      <!-- Waiver (for first class) -->
+      <div class="gfw-step" data-step="first-dropin-one" hidden>
+        <p class="gfw-waiver-text" data-waiver></p>
+        <button class="gfw-btn gfw-continue" data-goto="first-dropin-one-waivers">Continue</button>
+        <button class="gfw-back" data-goto="first-dropin">&larr; Back</button>
+      </div>
+
+      <!-- New contact form after waivers (free drop-in) -->
+      <div class="gfw-step" data-step="first-dropin-one-waivers" hidden>
+        <div class="gfw-embed">
+          <givebutter-widget id="gOKNYY" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="first-dropin-one">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="first-dropin-two" hidden>
+        <h3 class="gfw-question" data-first-day-second-class></h3>
+        <div class="gfw-embed">
+          <givebutter-widget id="LqbDvk" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="first-dropin">&larr; Back</button>
+      </div>
+
+      <!-- New Membership Purchases (same as returning; 50% off is handled manually) -->
+      <div class="gfw-step" data-step="first-membership" hidden>
+        <h3 class="gfw-question">How many classes would you like to take each week?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="first-membership-one">One</button>
+          <button class="gfw-btn" data-goto="first-membership-two">Two</button>
+        </div>
+        <button class="gfw-back" data-goto="start">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="first-membership-one" hidden>
+        <h3 class="gfw-question">Sign up for your 1 class/week membership.</h3>
+        <p class="gfw-policy-note" data-policy-note="new-member-membership"></p>
+        <div class="gfw-embed">
+          <givebutter-widget id="p71z32" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="first-membership">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="first-membership-two" hidden>
+        <h3 class="gfw-question">Sign up for your 2 classes/week membership</h3>
+        <p class="gfw-policy-note" data-policy-note="new-member-membership"></p>
+        <div class="gfw-embed">
+          <givebutter-widget id="pnVx7r" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="first-membership">&larr; Back</button>
+      </div>
+
+      <!-- Returning Student Purchase Flow -->
+      <div class="gfw-step" data-step="returning" hidden>
+        <h3 class="gfw-question">What would you like to pay for?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="returning-dropin">I'd like to pay for a drop-in class</button>
+          <button class="gfw-btn" data-goto="returning-membership">I'd like to sign up for a monthly membership</button>
+        </div>
+        <button class="gfw-back" data-goto="start">&larr; Back</button>
+      </div>
+
+      <!-- Dropin Purchases -->
+      <div class="gfw-step" data-step="returning-dropin" hidden>
+        <h3 class="gfw-question">How many classes would you like to take today?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="returning-dropin-one">One</button>
+          <button class="gfw-btn" data-goto="returning-dropin-two">Two</button>
+        </div>
+        <button class="gfw-back" data-goto="returning">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="returning-dropin-one" hidden>
+        <h3 class="gfw-question">Pay for one drop-in class</h3>
+        <p class="gfw-policy-note" data-policy-note="dropin"></p>
+        <div class="gfw-embed">
+          <givebutter-widget id="LqbDvk" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="returning-dropin">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="returning-dropin-two" hidden>
+        <h3 class="gfw-question">Pay for two drop-in classes</h3>
+        <p class="gfw-policy-note" data-policy-note="dropin"></p>
+        <div class="gfw-embed">
+          <givebutter-widget id="jNKM3W" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="returning-dropin">&larr; Back</button>
+      </div>
+
+      <!-- Returning Membership Purchases -->
+      <div class="gfw-step" data-step="returning-membership" hidden>
+        <h3 class="gfw-question">How many classes would you like to take each week?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="returning-membership-one">One</button>
+          <button class="gfw-btn" data-goto="returning-membership-two">Two</button>
+        </div>
+        <button class="gfw-back" data-goto="returning">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="returning-membership-one" hidden>
+        <h3 class="gfw-question">Sign up for your 1 class/week membership.</h3>
+        <p class="gfw-policy-note" data-policy-note="membership"></p>
+        <div class="gfw-embed">
+          <givebutter-widget id="p71z32" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="returning-membership">&larr; Back</button>
+      </div>
+
+      <div class="gfw-step" data-step="returning-membership-two" hidden>
+        <h3 class="gfw-question">Sign up for your 2 classes/week membership</h3>
+        <p class="gfw-policy-note" data-policy-note="membership"></p>
+        <div class="gfw-embed">
+          <givebutter-widget id="pnVx7r" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <button class="gfw-back" data-goto="returning-membership">&larr; Back</button>
+      </div>
+    </div>
+
+    <script src="https://widgets.givebutter.com/latest.umd.cjs?acct=K2zE8rPXlwbTczim&p=other" async></script>
+    <script type="module" src="/src/signup/signup.ts"></script>
+  </body>
+</html>

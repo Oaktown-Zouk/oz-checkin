@@ -2,7 +2,19 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { resetMockStore } from "../airtable/mockClient.js";
 import { TABLES } from "../airtable/tableIds.js";
-import { listStudentStatuses, getStudentStatusById } from "./studentStatus.js";
+import { listStudentStatuses, getStudentStatusById, computeLastCheckinSelections } from "./studentStatus.js";
+import type { AirtableRecord } from "../airtable/client.js";
+import type { CheckinFields } from "../airtable/fields.js";
+
+function checkin(daysAgo: number, programId: string, role: "Lead" | "Follow"): AirtableRecord<CheckinFields> {
+  const at = new Date();
+  at.setUTCDate(at.getUTCDate() - daysAgo);
+  return {
+    id: `rec${daysAgo}_${programId}_${role}`,
+    createdTime: at.toISOString(),
+    fields: { "Checked In At": at.toISOString(), "Class Level": [programId], Role: role },
+  };
+}
 
 describe("listStudentStatuses", () => {
   it("excludes Duplicate-flagged members from the roster", async () => {
@@ -40,6 +52,18 @@ describe("listStudentStatuses", () => {
       statuses.map((s) => s.id),
       ["recActive", "recStale", "recCheckedIn"]
     );
+  });
+});
+
+describe("computeLastCheckinSelections", () => {
+  it("returns the most recent visit's selections when it was within the last 29 days", () => {
+    const selections = computeLastCheckinSelections([checkin(20, "recProgram1", "Lead")]);
+    assert.deepEqual(selections, [{ programId: "recProgram1", role: "Lead" }]);
+  });
+
+  it("returns an empty array when the most recent visit was more than 29 days ago", () => {
+    const selections = computeLastCheckinSelections([checkin(35, "recProgram1", "Lead")]);
+    assert.deepEqual(selections, []);
   });
 });
 

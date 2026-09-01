@@ -2,9 +2,14 @@
 // a member with no Tier Rule (so Classes Allowed is 0 — any check-in is "over
 // allowance"), and has no Credits record consumed by it. Written after a manual sweep
 // (2026-08-23) turned up 5 such check-ins from a batch of Form-submitted trial-class
-// sign-ins, whose credits sat unlinked — Automation C either didn't fire for them or
-// hit a rollup-timing race. The user suspects this may recur, hence a real script
-// instead of a one-off.
+// sign-ins, whose credits sat unlinked. The user suspects this may recur, hence a real
+// script instead of a one-off.
+//
+// services/checkins.ts consumes/flags credits itself synchronously for every check-in
+// it creates (see gateCheckIns). This script stays useful regardless: for auditing
+// check-ins that predate that becoming the only consumption path, and as a general
+// sanity check against drift (e.g. a check-in created directly in Airtable, bypassing
+// the app entirely).
 //
 // A gap is only auto-fixed if the member already has an unclaimed Available credit —
 // this script never creates new credits (that's a judgment call, see the Dvij Patel
@@ -42,7 +47,7 @@ async function main() {
   for (const c of credits) for (const id of c.fields["Consumed By Check-in"] ?? []) checkinsWithCredit.add(id);
 
   // Oldest-first per member, matching the "consume oldest available credit" convention
-  // used everywhere else in this app (Automation C, gateBackdatedCheckIns).
+  // used everywhere else in this app (services/checkins.ts's gateCheckIns).
   const availableCreditsByMember = new Map<string, { id: string; grantedAt: string }[]>();
   for (const c of credits) {
     if (!c.fields.Available) continue;
@@ -84,7 +89,6 @@ async function main() {
       );
       if (APPLY) {
         await updateRecord<CreditFields>(TABLES.credits, credit.id, {
-          "Consumed At": c.fields["Checked In At"],
           "Consumed By Check-in": [c.id],
         });
       }

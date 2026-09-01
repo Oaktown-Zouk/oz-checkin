@@ -15,3 +15,9 @@ export class ConflictError extends HttpError {
     super(409, message);
   }
 }
+
+export class ForbiddenError extends HttpError {
+  constructor(message = "Forbidden") {
+    super(403, message);
+  }
+}
