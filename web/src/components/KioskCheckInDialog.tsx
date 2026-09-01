@@ -15,11 +15,11 @@ const WELCOME_MS = 5000;
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
-// lastCheckinSelections is already bounded to the student's last 7 days (see
+// lastCheckinSelections is already bounded to the student's last 29 days (see
 // computeLastCheckinSelections) — used here purely as a visual nudge ("you did this
-// last week") rather than to preselect anything, since kiosk check-ins are always an
+// recently") rather than to preselect anything, since kiosk check-ins are always an
 // explicit pick.
-function isFromLastWeek(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
+function isRecentSelection(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
   return student.lastCheckinSelections.some((s) => s.programId === programId && s.role === role);
 }
 
@@ -148,7 +148,7 @@ export function KioskCheckInDialog({
                       const done = isCheckedInToday(student, p.id, role);
                       const selected = roles[p.id] === role;
                       const grayed = !groupCommitted && pickedProgramId !== undefined && !selected;
-                      const recent = !done && isFromLastWeek(student, p.id, role);
+                      const recent = !done && isRecentSelection(student, p.id, role);
                       return (
                         <button
                           key={role}

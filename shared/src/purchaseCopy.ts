@@ -4,32 +4,32 @@
 // way it used to (the kiosk didn't show any of this at all until it started importing
 // from here).
 
-// Surfaced next to every disclaimer below so no one is turned away by an unaffordable
-// price without knowing they can ask for a lower one.
+// Surfaced next to every policy note below so no one is turned away by an
+// unaffordable price without knowing they can ask for a lower one.
 export const PRICING_CONTACT_EMAIL = "oz@oaktownzouk.com";
 
 // The trailing "ask about a lower price" clause, right before the email address.
-// Split out from the disclaimers below because it's the one piece that legitimately
+// Split out from the policy notes below because it's the one piece that legitimately
 // differs by surface: the public widget is used remotely (a phone, the studio's own
 // site), where emailing is the only option; the kiosk is used in person at the
 // studio, where asking the front desk directly is faster and more natural.
 export const PRICING_CONTACT_CLAUSE = "Contact us at";
 export const KIOSK_PRICING_CONTACT_CLAUSE = "Ask the front desk or email us at";
 
-export const DROPIN_SLIDING_SCALE_DISCLAIMER =
+export const DROPIN_SLIDING_SCALE_POLICY_NOTE =
   "Oaktown Zouk classes are priced on a sliding scale. No one turned away for lack of funds; need a lower priced ticket?";
 
 // The kiosk's "Buy a pass or membership" flow doesn't distinguish new vs. returning
 // members the way the public widget's separate first-time flow does (that flow also
 // promises a 50%-off first month with refund instructions — see
-// NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_DISCLAIMER below) — this is the general version
-// both surfaces use for a membership purchase outside that first-time perk.
-export const MEMBERSHIP_SLIDING_SCALE_DISCLAIMER =
+// NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE below) — this is the general
+// version both surfaces use for a membership purchase outside that first-time perk.
+export const MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE =
   "Memberships are sliding scale, billed monthly. Each payment covers the next 30 calendar days of classes. Cancel any time from the Givebutter confirmation email. No one turned away for lack of funds. Need a lower priced membership?";
 
 // Only shown on the public widget's first-time-member membership steps — the kiosk
 // has no equivalent first-time-perk path today.
-export const NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_DISCLAIMER =
+export const NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE =
   "Memberships are sliding scale, billed monthly. After you pay for your first month, you'll receive an email with instructions to get 50% refunded. Each payment covers the next 30 calendar days of classes. Cancel any time from the Givebutter confirmation email. No one turned away for lack of funds. Need a lower priced membership?";
 
 // A first-timer's "second class" step: their first class is free, and the second is

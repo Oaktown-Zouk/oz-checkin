@@ -126,8 +126,8 @@ export async function createRecords<F = Record<string, unknown>>(
     return record;
   });
 
-  // No Automation-C simulation here — services/checkins.ts now gates and
-  // consumes/flags credits itself for every check-in (live or backdated), via plain
+  // No automation simulation here — services/checkins.ts gates and consumes/flags
+  // credits itself for every check-in (live or backdated), via plain
   // listRecords/updateRecord calls this mock already serves.
 
   return created.map((r) => toAirtableRecord<F>(table, r));
@@ -142,7 +142,7 @@ export async function updateRecord<F = Record<string, unknown>>(
   const record = tableMap(table).get(id);
   if (!record) throw new Error(`mockClient: no record ${id} in table ${table}`);
 
-  // No Automation-D simulation here either — services/checkins.ts's undoCheckIn now
+  // No automation simulation here either — services/checkins.ts's undoCheckIn
   // unlinks the consumed credit itself, via the same plain updateRecord call this
   // mock already serves.
   const previousConsumedBy =

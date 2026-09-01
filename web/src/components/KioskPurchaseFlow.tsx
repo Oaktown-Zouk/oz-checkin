@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
-  DROPIN_SLIDING_SCALE_DISCLAIMER,
+  DROPIN_SLIDING_SCALE_POLICY_NOTE,
   FIRST_DAY_SECOND_CLASS_NOTE,
   KIOSK_PRICING_CONTACT_CLAUSE,
-  MEMBERSHIP_SLIDING_SCALE_DISCLAIMER,
+  MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
   PRICING_CONTACT_EMAIL,
   WAIVER_NOTICE,
 } from "shared";
@@ -88,7 +88,7 @@ function KioskWaiverScreen({ onBack, onContinue }: { onBack: () => void; onConti
 
   return (
     <KioskFlowShell title="Before your first class" onBack={onBack}>
-      <p className="kiosk-flow-disclaimer">
+      <p className="kiosk-flow-policy-note">
         {WAIVER_NOTICE.prefix}{" "}
         <a href={WAIVER_NOTICE.codeOfConduct.url} target="_blank" rel="noopener">
           {WAIVER_NOTICE.codeOfConduct.label}
@@ -123,8 +123,8 @@ function KioskFreeClassScreen({ onBack, onIdle }: { onBack: () => void; onIdle: 
 // second is one ordinary drop-in — see FIRST_DAY_SECOND_CLASS_NOTE, which this reuses
 // as the title exactly like the public widget uses it as that step's own heading, and
 // DROPIN_PRODUCTS[1], the same product/price a returning student's single drop-in
-// uses. No sliding-scale disclaimer here, matching the public widget's own version of
-// this step — this note already covers the pricing context that step needs.
+// uses. No sliding-scale policy note here, matching the public widget's own version
+// of this step — this note already covers the pricing context that step needs.
 function KioskSecondClassScreen({ onBack, onIdle }: { onBack: () => void; onIdle: () => void }) {
   useGivebutterWidgetScript();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -199,11 +199,11 @@ function KioskClassCountScreen({
 
 // Same sliding-scale wording the public sign-up widget shows above its own embeds
 // (see shared/src/purchaseCopy.ts) — this screen previously showed no pricing
-// context at all before the embed. Signup has no disclaimer (it's free), matching
+// context at all before the embed. Signup has no policy note (it's free), matching
 // the public widget's own free-first-class step.
-function disclaimerFor(product: GivebutterProduct): string | null {
-  if (product.key.startsWith("dropin")) return DROPIN_SLIDING_SCALE_DISCLAIMER;
-  if (product.key.startsWith("membership")) return MEMBERSHIP_SLIDING_SCALE_DISCLAIMER;
+function policyNoteFor(product: GivebutterProduct): string | null {
+  if (product.key.startsWith("dropin")) return DROPIN_SLIDING_SCALE_POLICY_NOTE;
+  if (product.key.startsWith("membership")) return MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE;
   return null;
 }
 
@@ -211,13 +211,13 @@ function KioskWidgetScreen({ product, onBack, onIdle }: { product: GivebutterPro
   useGivebutterWidgetScript();
   const containerRef = useRef<HTMLDivElement>(null);
   useIdleTimer(WIDGET_IDLE_MS, onIdle, containerRef);
-  const disclaimer = disclaimerFor(product);
+  const policyNote = policyNoteFor(product);
 
   return (
     <KioskFlowShell title="Complete your purchase" onBack={onBack}>
-      {disclaimer && (
-        <p className="kiosk-flow-disclaimer">
-          {disclaimer} {KIOSK_PRICING_CONTACT_CLAUSE}{" "}
+      {policyNote && (
+        <p className="kiosk-flow-policy-note">
+          {policyNote} {KIOSK_PRICING_CONTACT_CLAUSE}{" "}
           <a href={`mailto:${PRICING_CONTACT_EMAIL}`}>{PRICING_CONTACT_EMAIL}</a>
         </p>
       )}

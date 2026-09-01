@@ -725,7 +725,7 @@ front-desk involvement.
       `DROPIN_PRODUCTS[1]` — the same product/price a returning student's single
       drop-in uses, since the first class is free and only the second is actually
       charged — with a fixed heading explaining that instead of the usual pricing
-      disclaimer (`shared`'s `FIRST_DAY_SECOND_CLASS_NOTE`).
+      policy note (`shared`'s `FIRST_DAY_SECOND_CLASS_NOTE`).
   - **Buy a pass** shows a QR code first — pointing at the public sign-up widget
     (`kioskProducts.ts`'s `KIOSK_SIGNUP_PAGE_URL`, `my.oaktownzouk.com/signup`), so a
     student can finish on their own phone from the very first tap — then "Or buy on
@@ -738,15 +738,15 @@ front-desk involvement.
     the one QR code on the "Buy a pass" screen already covers every product, since the
     public widget it points at offers the same drop-in/membership/count choice on its
     own.
-  - **Pricing disclaimers**: the drop-in and membership widget screens show the same
+  - **Pricing policy notes**: the drop-in and membership widget screens show the same
     sliding-scale wording the public widget shows above its own embeds (`shared/src/
-    purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_DISCLAIMER`/
-    `MEMBERSHIP_SLIDING_SCALE_DISCLAIMER`) — except the "need a lower price?" line
+    purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_POLICY_NOTE`/
+    `MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE`) — except the "need a lower price?" line
     ends differently on each surface: the public widget (used remotely) can only
     suggest emailing, while the kiosk (used in person, at the studio) suggests asking
     the front desk directly too (`KIOSK_PRICING_CONTACT_CLAUSE` vs.
     `PRICING_CONTACT_CLAUSE`). The free-class and first-day-second-class screens have
-    their own fixed copy instead (see above) and show no separate disclaimer.
+    their own fixed copy instead (see above) and show no separate policy note.
   - **Givebutter's widget script** (`useGivebutterWidgetScript.ts`) is injected once
     into the document and defines the `<givebutter-widget>` custom element every
     widget screen renders; `GIVEBUTTER_WIDGET_SCRIPT_SRC` (`shared/src/givebutter.ts`,
@@ -948,7 +948,7 @@ Code Block embeds a plain iframe with no such wrapper, confirmed no issue there.
   (see `KioskCheckInDialog.tsx`), simple enough here that no framework is needed to
   keep it correct.
 - **Shared copy** (`shared/src/purchaseCopy.ts`, `shared/src/givebutter.ts`) — pricing
-  disclaimers, the waiver notice, the first-day-second-class note, and the Givebutter
+  policy notes, the waiver notice, the first-day-second-class note, and the Givebutter
   script URL are constants imported by both this page and the kiosk's
   `KioskPurchaseFlow.tsx`, so the two can't drift out of sync (see "Sign-up and
   purchase flow" under "Kiosk mode" above for the kiosk side, including the one place

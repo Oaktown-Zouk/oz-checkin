@@ -82,11 +82,13 @@ export function computeLastCheckinSelections(
     const d = dateStringFor(new Date(c.fields["Checked In At"]));
     if (!mostRecentDate || d > mostRecentDate) mostRecentDate = d;
   }
-  // A visit from a month ago isn't a useful guess at what a student wants checked in
-  // for today — worse, preselecting it in the front desk dialog reads as "this is
-  // still current" when it's stale. Only worth surfacing if it was within the last
-  // week (also what the kiosk dialog bolds — see KioskCheckInDialog.tsx).
-  if (!mostRecentDate || mostRecentDate < daysAgo(7)) return [];
+  // A student who hasn't been back in a month is unlikely to have changed what they
+  // usually take, so their last visit is still a reasonable guess — this is a
+  // staleness cutoff, not a performance one (the fetch above already goes back 30
+  // days regardless; see fetchMostRecentCheckinsByMember). 29 keeps it just inside
+  // that same fetched window (also what the kiosk dialog bolds — see
+  // KioskCheckInDialog.tsx).
+  if (!mostRecentDate || mostRecentDate < daysAgo(29)) return [];
   return checkinsForMember
     .filter((c) => c.fields["Checked In At"] && dateStringFor(new Date(c.fields["Checked In At"]!)) === mostRecentDate)
     .filter((c) => c.fields["Class Level"]?.[0] && c.fields.Role)

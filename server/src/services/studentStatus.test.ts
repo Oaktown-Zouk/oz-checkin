@@ -56,13 +56,13 @@ describe("listStudentStatuses", () => {
 });
 
 describe("computeLastCheckinSelections", () => {
-  it("returns the most recent visit's selections when it was within the last week", () => {
-    const selections = computeLastCheckinSelections([checkin(2, "recProgram1", "Lead")]);
+  it("returns the most recent visit's selections when it was within the last 29 days", () => {
+    const selections = computeLastCheckinSelections([checkin(20, "recProgram1", "Lead")]);
     assert.deepEqual(selections, [{ programId: "recProgram1", role: "Lead" }]);
   });
 
-  it("returns an empty array when the most recent visit was more than a week ago", () => {
-    const selections = computeLastCheckinSelections([checkin(10, "recProgram1", "Lead")]);
+  it("returns an empty array when the most recent visit was more than 29 days ago", () => {
+    const selections = computeLastCheckinSelections([checkin(35, "recProgram1", "Lead")]);
     assert.deepEqual(selections, []);
   });
 });

@@ -1,8 +1,8 @@
 import {
-  DROPIN_SLIDING_SCALE_DISCLAIMER,
+  DROPIN_SLIDING_SCALE_POLICY_NOTE,
   FIRST_DAY_SECOND_CLASS_NOTE,
-  MEMBERSHIP_SLIDING_SCALE_DISCLAIMER,
-  NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_DISCLAIMER,
+  MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
+  NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
   PRICING_CONTACT_CLAUSE,
   PRICING_CONTACT_EMAIL,
   WAIVER_NOTICE,
@@ -15,10 +15,10 @@ import "./signup.css";
 // KioskCheckInDialog.tsx's comment on why picks are purely local until submit) —
 // simple enough here that no framework is needed to keep it correct.
 
-const DISCLAIMERS: Record<string, string> = {
-  dropin: DROPIN_SLIDING_SCALE_DISCLAIMER,
-  membership: MEMBERSHIP_SLIDING_SCALE_DISCLAIMER,
-  "new-member-membership": NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_DISCLAIMER,
+const POLICY_NOTES: Record<string, string> = {
+  dropin: DROPIN_SLIDING_SCALE_POLICY_NOTE,
+  membership: MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
+  "new-member-membership": NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
 };
 
 function emailLink(): HTMLAnchorElement {
@@ -34,8 +34,8 @@ const steps = container.querySelectorAll<HTMLElement>(".gfw-step");
 // Fills in the shared copy once, up front, rather than re-rendering it on every step
 // change — it's all static per placeholder, so there's nothing to update after this.
 
-container.querySelectorAll<HTMLElement>("[data-disclaimer]").forEach((el) => {
-  const text = DISCLAIMERS[el.dataset.disclaimer!];
+container.querySelectorAll<HTMLElement>("[data-policy-note]").forEach((el) => {
+  const text = POLICY_NOTES[el.dataset.policyNote!];
   if (!text) return;
   el.textContent = `${text} ${PRICING_CONTACT_CLAUSE} `;
   el.appendChild(emailLink());
