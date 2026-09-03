@@ -66,20 +66,19 @@ let recordsUpdated = 0;
 // errors instead of guessing, which is exactly what should happen rather
 // than silently picking one.
 //
-// typecast: true so a select field with a value Airtable hasn't seen before
-// (e.g. a new Transaction Status) gets that choice added automatically
-// instead of the write being rejected outright — this is the REST API's
-// equivalent of updateOptionsAsync (see ensureSelectChoices in the nightly
-// scripts), and unlike that method it actually works from an automation.
+// toRestFields() matters here: buildRecurringPlanFields/buildTransactionFields
+// build a select field as {name: "..."} — correct for the Scripting SDK the
+// nightly scripts use, but the REST API this function actually talks to wants
+// a plain string and rejects the object with "Cannot parse value" even for a
+// real, existing choice (confirmed against the base's own field metadata —
+// see docs/airtable-automations/README.md).
 //
-// toRestFields() matters here specifically: buildRecurringPlanFields /
-// buildTransactionFields build a select field as {name: "..."} — correct for
-// the Scripting SDK the nightly scripts use, but the REST API this function
-// actually talks to wants a plain string and rejects the object with "Cannot
-// parse value" even for a real, existing choice (confirmed against the
-// base's own field metadata — see docs/airtable-automations/README.md).
-// typecast alone does not fix this; it's a format problem, not a
-// missing-choice one.
+// No `typecast: true` here on purpose: that would also auto-add a choice
+// Airtable has never seen at all, silently growing the option list from
+// whatever Givebutter happens to send. A genuinely new value should fail
+// loudly (same as the nightly scripts' ensureSelectChoices, which only ever
+// widens a choice list from a real Scripting-extension run, never an
+// automation) rather than get added unreviewed.
 async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt = 0) {
   const restFields = toRestFields(recordFields);
   const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`, {
@@ -90,7 +89,6 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
     },
     body: JSON.stringify({
       performUpsert: { fieldsToMergeOn },
-      typecast: true,
       records: [{ fields: restFields }]
     })
   });
