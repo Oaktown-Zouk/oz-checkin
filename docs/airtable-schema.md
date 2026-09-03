@@ -136,10 +136,12 @@ The app never reimplements "is this credit valid" — it filters `Credits` by `M
 `Available = 1`.
 
 `services/merge.ts`'s `mergeMembers` reassigns `Member` and `Purchased By`
-independently when combining two duplicate `Members` rows, except: if both sides have
-their own `Reason = New Member` credit, the loser's is left in place rather than
-reassigned, so the merged student doesn't end up with two signup credits — see
-`SPEC.md`'s "Merging duplicate students".
+independently when combining two duplicate `Members` rows, except: `Reason = New
+Member` credits collapse to exactly one on the survivor (preferring an
+already-consumed one), with every other one **deleted** — the only place this app
+deletes an Airtable record — unless two or more are already consumed, in which case
+none are touched and their check-ins get flagged for review instead. See `SPEC.md`'s
+"Merging duplicate students".
 
 Granting is still Airtable automations; consuming and freeing a credit are both
 application code (see SPEC.md's "Credits system" for why):
