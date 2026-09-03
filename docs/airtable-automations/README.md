@@ -1,11 +1,31 @@
 # Airtable automations
 
-These scripts live in Airtable's own Automations / Scripting extension, not in this
-repo's build or deploy — they run inside Airtable against the Givebutter API and
-write directly to the base. They're mirrored here purely so we have version history
-and can review/diff them outside Airtable's UI. Editing a file here does nothing;
-the change has to be pasted back into the corresponding Airtable automation's script
-step by hand.
+These scripts run inside Airtable's own Automations / Scripting extension, not in
+this repo's build or deploy — against the Givebutter API, writing directly to the
+base.
+
+**The files in this folder are GENERATED — do not hand-edit them.** Airtable's
+Scripting sandbox has no `import`/`require`, so every script pasted into it has to
+be one self-contained blob. To still get real, tested modularity, the actual source
+lives in [`server/airtable-automations/`](../../server/airtable-automations/):
+
+- `server/airtable-automations/src/*.ts` — pure functions (no `base`/`fetch` calls),
+  each with a colocated `*.test.ts` covering the edge cases (blank/null values,
+  Givebutter's `Boolean("false")` string-boolean trap, multi-word last names, select
+  fields needing `{name: "..."}` not a bare string, etc.). Run with `npm test
+  --workspace server` (they're auto-discovered alongside the rest of the server's
+  tests) or `npm run typecheck:automations --workspace server`.
+- `server/airtable-automations/bodies/*.body.js` — each automation's own
+  Airtable-specific orchestration (`base.getTable()`, `fetch()`, `input.config()`),
+  calling into the tested functions above. This is intentionally thin — the
+  edge-case-heavy logic lives in `src/`, not here.
+- `server/airtable-automations/build.ts` — concatenates `src/` + the matching
+  `bodies/*.body.js` into the files in *this* folder. Run via
+  `npm run build:automations --workspace server`.
+
+Workflow: edit `src/` or `bodies/`, run the tests, run the build, review the diff in
+this folder, paste the regenerated file into the corresponding Airtable automation's
+script step by hand.
 
 - `sync-givebutter-plans.js` — nightly scheduled automation, upserts `Recurring Plans`
   and creates/refreshes `Members` from `/plans`. Also maintains `Tier Rule` links.

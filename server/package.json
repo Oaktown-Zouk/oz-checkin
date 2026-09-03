@@ -9,7 +9,9 @@
     "build": "tsc -p tsconfig.build.json",
     "audit:credits": "tsx src/scripts/auditCreditConsumption.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --env-file=.env.test --import tsx --test"
+    "typecheck:automations": "tsc --noEmit -p airtable-automations/tsconfig.json",
+    "test": "node --env-file=.env.test --import tsx --test",
+    "build:automations": "tsx airtable-automations/build.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
