@@ -582,6 +582,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: white;
+  color: #111827;
   cursor: pointer;
   font-size: 0.9rem;
 }
@@ -602,6 +603,7 @@ body {
   border: 2px solid var(--border);
   border-radius: 10px;
   background: white;
+  color: #111827;
   cursor: pointer;
   display: flex;
   flex-direction: column;

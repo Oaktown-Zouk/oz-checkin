@@ -21,3 +21,4 @@ export const getRecord: typeof realClient.getRecord = impl.getRecord;
 export const getRecordOrNull: typeof realClient.getRecordOrNull = impl.getRecordOrNull;
 export const createRecords: typeof realClient.createRecords = impl.createRecords;
 export const updateRecord: typeof realClient.updateRecord = impl.updateRecord;
+export const deleteRecord: typeof realClient.deleteRecord = impl.deleteRecord;

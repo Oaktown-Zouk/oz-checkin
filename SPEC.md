@@ -267,14 +267,24 @@ Transfer membership in the roster row's 3-dot menu
   once the links move, those numbers recompute themselves — merging is repointing
   links, not recomputing counts by hand.
 - **The one-per-student exception**: an Airtable automation grants every new `Members`
-  row its own `New Member` signup credit. If both halves of a duplicate pair got one,
-  reassigning both would double it up — that credit specifically is left attached to
-  the loser instead (see next bullet), every other `Credits.Reason` reassigns
-  normally.
+  row its own `New Member` signup credit, so a duplicate pair can genuinely end up
+  with two (each row got its own grant). Reassigning both would double it up, and
+  just leaving the loser's behind would strand it forever, uncounted and
+  unreachable — so `mergeMembers` collapses every `New Member` credit belonging to
+  either side down to exactly one on the survivor: it prefers one that's already
+  been consumed by a real check-in (that's the actual record of what happened) over
+  an untouched duplicate grant, breaking ties on `Granted At`, and **deletes** every
+  other `New Member` credit outright — the one and only place this app deletes an
+  Airtable record, since a genuinely erroneous duplicate grant isn't data worth
+  preserving the way everything else here is. The one exception to the exception: if
+  two or more of the candidates are *already used*, that may mean the student really
+  was given two free classes under two different duplicate rows — not a simple
+  duplicate grant to silently collapse — so the merge leaves all of them alone and
+  flags the check-ins that consumed them (`Needs Review` / `Review Reason`) for a
+  human instead. Every other `Credits.Reason` reassigns normally, uncapped.
 - **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
   (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
-  but still there to audit, including whatever didn't get reassigned (the extra
-  `New Member` credit above). Flagged last, only once every reassignment has actually
+  but still there to audit. Flagged last, only once every reassignment has actually
   landed, so a failure partway through leaves it visible and the merge safely
   retryable — Airtable has no cross-table transaction, but every reassignment is
   independently idempotent.

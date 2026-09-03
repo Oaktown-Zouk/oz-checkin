@@ -1,5 +1,5 @@
-import { listRecords, getRecordOrNull, updateRecord, TABLES, type AirtableRecord } from "../airtable/client.js";
-import type { MemberFields, CreditFields } from "../airtable/fields.js";
+import { listRecords, getRecordOrNull, updateRecord, deleteRecord, TABLES, type AirtableRecord } from "../airtable/client.js";
+import type { MemberFields, CreditFields, CheckinFields } from "../airtable/fields.js";
 import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
@@ -22,34 +22,80 @@ async function repointLinks(
 }
 
 // Credits need their own pass rather than a plain repointLinks call: an Airtable
-// automation grants every new Member row its own "New Member" signup credit, so if
-// both halves of a duplicate pair got one, reassigning both would hand the merged
-// student two free drop-ins instead of the one they're entitled to. That extra credit
-// is left attached to the now-Duplicate-flagged member rather than moved or deleted —
-// never reachable again via the roster, but still there to audit if anyone asks. Every
-// other reason ("Drop-in Purchase", "Comp") has no such one-per-student expectation
-// and always reassigns. "Purchased By" (the payer) is a separate, unrelated link — a
-// record of who paid, not which Member row currently holds the resulting credit — so
-// it reassigns unconditionally.
+// automation grants every new Member row its own "New Member" signup credit, so a
+// duplicate pair can genuinely end up with two of them (each row got its own grant —
+// notably, a Member row created twice for one real signup by the webhook race this
+// app used to have — see docs/airtable-automations/README.md). Left unhandled, that
+// either hands the merged student two free drop-ins (both get reassigned) or strands
+// one on the now-hidden duplicate forever (neither reachable nor counted). This
+// collapses every "New Member" credit belonging to either side down to exactly one on
+// the survivor:
+//   - Prefer a credit that's already been consumed by a real check-in — that's the
+//     actual record of what happened, worth keeping over an untouched duplicate
+//     grant. Ties (several used, or none used) break on Granted At, oldest first, so
+//     the pick is stable rather than depending on fetch order.
+//   - Every other "New Member" credit is deleted outright, not just left orphaned —
+//     "duplicate ends up with none" only holds if it's actually gone.
+//   - Exception: two or more ALREADY-USED "New Member" credits means this person may
+//     genuinely have redeemed a free class twice under two different duplicate rows —
+//     not a simple duplicate-grant to silently collapse. Leaves them all as-is and
+//     flags the check-ins that consumed them for a human to look at instead.
+// Every other reason ("Drop-in Purchase", "Comp") has no such one-per-student
+// expectation and always reassigns, uncapped. "Purchased By" (the payer) is a
+// separate, unrelated link — a record of who paid, not which Member row currently
+// holds the resulting credit — so it reassigns unconditionally too.
 async function reassignCredits(survivorId: string, duplicateId: string): Promise<void> {
   const credits = await listRecords<CreditFields>(TABLES.credits, {
-    fields: ["Member", "Purchased By", "Reason"],
+    fields: ["Member", "Purchased By", "Reason", "Consumed By Check-in", "Granted At"],
   });
 
-  const survivorHasNewMemberCredit = credits.some(
-    (c) => c.fields.Member?.includes(survivorId) && c.fields.Reason === "New Member"
+  const newMemberCredits = credits.filter(
+    (c) =>
+      c.fields.Reason === "New Member" &&
+      (c.fields.Member?.includes(survivorId) || c.fields.Member?.includes(duplicateId))
   );
+  const usedNewMemberCredits = newMemberCredits.filter((c) => (c.fields["Consumed By Check-in"]?.length ?? 0) > 0);
+
+  const extraNewMemberCreditIds = new Set<string>();
+  if (newMemberCredits.length > 1) {
+    if (usedNewMemberCredits.length >= 2) {
+      console.warn(
+        `[merge] ${usedNewMemberCredits.length} used "New Member" credits found merging ${duplicateId} into ` +
+          `${survivorId} — flagging their check-ins for review instead of auto-resolving.`
+      );
+      const checkinIds = usedNewMemberCredits.flatMap((c) => c.fields["Consumed By Check-in"] ?? []);
+      await Promise.all(
+        checkinIds.map((id) =>
+          updateRecord<CheckinFields>(TABLES.checkins, id, {
+            "Needs Review": true,
+            "Review Reason": "Multiple used New Member credits found while merging duplicate students — verify this student wasn't given two free classes.",
+          })
+        )
+      );
+    } else {
+      const [, ...losers] = [...newMemberCredits].sort((a, b) => {
+        const aUsed = usedNewMemberCredits.includes(a);
+        const bUsed = usedNewMemberCredits.includes(b);
+        if (aUsed !== bUsed) return aUsed ? -1 : 1;
+        return (a.fields["Granted At"] ?? "").localeCompare(b.fields["Granted At"] ?? "");
+      });
+      for (const loser of losers) extraNewMemberCreditIds.add(loser.id);
+    }
+  }
 
   const memberUpdates = credits
     .filter((c) => c.fields.Member?.includes(duplicateId))
-    .filter((c) => !(c.fields.Reason === "New Member" && survivorHasNewMemberCredit))
+    .filter((c) => !extraNewMemberCreditIds.has(c.id))
     .map((c) => updateRecord<CreditFields>(TABLES.credits, c.id, { Member: [survivorId] }));
 
   const purchasedByUpdates = credits
     .filter((c) => c.fields["Purchased By"]?.includes(duplicateId))
+    .filter((c) => !extraNewMemberCreditIds.has(c.id))
     .map((c) => updateRecord<CreditFields>(TABLES.credits, c.id, { "Purchased By": [survivorId] }));
 
-  await Promise.all([...memberUpdates, ...purchasedByUpdates]);
+  const deletions = [...extraNewMemberCreditIds].map((id) => deleteRecord(TABLES.credits, id));
+
+  await Promise.all([...memberUpdates, ...purchasedByUpdates, ...deletions]);
 }
 
 // Never overwrites a value the survivor already has — the survivor's own identity

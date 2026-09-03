@@ -158,3 +158,12 @@ export async function updateRecord<F = Record<string, unknown>>(
 
   return toAirtableRecord<F>(table, record);
 }
+
+// Note: unlike updateRecord above, this does NOT simulate Airtable's automatic
+// reverse-link cleanup (e.g. a deleted Credit vanishing from a Check-in's own
+// Credits field) — no current caller deletes a record with an active reverse link
+// pointing at it. Add that if a future caller needs it.
+export async function deleteRecord(table: string, id: string): Promise<void> {
+  ensureSeeded();
+  tableMap(table).delete(id);
+}
