@@ -48,15 +48,30 @@ See `docs/airtable-schema.md` for what each Airtable table/field means to this a
 
 ## 2026-09-03 webhook 422 on a select field: `Cannot parse value for field Status`
 
-The webhook's REST `performUpsert` call had no way to widen a single-select field's
-choice list when Givebutter sent a value Airtable hadn't seen before — Airtable
-rejects that write outright rather than guessing. `updateOptionsAsync` (what the
-nightly scripts use to widen a select field — see `ensureSelectChoices`) doesn't
-help here even in principle: it's Scripting-extension-only and throws when called
-from an automation, which every one of these scripts, including the webhook, runs
-as. Fixed with `typecast: true` on the REST request body — a plain API flag, not an
-SDK method, so it actually works from an automation, and Airtable auto-adds the
-missing choice the same way `updateOptionsAsync` would have.
+First hit on `Transactions.Status`; initially (wrongly) diagnosed as a missing
+select choice and "fixed" with `typecast: true` on the REST request. Disabling that
+to actually see the raw error surfaced a second 422, this time on
+`Recurring Plans.Status`, with the attempted value logged as `{"name":"active"}` —
+and querying the base's own field metadata (`GET /v0/meta/bases/{id}/tables`)
+confirmed `"active"` is a real, existing choice. So it was never a missing-choice
+problem: `typecast: true` was masking a genuine format bug, not fixing anything.
+
+The actual cause: `buildRecurringPlanFields`/`buildTransactionFields` build a select
+field as `{name: "..."}` — the Scripting SDK's cell-value shape, correct for the
+nightly scripts' `table.createRecordsAsync()`/`updateRecordsAsync()` calls. The
+webhook writes via raw REST `performUpsert` instead (see the race-condition note
+above), and Airtable's REST API wants a select field as a **plain string** — it
+rejects the Scripting-shaped object with "Cannot parse value" even for a real
+choice. This only broke once the webhook and nightly scripts started sharing the
+same field-builders for full parity; before that, the webhook's own separate
+functions happened to send this correctly, and the merge introduced the mismatch.
+
+Fixed with `toRestFields()`, applied once inside `upsertAirtableRecord` (the single
+REST-write chokepoint every call site already funnels through) — flattens any
+`{name: "..."}`-shaped value to a plain string right before the request, without
+touching what the shared builders produce for the nightly scripts. `typecast: true`
+stays on regardless, as a legitimate separate safeguard for a genuinely new choice
+value Airtable hasn't seen at all.
 
 ## 2026-09-03 Transactions never got Plan ID / Is Recurring / Refunded* from the nightly sync
 

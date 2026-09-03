@@ -71,7 +71,17 @@ let recordsUpdated = 0;
 // instead of the write being rejected outright — this is the REST API's
 // equivalent of updateOptionsAsync (see ensureSelectChoices in the nightly
 // scripts), and unlike that method it actually works from an automation.
+//
+// toRestFields() matters here specifically: buildRecurringPlanFields /
+// buildTransactionFields build a select field as {name: "..."} — correct for
+// the Scripting SDK the nightly scripts use, but the REST API this function
+// actually talks to wants a plain string and rejects the object with "Cannot
+// parse value" even for a real, existing choice (confirmed against the
+// base's own field metadata — see docs/airtable-automations/README.md).
+// typecast alone does not fix this; it's a format problem, not a
+// missing-choice one.
 async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt = 0) {
+  const restFields = toRestFields(recordFields);
   const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`, {
     method: 'PATCH',
     headers: {
@@ -81,7 +91,7 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
     body: JSON.stringify({
       performUpsert: { fieldsToMergeOn },
       typecast: true,
-      records: [{ fields: recordFields }]
+      records: [{ fields: restFields }]
     })
   });
 
@@ -93,10 +103,12 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
     const responseBody = await response.text();
     // Logged here (not just thrown) so the run log shows the actual fields we
     // tried to write -- the re-fetched Givebutter record, not the webhook
-    // payload, is what ends up in recordFields, and those can disagree. Every
-    // upsert call site funnels through here, so this covers all of them
-    // instead of needing its own try/catch at each one.
-    console.error(`Airtable upsert ${response.status} on ${tableId} failed for fields: ${JSON.stringify(recordFields)}`);
+    // payload, is what ends up in recordFields, and those can disagree. Logs
+    // restFields (what was actually sent over the wire), not recordFields, so
+    // a format bug like this one is visible directly instead of needing to be
+    // re-derived. Every upsert call site funnels through here, so this covers
+    // all of them instead of needing its own try/catch at each one.
+    console.error(`Airtable upsert ${response.status} on ${tableId} failed for fields: ${JSON.stringify(restFields)}`);
     throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${responseBody}`);
   }
 
