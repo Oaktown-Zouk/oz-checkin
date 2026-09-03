@@ -69,9 +69,21 @@ functions happened to send this correctly, and the merge introduced the mismatch
 Fixed with `toRestFields()`, applied once inside `upsertAirtableRecord` (the single
 REST-write chokepoint every call site already funnels through) — flattens any
 `{name: "..."}`-shaped value to a plain string right before the request, without
-touching what the shared builders produce for the nightly scripts. `typecast: true`
-stays on regardless, as a legitimate separate safeguard for a genuinely new choice
-value Airtable hasn't seen at all.
+touching what the shared builders produce for the nightly scripts. Audited every
+other `toSelectField(...)` call site in `planFields.ts`/`transactionFields.ts` to
+confirm none bypass this chokepoint — they don't; `toRestFields` is generic over any
+`{name}`-shaped value, not tied to specific field names, so a future select field
+added to either builder is covered automatically. The one remaining `{name: ...}`
+object left in the webhook script (`Sync Log`'s `Script` field) is intentionally
+untouched — that write goes through `syncLogTable.createRecordAsync`, the Scripting
+SDK, not REST, so the Scripting-shaped object is correct there.
+
+`typecast: true` was removed rather than kept as a safeguard: it would also
+auto-add a choice Airtable has never seen at all, silently growing the option list
+from whatever Givebutter happens to send. A genuinely new value now fails loudly
+instead — same posture as the nightly scripts' `ensureSelectChoices`, which only
+ever widens a choice list from a real Scripting-extension run, never silently from
+an automation.
 
 ## 2026-09-03 Transactions never got Plan ID / Is Recurring / Refunded* from the nightly sync
 
