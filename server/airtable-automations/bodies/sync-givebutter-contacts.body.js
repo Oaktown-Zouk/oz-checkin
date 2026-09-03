@@ -29,6 +29,8 @@ const MAX_PAGES = 40;                  // 40 × 100 = 4,000 contacts per run
 // first full pull is done — Givebutter filters server-side on updatedAfter.
 const UPDATED_WITHIN_DAYS = null;
 
+// ═══ END CONFIG ═══
+
 const membersTable = base.getTable('Members');
 const syncLogTable = base.getTable('Sync Log');
 

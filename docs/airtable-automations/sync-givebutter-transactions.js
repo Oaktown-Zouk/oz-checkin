@@ -8,6 +8,37 @@
 // the regenerated file into Airtable.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// Givebutter → Airtable :: TRANSACTIONS  (payment history)
+//
+// Airtable → Automations → Trigger "At scheduled time" (daily, 3:15 AM PT)
+//          → Action "Run a script"  ·  no input variables needed
+//
+// Rolling window, not a full pull — self-heals any gap shorter than
+// LOOKBACK_DAYS. For the one-time historical backfill, set it to 3650,
+// run manually, then set it back to 7 before enabling the schedule. (Also the
+// way to backfill Plan ID / Is Recurring / Refunded* / the Recurring Plans
+// link onto every existing transaction after adding those fields below — this
+// script previously wrote none of them, so every already-synced row is
+// missing them until a backfill run.)
+//
+// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
+// record field pointing at Recurring Plans — created by hand first;
+// automations can't add fields.
+//
+// NAMES: writes First Name / Last Name only when creating a member, or to
+// fill a blank. It never overwrites a name that /plans already set, because
+// transactions sometimes carry only a single combined name and splitting
+// that is guesswork.
+// ═══════════════════════════════════════════════════════════════════════
+
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
+const LOOKBACK_DAYS = 7;      // ← 3650 for the historical backfill
+const MAX_PAGES     = 40;     // Airtable caps a script at 50 fetch() calls
+
+// ── shared helpers (generated — edit server/airtable-automations/src/) ──
+
 // text.ts
 // Value coercion helpers shared by every Airtable Givebutter-sync automation.
 // Pure, dependency-free -- see server/airtable-automations/README.md for why
@@ -284,35 +315,6 @@ function retryDelayMs(attempt) {
 }
 
 // ── end of generated shared helpers — automation-specific logic below ───
-
-// ═══════════════════════════════════════════════════════════════════════
-// Givebutter → Airtable :: TRANSACTIONS  (payment history)
-//
-// Airtable → Automations → Trigger "At scheduled time" (daily, 3:15 AM PT)
-//          → Action "Run a script"  ·  no input variables needed
-//
-// Rolling window, not a full pull — self-heals any gap shorter than
-// LOOKBACK_DAYS. For the one-time historical backfill, set it to 3650,
-// run manually, then set it back to 7 before enabling the schedule. (Also the
-// way to backfill Plan ID / Is Recurring / Refunded* / the Recurring Plans
-// link onto every existing transaction after adding those fields below — this
-// script previously wrote none of them, so every already-synced row is
-// missing them until a backfill run.)
-//
-// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
-// record field pointing at Recurring Plans — created by hand first;
-// automations can't add fields.
-//
-// NAMES: writes First Name / Last Name only when creating a member, or to
-// fill a blank. It never overwrites a name that /plans already set, because
-// transactions sometimes carry only a single combined name and splitting
-// that is guesswork.
-// ═══════════════════════════════════════════════════════════════════════
-
-const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
-const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
-const LOOKBACK_DAYS = 7;      // ← 3650 for the historical backfill
-const MAX_PAGES     = 40;     // Airtable caps a script at 50 fetch() calls
 
 const membersTable        = base.getTable('Members');
 const recurringPlansTable = base.getTable('Recurring Plans');

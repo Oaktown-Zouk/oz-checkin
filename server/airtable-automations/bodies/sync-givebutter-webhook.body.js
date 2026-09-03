@@ -56,6 +56,8 @@ const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const AIRTABLE_PAT = 'REPLACE_WITH_DEDICATED_PAT';
 const AIRTABLE_BASE_ID = base.id;
 
+// ═══ END CONFIG ═══
+
 const { eventName, resourceId } = input.config();
 
 const membersTable        = base.getTable('Members');
