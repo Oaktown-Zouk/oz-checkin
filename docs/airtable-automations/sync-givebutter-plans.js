@@ -8,6 +8,26 @@
 // the regenerated file into Airtable.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// Givebutter → Airtable :: RECURRING PLANS  (membership source of truth)
+//
+// Airtable → Automations → Trigger "At scheduled time" (daily, 3:00 AM PT)
+//          → Action "Run a script"  ·  no input variables needed
+//
+// Safe to re-run: every write is keyed on Plan ID / Contact ID.
+//
+// NAMES: writes First Name and Last Name. It does NOT write Full Name —
+// that's a formula field (see the builder doc's manual pass). Givebutter is
+// authoritative here, so a name changed there overwrites Airtable on the
+// next run.
+// ═══════════════════════════════════════════════════════════════════════
+
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY';   // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
+const MAX_PAGES = 40;                          // Airtable caps a script at 50 fetch() calls
+
+// ── shared helpers (generated — edit server/airtable-automations/src/) ──
+
 // text.ts
 // Value coercion helpers shared by every Airtable Givebutter-sync automation.
 // Pure, dependency-free -- see server/airtable-automations/README.md for why
@@ -284,24 +304,6 @@ function retryDelayMs(attempt) {
 }
 
 // ── end of generated shared helpers — automation-specific logic below ───
-
-// ═══════════════════════════════════════════════════════════════════════
-// Givebutter → Airtable :: RECURRING PLANS  (membership source of truth)
-//
-// Airtable → Automations → Trigger "At scheduled time" (daily, 3:00 AM PT)
-//          → Action "Run a script"  ·  no input variables needed
-//
-// Safe to re-run: every write is keyed on Plan ID / Contact ID.
-//
-// NAMES: writes First Name and Last Name. It does NOT write Full Name —
-// that's a formula field (see the builder doc's manual pass). Givebutter is
-// authoritative here, so a name changed there overwrites Airtable on the
-// next run.
-// ═══════════════════════════════════════════════════════════════════════
-
-const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY';   // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
-const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
-const MAX_PAGES = 40;                          // Airtable caps a script at 50 fetch() calls
 
 const membersTable        = base.getTable('Members');
 const recurringPlansTable = base.getTable('Recurring Plans');

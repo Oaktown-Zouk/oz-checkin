@@ -16,6 +16,8 @@ const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY';   // ← Settings
 const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const MAX_PAGES = 40;                          // Airtable caps a script at 50 fetch() calls
 
+// ═══ END CONFIG ═══
+
 const membersTable        = base.getTable('Members');
 const recurringPlansTable = base.getTable('Recurring Plans');
 const syncLogTable        = base.getTable('Sync Log');

@@ -27,6 +27,8 @@ const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const LOOKBACK_DAYS = 7;      // ← 3650 for the historical backfill
 const MAX_PAGES     = 40;     // Airtable caps a script at 50 fetch() calls
 
+// ═══ END CONFIG ═══
+
 const membersTable        = base.getTable('Members');
 const recurringPlansTable = base.getTable('Recurring Plans');
 const transactionsTable   = base.getTable('Transactions');

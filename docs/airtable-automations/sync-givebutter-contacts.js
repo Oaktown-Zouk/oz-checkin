@@ -8,6 +8,39 @@
 // the regenerated file into Airtable.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// Givebutter → Airtable :: CONTACTS
+//
+// Brings the whole Givebutter CRM into Members. Anyone with no plan and no
+// giving lands as "Prospect", which is already what that status means.
+//
+// Runs in EITHER context:
+//   - Scheduled automation, nightly at 3:30 (after plans and transactions)
+//   - Scripting extension, for a manual full pull
+//
+// Safe to re-run: keyed on Contact ID.
+//
+// ── WHAT IT WILL AND WON'T OVERWRITE ────────────────────────────────────
+// Givebutter is authoritative for name, email, phone and the CRM fields —
+// those are overwritten. It never touches:
+//   - Notes            (yours; Givebutter's note goes to "Givebutter Note")
+//   - Rebate Status    (a lifecycle you manage; overwriting would re-grant
+//                       the first-time discount)
+//   - Covers Member    (gift assignments)
+//   - Members with a BLANK Contact ID — hand-made people are never matched,
+//     so they're invisible to this script by construction.
+// ═══════════════════════════════════════════════════════════════════════
+
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
+const MAX_PAGES = 40;                  // 40 × 100 = 4,000 contacts per run
+
+// null = pull everything. Set e.g. 3 for a fast nightly incremental once the
+// first full pull is done — Givebutter filters server-side on updatedAfter.
+const UPDATED_WITHIN_DAYS = null;
+
+// ── shared helpers (generated — edit server/airtable-automations/src/) ──
+
 // text.ts
 // Value coercion helpers shared by every Airtable Givebutter-sync automation.
 // Pure, dependency-free -- see server/airtable-automations/README.md for why
@@ -284,37 +317,6 @@ function retryDelayMs(attempt) {
 }
 
 // ── end of generated shared helpers — automation-specific logic below ───
-
-// ═══════════════════════════════════════════════════════════════════════
-// Givebutter → Airtable :: CONTACTS
-//
-// Brings the whole Givebutter CRM into Members. Anyone with no plan and no
-// giving lands as "Prospect", which is already what that status means.
-//
-// Runs in EITHER context:
-//   - Scheduled automation, nightly at 3:30 (after plans and transactions)
-//   - Scripting extension, for a manual full pull
-//
-// Safe to re-run: keyed on Contact ID.
-//
-// ── WHAT IT WILL AND WON'T OVERWRITE ────────────────────────────────────
-// Givebutter is authoritative for name, email, phone and the CRM fields —
-// those are overwritten. It never touches:
-//   - Notes            (yours; Givebutter's note goes to "Givebutter Note")
-//   - Rebate Status    (a lifecycle you manage; overwriting would re-grant
-//                       the first-time discount)
-//   - Covers Member    (gift assignments)
-//   - Members with a BLANK Contact ID — hand-made people are never matched,
-//     so they're invisible to this script by construction.
-// ═══════════════════════════════════════════════════════════════════════
-
-const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
-const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
-const MAX_PAGES = 40;                  // 40 × 100 = 4,000 contacts per run
-
-// null = pull everything. Set e.g. 3 for a fast nightly incremental once the
-// first full pull is done — Givebutter filters server-side on updatedAfter.
-const UPDATED_WITHIN_DAYS = null;
 
 const membersTable = base.getTable('Members');
 const syncLogTable = base.getTable('Sync Log');

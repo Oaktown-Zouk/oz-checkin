@@ -63,10 +63,30 @@ const SCRIPTS = [
   { body: "sync-givebutter-webhook.body.js", out: "sync-givebutter-webhook.js" },
 ];
 
+// Every body file marks the end of its own config block (API keys, tunable
+// constants) with this exact line. Splitting on it lets the generated file put
+// config at the very top — above the shared helpers — so opening a script in
+// Airtable to paste in a real key doesn't mean scrolling past everything else
+// first. See `sync-givebutter-plans.body.js` for where it's placed.
+const CONFIG_MARKER = "// ═══ END CONFIG ═══";
+
+function splitConfig(body: string): { config: string; rest: string } {
+  const markerIndex = body.split("\n").findIndex((line) => line.trim() === CONFIG_MARKER);
+  if (markerIndex === -1) {
+    throw new Error(`Missing "${CONFIG_MARKER}" marker — every body file needs one after its config constants.`);
+  }
+  const lines = body.split("\n");
+  return {
+    config: lines.slice(0, markerIndex).join("\n").trim(),
+    rest: lines.slice(markerIndex + 1).join("\n").trim(),
+  };
+}
+
 mkdirSync(outDir, { recursive: true });
 
 for (const script of SCRIPTS) {
   const body = readFileSync(join(bodiesDir, script.body), "utf8").trim();
+  const { config, rest } = splitConfig(body);
   const output =
     [
       "// ═══════════════════════════════════════════════════════════════════════",
@@ -79,11 +99,15 @@ for (const script of SCRIPTS) {
       "// the regenerated file into Airtable.",
       "// ═══════════════════════════════════════════════════════════════════════",
       "",
+      config,
+      "",
+      "// ── shared helpers (generated — edit server/airtable-automations/src/) ──",
+      "",
       sharedPreamble,
       "",
       "// ── end of generated shared helpers — automation-specific logic below ───",
       "",
-      body,
+      rest,
     ].join("\n") + "\n";
   writeFileSync(join(outDir, script.out), output);
   console.log(`Wrote ${join(outDir, script.out)}`);

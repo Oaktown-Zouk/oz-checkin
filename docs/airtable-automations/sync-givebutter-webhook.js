@@ -8,6 +8,66 @@
 // the regenerated file into Airtable.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// Givebutter webhook → Airtable, near-instant
+//
+//   Trigger: "When webhook received"
+//   Action:  "Run a script"
+//   Input variables (map after capturing a test payload — see setup below):
+//       eventName   → the payload's event name, e.g. "transaction.succeeded"
+//       resourceId  → the payload's data.id
+//
+// THIN WEBHOOK BY DESIGN. The payload is used only to learn *which* record
+// changed; the record itself is then re-fetched from Givebutter. That means:
+//   - we never depend on Givebutter's exact payload shape
+//   - a replayed or out-of-order webhook can't write stale data
+//   - a forged POST can at worst make us re-sync a record we already sync
+// The last point matters because Airtable's webhook trigger has NO signature
+// verification — anyone with the URL can call it.
+//
+// This runs in an AUTOMATION: fetch() works (no browser, no CORS), but
+// updateOptionsAsync does not, so new select values must already exist.
+//
+// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
+// record field pointing at Recurring Plans — created by hand first;
+// automations can't add fields.
+//
+// ── WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable() ───────────
+// Givebutter fires more than one webhook event for a single new signup (e.g.
+// plan.created/plan.updated alongside the first transaction.succeeded), all
+// carrying the same Contact ID. Airtable runs each webhook firing as its own
+// independent script execution — nothing serializes them. An earlier version
+// of this script used base.getTable(...).selectRecordsAsync() to check
+// whether a Member with that Contact ID already existed, then
+// createRecordAsync() if not. That's a read-then-write race with no lock
+// between the two steps: two concurrent executions can both read "not
+// found" and both create a row, producing two Members for one real person
+// (this happened in production on 2026-09-02 — see this folder's README).
+//
+// You can't fix a read-then-write race by adding a lock record in Airtable —
+// acquiring that lock is itself a read-then-write with the same race, just
+// moved to a different table. The only real fix is to stop deciding
+// existence in script code at all, and hand that decision to Airtable's own
+// backend, which the REST API does atomically via `performUpsert`. Two
+// concurrent upserts on the same Contact ID cannot both create a row — one
+// creates, the other necessarily updates the row the first one just made. So
+// every find-or-create in this script goes through upsertAirtableRecord()
+// below instead of selectRecordsAsync()+createRecordAsync().
+// ═══════════════════════════════════════════════════════════════════════
+
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
+
+// Dedicated PAT, scoped to data.records:read + data.records:write on THIS
+// base only — deliberately separate from the app server's own AIRTABLE_PAT
+// (server/.env) so this script's blast radius is limited to what it actually
+// needs, and so it's not a second copy of a credential something else already
+// depends on.
+const AIRTABLE_PAT = 'REPLACE_WITH_DEDICATED_PAT';
+const AIRTABLE_BASE_ID = base.id;
+
+// ── shared helpers (generated — edit server/airtable-automations/src/) ──
+
 // text.ts
 // Value coercion helpers shared by every Airtable Givebutter-sync automation.
 // Pure, dependency-free -- see server/airtable-automations/README.md for why
@@ -284,64 +344,6 @@ function retryDelayMs(attempt) {
 }
 
 // ── end of generated shared helpers — automation-specific logic below ───
-
-// ═══════════════════════════════════════════════════════════════════════
-// Givebutter webhook → Airtable, near-instant
-//
-//   Trigger: "When webhook received"
-//   Action:  "Run a script"
-//   Input variables (map after capturing a test payload — see setup below):
-//       eventName   → the payload's event name, e.g. "transaction.succeeded"
-//       resourceId  → the payload's data.id
-//
-// THIN WEBHOOK BY DESIGN. The payload is used only to learn *which* record
-// changed; the record itself is then re-fetched from Givebutter. That means:
-//   - we never depend on Givebutter's exact payload shape
-//   - a replayed or out-of-order webhook can't write stale data
-//   - a forged POST can at worst make us re-sync a record we already sync
-// The last point matters because Airtable's webhook trigger has NO signature
-// verification — anyone with the URL can call it.
-//
-// This runs in an AUTOMATION: fetch() works (no browser, no CORS), but
-// updateOptionsAsync does not, so new select values must already exist.
-//
-// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
-// record field pointing at Recurring Plans — created by hand first;
-// automations can't add fields.
-//
-// ── WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable() ───────────
-// Givebutter fires more than one webhook event for a single new signup (e.g.
-// plan.created/plan.updated alongside the first transaction.succeeded), all
-// carrying the same Contact ID. Airtable runs each webhook firing as its own
-// independent script execution — nothing serializes them. An earlier version
-// of this script used base.getTable(...).selectRecordsAsync() to check
-// whether a Member with that Contact ID already existed, then
-// createRecordAsync() if not. That's a read-then-write race with no lock
-// between the two steps: two concurrent executions can both read "not
-// found" and both create a row, producing two Members for one real person
-// (this happened in production on 2026-09-02 — see this folder's README).
-//
-// You can't fix a read-then-write race by adding a lock record in Airtable —
-// acquiring that lock is itself a read-then-write with the same race, just
-// moved to a different table. The only real fix is to stop deciding
-// existence in script code at all, and hand that decision to Airtable's own
-// backend, which the REST API does atomically via `performUpsert`. Two
-// concurrent upserts on the same Contact ID cannot both create a row — one
-// creates, the other necessarily updates the row the first one just made. So
-// every find-or-create in this script goes through upsertAirtableRecord()
-// below instead of selectRecordsAsync()+createRecordAsync().
-// ═══════════════════════════════════════════════════════════════════════
-
-const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
-const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
-
-// Dedicated PAT, scoped to data.records:read + data.records:write on THIS
-// base only — deliberately separate from the app server's own AIRTABLE_PAT
-// (server/.env) so this script's blast radius is limited to what it actually
-// needs, and so it's not a second copy of a credential something else already
-// depends on.
-const AIRTABLE_PAT = 'REPLACE_WITH_DEDICATED_PAT';
-const AIRTABLE_BASE_ID = base.id;
 
 const { eventName, resourceId } = input.config();
 
