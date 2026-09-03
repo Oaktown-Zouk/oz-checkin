@@ -1,8 +1,21 @@
 # Changelog
 
-Verioned by ISO week number `{year}w{WW}` 
+Verioned by ISO week number `{year}w{WW}`, with a `.N` suffix for a same-week bugfix
+release shipped after that week's main deploy already went out.
 
-## 2026w36 (deploying 2026-08-31)
+## 2026w36.1 (2026-09-02)
+
+### Bugfixes
+
+- **The public sign-up page now matches each site's own look** when embedded —
+  theoaklandgrove.com/zouk gets its dark green/cream palette, oaktownzouk.com gets
+  its own plain black-on-white — via a `?theme=` param on the embedding iframe's URL,
+  since an iframe can't otherwise pick up the surrounding page's CSS.
+- **Tweaks to sign-up page** To give a way to jump from the "sign up for your free class"
+  to "buy a drop-in credit" for when someone erroneously hits "Its my first time".
+  Attempted to make the "Is it your first time?" question clearer.
+
+## 2026w36 (2026-08-31)
 
 ### New Features
 

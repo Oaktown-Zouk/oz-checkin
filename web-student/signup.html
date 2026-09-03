@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en">
+
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="./assets/logo.png" />
     <title>Oaktown Zouk — Sign Up</title>
   </head>
+
   <body>
     <!--
       The public sign-up/purchase widget — no login, no React, nothing shared with
@@ -21,10 +23,10 @@
     -->
     <div id="guided-form-widget" class="gfw-container">
       <div class="gfw-step" data-step="start">
-        <h3 class="gfw-question">Is this your first time attending?</h3>
-        <div class="gfw-options">
-          <button class="gfw-btn" data-goto="first">Yes</button>
-          <button class="gfw-btn" data-goto="returning">No</button>
+        <h3 class="gfw-question">Is this your first time attending a class at Oaktown Zouk?</h3>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="first">Yes, I'd like to claim my free first class</button>
+          <button class="gfw-btn" data-goto="returning">No, I'm here to pay for class</button>
         </div>
       </div>
 
@@ -62,6 +64,18 @@
         <div class="gfw-embed">
           <givebutter-widget id="gOKNYY" account="K2zE8rPXlwbTczim"></givebutter-widget>
         </div>
+        <!-- Escape hatch for someone who's already used their free class and landed
+             back on this step (e.g. via a bookmark or browser back) — goes straight
+             to buying one drop-in. Its own back button lands on "returning-dropin"
+             (the returning-student flow), not back here — an acceptable inaccuracy
+             rather than threading a real "came from the free-class step" state
+             through the rest of the returning-student flow just for this. -->
+        <div class="gfw-perk-box">
+          <p> Already taken your free class?</p>
+        </div>
+        <button class="gfw-back" data-goto="returning-dropin-one">
+            Click to buy a drop-in pass
+        </button>
         <button class="gfw-back" data-goto="first-dropin-one">&larr; Back</button>
       </div>
 
@@ -171,4 +185,5 @@
     <script src="https://widgets.givebutter.com/latest.umd.cjs?acct=K2zE8rPXlwbTczim&p=other" async></script>
     <script type="module" src="/src/signup/signup.ts"></script>
   </body>
+
 </html>
