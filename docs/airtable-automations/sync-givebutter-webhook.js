@@ -424,6 +424,13 @@ let recordsUpdated = 0;
 // automation) rather than get added unreviewed.
 async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt = 0) {
   const restFields = toRestFields(recordFields);
+  // Logged before every attempt, success or failure -- restFields (what's
+  // actually sent over the wire, post-conversion), not recordFields, so a
+  // format bug is visible directly instead of needing to be re-derived. Every
+  // upsert call site funnels through here, so this covers all of them without
+  // needing its own logging at each one, and a retry (below) logs its own
+  // line too since this runs again on each recursive attempt.
+  console.log(`Upserting ${tableId} (attempt ${attempt}) keyed on ${JSON.stringify(fieldsToMergeOn)} with fields: ${JSON.stringify(restFields)}`);
   const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`, {
     method: 'PATCH',
     headers: {
@@ -442,14 +449,9 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
   }
   if (!response.ok) {
     const responseBody = await response.text();
-    // Logged here (not just thrown) so the run log shows the actual fields we
-    // tried to write -- the re-fetched Givebutter record, not the webhook
-    // payload, is what ends up in recordFields, and those can disagree. Logs
-    // restFields (what was actually sent over the wire), not recordFields, so
-    // a format bug like this one is visible directly instead of needing to be
-    // re-derived. Every upsert call site funnels through here, so this covers
-    // all of them instead of needing its own try/catch at each one.
-    console.error(`Airtable upsert ${response.status} on ${tableId} failed for fields: ${JSON.stringify(restFields)}`);
+    // The fields are already in the log line above; this just marks the
+    // outcome and carries Airtable's actual error detail.
+    console.error(`Airtable upsert ${response.status} on ${tableId} FAILED: ${responseBody}`);
     throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${responseBody}`);
   }
 
