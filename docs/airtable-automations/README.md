@@ -46,6 +46,37 @@ enough not to warrant one. Edit it directly and paste it into Airtable.
 
 See `docs/airtable-schema.md` for what each Airtable table/field means to this app.
 
+## 2026-09-03 Transactions never got Plan ID / Is Recurring / Refunded* from the nightly sync
+
+`Transactions` is documented as "disambiguated by `Is Recurring` + `Plan ID`
+presence," but only the webhook ever wrote either — `sync-givebutter-transactions.js`
+(the complete, authoritative sync; the webhook is best-effort) wrote neither, nor
+the `Refunded*` fields. Any transaction that was only ever nightly-synced was
+therefore indistinguishable from a plain one-time drop-in even when it was really a
+recurring membership charge — and `grant-dropin-credits.js`'s own membership-vs-drop-in
+check reads exactly this signal, so it could be fooled into granting a drop-in
+credit for a real membership payment.
+
+Fixed by giving the nightly sync the same field set the webhook already wrote
+(`buildTransactionFields` in `server/airtable-automations/src/transactionFields.ts`,
+now shared by both instead of two near-duplicate functions). Also added, on request:
+a real `Recurring Plans` link field on `Transactions` (not just the plain-text
+`Plan ID`), resolved via the new `recurringPlanLinkField` — populated by both the
+nightly sync (via a Plan-ID-keyed map built once per run) and the webhook (a direct
+lookup per event, mirroring how the webhook already looks up Covers Member).
+`recurringPlanLinkField` returns `null` rather than an empty link when the matching
+plan hasn't been synced yet — an out-of-order webhook, or a transaction referencing
+a plan the nightly sync hasn't reached — so a later sync fills it in instead of a
+wrong "no plan" being written and stuck.
+
+**Requires manual setup before pasting these in:** create a `Recurring Plans` field
+on `Transactions` (Link to another record → `Recurring Plans`) by hand — automations
+can't add fields. Then, to backfill every already-synced transaction (not just future
+ones), temporarily set `sync-givebutter-transactions.js`'s `LOOKBACK_DAYS` to `3650`,
+run it once manually, then set it back to `7` before re-enabling the schedule — the
+same backfill mechanism the script's own header already documented for the initial
+historical pull.
+
 ## 2026-09-03 grant-dropin-credits.js: memberId was a name, not a record id
 
 `input.config()`'s `memberIds` input variable was mapped to the linked `Member`
