@@ -21,121 +21,121 @@
 //     so they're invisible to this script by construction.
 // ═══════════════════════════════════════════════════════════════════════
 
-const GB_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY';
-const GB_BASE = 'https://api.givebutter.com/v1';
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const MAX_PAGES = 40;                  // 40 × 100 = 4,000 contacts per run
 
 // null = pull everything. Set e.g. 3 for a fast nightly incremental once the
 // first full pull is done — Givebutter filters server-side on updatedAfter.
 const UPDATED_WITHIN_DAYS = null;
 
-const membersTbl = base.getTable('Members');
-const logTbl     = base.getTable('Sync Log');
+const membersTable = base.getTable('Members');
+const syncLogTable = base.getTable('Sync Log');
 
 // Extension runs in a browser (CORS); automations don't. Pick what exists.
 const httpGet = (typeof remoteFetchAsync === 'function') ? remoteFetchAsync : fetch;
 
-async function gb(path) {
-  const res = await httpGet(`${GB_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${GB_KEY}`, Accept: 'application/json' }
+async function fetchFromGivebutter(path) {
+  const response = await httpGet(`${GIVEBUTTER_API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${GIVEBUTTER_API_KEY}`, Accept: 'application/json' }
   });
-  if (!res.ok) throw new Error(`Givebutter ${res.status} on ${path}: ${await res.text()}`);
-  return res.json();
+  if (!response.ok) throw new Error(`Givebutter ${response.status} on ${path}: ${await response.text()}`);
+  return response.json();
 }
 
-const str = (v) => (v == null ? '' : String(v).trim());
-const dateOnly = (v) => (v ? String(v).slice(0, 10) : null);
+const toText = (value) => (value == null ? '' : String(value).trim());
+const toDateOnly = (value) => (value ? String(value).slice(0, 10) : null);
 
 // Givebutter types some booleans as strings; Boolean("false") is true.
-const truthy = (v) => {
-  if (typeof v === 'boolean') return v;
-  if (v == null) return false;
-  return ['true', '1', 'yes', 'y'].includes(String(v).trim().toLowerCase());
+const toBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (value == null) return false;
+  return ['true', '1', 'yes', 'y'].includes(String(value).trim().toLowerCase());
 };
 
-function flattenAddress(a) {
-  if (!a) return '';
+function flattenAddress(address) {
+  if (!address) return '';
   return [
-    [a.address_1, a.address_2].filter(Boolean).join(' '),
-    [a.city, a.state].filter(Boolean).join(', '),
-    [a.zipcode ?? a.zip, a.country].filter(Boolean).join(' ')
-  ].map(s => str(s)).filter(Boolean).join('\n');
+    [address.address_1, address.address_2].filter(Boolean).join(' '),
+    [address.city, address.state].filter(Boolean).join(', '),
+    [address.zipcode ?? address.zip, address.country].filter(Boolean).join(' ')
+  ].map(s => toText(s)).filter(Boolean).join('\n');
 }
 
 function tagList(tags) {
   if (!tags) return '';
   if (Array.isArray(tags)) {
-    return tags.map(t => (typeof t === 'string' ? t : str(t?.name ?? t?.label))).filter(Boolean).join(', ');
+    return tags.map(tag => (typeof tag === 'string' ? tag : toText(tag?.name ?? tag?.label))).filter(Boolean).join(', ');
   }
-  return str(tags);
+  return toText(tags);
 }
 
 // ── run ────────────────────────────────────────────────────────────────
 const startedAt = new Date().toISOString();
-const logId = await logTbl.createRecordAsync({ 'Script': { name: 'Contacts' }, 'Started At': startedAt });
+const syncLogRecordId = await syncLogTable.createRecordAsync({ 'Script': { name: 'Contacts' }, 'Started At': startedAt });
 
 // 1 ── Pull contacts
-let params = 'per_page=100';
+let queryParams = 'per_page=100';
 if (UPDATED_WITHIN_DAYS) {
-  const since = new Date(Date.now() - UPDATED_WITHIN_DAYS * 86400000).toISOString();
-  params += `&updatedAfter=${encodeURIComponent(since)}`;
+  const updatedSince = new Date(Date.now() - UPDATED_WITHIN_DAYS * 86400000).toISOString();
+  queryParams += `&updatedAfter=${encodeURIComponent(updatedSince)}`;
 }
 
 let contacts = [];
 for (let page = 1; page <= MAX_PAGES; page++) {
-  const json = await gb(`/contacts?${params}&page=${page}`);
-  contacts.push(...(json.data ?? []));
-  const meta = json.meta ?? {};
+  const responseBody = await fetchFromGivebutter(`/contacts?${queryParams}&page=${page}`);
+  contacts.push(...(responseBody.data ?? []));
+  const meta = responseBody.meta ?? {};
   if (!meta.last_page || page >= meta.last_page) break;
   if (page === MAX_PAGES) console.log('⚠ Hit MAX_PAGES — some contacts were not fetched.');
 }
 console.log(`Fetched ${contacts.length} contacts`);
 
 // 2 ── Index what we already have
-const memberQ = await membersTbl.selectRecordsAsync({ fields: ['Contact ID'] });
-const byContact = new Map(
-  memberQ.records
-    .filter(r => r.getCellValueAsString('Contact ID'))
-    .map(r => [r.getCellValueAsString('Contact ID'), r.id])
+const memberQuery = await membersTable.selectRecordsAsync({ fields: ['Contact ID'] });
+const memberIdByContactId = new Map(
+  memberQuery.records
+    .filter(record => record.getCellValueAsString('Contact ID'))
+    .map(record => [record.getCellValueAsString('Contact ID'), record.id])
 );
 
 // 3 ── Build the writes
-const toCreate = [], toUpdate = [];
+const membersToCreate = [], membersToUpdate = [];
 
-for (const c of contacts) {
-  const cid = str(c.id);
-  if (!cid) continue;
+for (const contact of contacts) {
+  const contactId = toText(contact.id);
+  if (!contactId) continue;
 
-  const fields = {
-    'Contact ID': cid,
-    'First Name': str(c.first_name ?? c.preferred_name),
-    'Last Name': str(c.last_name),
-    'Email': str(c.primary_email ?? (c.emails ?? [])[0]?.value).toLowerCase(),
-    'Phone': str(c.primary_phone ?? (c.phones ?? [])[0]?.value),
-    'Tags': tagList(c.tags),
-    'Email Subscribed': truthy(c.is_email_subscribed ?? c.email_opt_in),
-    'Phone Subscribed': truthy(c.is_phone_subscribed ?? c.sms_opt_in),
-    'Contact Since': dateOnly(c.contact_since ?? c.created_at),
-    'Givebutter Total Given': Number(c.stats?.total_contributions) || 0,
-    'Address': flattenAddress(c.primary_address ?? (c.addresses ?? [])[0]),
-    'Givebutter Note': str(c.note),
-    'Archived in Givebutter': Boolean(c.archived_at),
+  const memberFields = {
+    'Contact ID': contactId,
+    'First Name': toText(contact.first_name ?? contact.preferred_name),
+    'Last Name': toText(contact.last_name),
+    'Email': toText(contact.primary_email ?? (contact.emails ?? [])[0]?.value).toLowerCase(),
+    'Phone': toText(contact.primary_phone ?? (contact.phones ?? [])[0]?.value),
+    'Tags': tagList(contact.tags),
+    'Email Subscribed': toBoolean(contact.is_email_subscribed ?? contact.email_opt_in),
+    'Phone Subscribed': toBoolean(contact.is_phone_subscribed ?? contact.sms_opt_in),
+    'Contact Since': toDateOnly(contact.contact_since ?? contact.created_at),
+    'Givebutter Total Given': Number(contact.stats?.total_contributions) || 0,
+    'Address': flattenAddress(contact.primary_address ?? (contact.addresses ?? [])[0]),
+    'Givebutter Note': toText(contact.note),
+    'Archived in Givebutter': Boolean(contact.archived_at),
     'Contact Synced At': startedAt
   };
 
-  const existing = byContact.get(cid);
-  if (existing) toUpdate.push({ id: existing, fields });
-  else toCreate.push({ fields });
+  const existingMemberId = memberIdByContactId.get(contactId);
+  if (existingMemberId) membersToUpdate.push({ id: existingMemberId, fields: memberFields });
+  else membersToCreate.push({ fields: memberFields });
 }
 
-for (let i = 0; i < toCreate.length; i += 50) await membersTbl.createRecordsAsync(toCreate.slice(i, i + 50));
-for (let i = 0; i < toUpdate.length; i += 50) await membersTbl.updateRecordsAsync(toUpdate.slice(i, i + 50));
+for (let i = 0; i < membersToCreate.length; i += 50) await membersTable.createRecordsAsync(membersToCreate.slice(i, i + 50));
+for (let i = 0; i < membersToUpdate.length; i += 50) await membersTable.updateRecordsAsync(membersToUpdate.slice(i, i + 50));
 
-console.log(`Contacts — created ${toCreate.length}, updated ${toUpdate.length}`);
+console.log(`Contacts — created ${membersToCreate.length}, updated ${membersToUpdate.length}`);
 
-await logTbl.updateRecordAsync(logId, {
-  'Records Created': toCreate.length,
-  'Records Updated': toUpdate.length
+await syncLogTable.updateRecordAsync(syncLogRecordId, {
+  'Records Created': membersToCreate.length,
+  'Records Updated': membersToUpdate.length
 });
 
 // ═══════════════════════════════════════════════════════════════════════

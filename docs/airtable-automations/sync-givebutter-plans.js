@@ -12,13 +12,13 @@
 // next run.
 // ═══════════════════════════════════════════════════════════════════════
 
-const GB_KEY    = 'REPLACE_WITH_GIVEBUTTER_API_KEY';   // ← Settings → Integrations → API Keys
-const GB_BASE   = 'https://api.givebutter.com/v1';
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY';   // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const MAX_PAGES = 40;                          // Airtable caps a script at 50 fetch() calls
 
-const membersTbl = base.getTable('Members');
-const plansTbl   = base.getTable('Recurring Plans');
-const logTbl     = base.getTable('Sync Log');
+const membersTable        = base.getTable('Members');
+const recurringPlansTable = base.getTable('Recurring Plans');
+const syncLogTable        = base.getTable('Sync Log');
 
 // ── helpers ────────────────────────────────────────────────────────────
 
@@ -29,49 +29,49 @@ const logTbl     = base.getTable('Sync Log');
 // remoteFetchAsync is undefined. Pick whichever this context has.
 const httpGet = (typeof remoteFetchAsync === 'function') ? remoteFetchAsync : fetch;
 
-async function gb(path) {
-  const res = await httpGet(`${GB_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${GB_KEY}`, Accept: 'application/json' }
+async function fetchFromGivebutter(path) {
+  const response = await httpGet(`${GIVEBUTTER_API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${GIVEBUTTER_API_KEY}`, Accept: 'application/json' }
   });
-  if (!res.ok) throw new Error(`Givebutter ${res.status} on ${path}: ${await res.text()}`);
-  return res.json();
+  if (!response.ok) throw new Error(`Givebutter ${response.status} on ${path}: ${await response.text()}`);
+  return response.json();
 }
 
 // Normalize any value bound for a single select: trim it, and turn blanks into
 // null. Trailing whitespace from an API is invisible in logs and will fail a
 // select write even when the value looks identical to an existing choice.
-const sel = (v) => (v == null ? null : (String(v).trim() || null));
+const normalizeSelectText = (value) => (value == null ? null : (String(value).trim() || null));
 
 // Single select WRITE format. The Scripting API wants {name: "..."} or
 // {id: "..."} — a bare string is rejected with "cannot accept the provided
 // value", even when the choice exists verbatim. (The REST API and the
 // no-code "Update record" action both accept plain strings, which is what
 // makes this so easy to get wrong.)
-const selVal = (v) => { const s = sel(v); return s ? { name: s } : null; };
+const toSelectField = (value) => { const text = normalizeSelectText(value); return text ? { name: text } : null; };
 
-const str = (v) => (v == null ? '' : String(v).trim());
-const dateOnly = (v) => (v ? String(v).slice(0, 10) : null);
+const toText = (value) => (value == null ? '' : String(value).trim());
+const toDateOnly = (value) => (value ? String(value).slice(0, 10) : null);
 
 // Single selects reject any value not already in their choice list, and they're
 // case-sensitive. Rather than guess Givebutter's vocabulary, widen the field to
 // fit the data. updateOptionsAsync REPLACES the list, so existing choices must
 // be passed back WITH their ids or every record using them gets orphaned.
-async function ensureChoices(tbl, fieldName, values) {
-  const field = tbl.getField(fieldName);
+async function ensureSelectChoices(table, fieldName, values) {
+  const field = table.getField(fieldName);
   if (!['singleSelect', 'multipleSelects'].includes(field.type)) return;
-  const existing = field.options.choices ?? [];
-  const have = new Set(existing.map(c => c.name));
-  const missing = [...new Set(values.map(sel).filter(v => v && !have.has(v)))];
-  if (!missing.length) return;
+  const existingChoices = field.options.choices ?? [];
+  const existingChoiceNames = new Set(existingChoices.map(c => c.name));
+  const missingChoiceNames = [...new Set(values.map(normalizeSelectText).filter(v => v && !existingChoiceNames.has(v)))];
+  if (!missingChoiceNames.length) return;
   // updateOptionsAsync is extension-only. In an automation this throws, so
   // fail with an instruction rather than a stack trace.
   try {
     await field.updateOptionsAsync({
-      choices: [...existing.map(c => ({ id: c.id, name: c.name })), ...missing.map(name => ({ name }))]
+      choices: [...existingChoices.map(c => ({ id: c.id, name: c.name })), ...missingChoiceNames.map(name => ({ name }))]
     });
-    console.log(`⚠ ${fieldName}: added option(s) → ${missing.map(m => JSON.stringify(m)).join(', ')}`);
+    console.log(`⚠ ${fieldName}: added option(s) → ${missingChoiceNames.map(m => JSON.stringify(m)).join(', ')}`);
   } catch (e) {
-    console.log(`⚠ Cannot add option(s) ${missing.map(m => JSON.stringify(m)).join(', ')} to "${field.name}" in "${tbl.name}"from an automation. Add this option in the field editor.`);
+    console.log(`⚠ Cannot add option(s) ${missingChoiceNames.map(m => JSON.stringify(m)).join(', ')} to "${field.name}" in "${table.name}"from an automation. Add this option in the field editor.`);
   }
 }
 
@@ -84,14 +84,14 @@ async function ensureChoices(tbl, fieldName, values) {
 // automation's run history for the actual error.
 
 const startedAt = new Date().toISOString();
-const logId = await logTbl.createRecordAsync({ 'Script': { name: 'Plans' }, 'Started At': startedAt });
+const syncLogRecordId = await syncLogTable.createRecordAsync({ 'Script': { name: 'Plans' }, 'Started At': startedAt });
 
 // 1 ── Pull every recurring plan
 let plans = [];
 for (let page = 1; page <= MAX_PAGES; page++) {
-  const json = await gb(`/plans?page=${page}&per_page=100`);
-  plans.push(...(json.data ?? []));
-  const meta = json.meta ?? {};
+  const responseBody = await fetchFromGivebutter(`/plans?page=${page}&per_page=100`);
+  plans.push(...(responseBody.data ?? []));
+  const meta = responseBody.meta ?? {};
   if (!meta.last_page || page >= meta.last_page) break;
   if (page === MAX_PAGES) console.log('⚠ Hit MAX_PAGES — some plans were not fetched.');
 }
@@ -101,127 +101,127 @@ console.log('Statuses seen:', [...new Set(plans.map(p => p.status))].map(v => JS
 console.log('Frequencies seen:', [...new Set(plans.map(p => p.frequency))].map(v => JSON.stringify(v)).join(', '));
 
 // 2 ── Index what Airtable already has
-const memberQ = await membersTbl.selectRecordsAsync({
+const memberQuery = await membersTable.selectRecordsAsync({
   fields: ['Contact ID', 'First Name', 'Last Name', 'Email', 'Phone']
 });
-const memberByContact = new Map();
-const memberSnapshot  = new Map();   // contactId → current field values
-for (const r of memberQ.records) {
-  const cid = r.getCellValueAsString('Contact ID');
-  if (!cid) continue;
-  memberByContact.set(cid, r.id);
-  memberSnapshot.set(cid, {
-    first: r.getCellValueAsString('First Name'),
-    last:  r.getCellValueAsString('Last Name'),
-    email: r.getCellValueAsString('Email'),
-    phone: r.getCellValueAsString('Phone')
+const memberIdByContactId = new Map();
+const memberFieldsByContactId = new Map();   // contactId → current field values
+for (const record of memberQuery.records) {
+  const contactId = record.getCellValueAsString('Contact ID');
+  if (!contactId) continue;
+  memberIdByContactId.set(contactId, record.id);
+  memberFieldsByContactId.set(contactId, {
+    first: record.getCellValueAsString('First Name'),
+    last:  record.getCellValueAsString('Last Name'),
+    email: record.getCellValueAsString('Email'),
+    phone: record.getCellValueAsString('Phone')
   });
 }
 
 // 'Covers Member' = who the membership is FOR (vs 'Member' = who pays).
 // Gift memberships get reassigned by hand, so we only ever fill it when blank.
-const hasCovers = plansTbl.fields.some(f => f.name === 'Covers Member');
-const planQ = await plansTbl.selectRecordsAsync({
-  fields: hasCovers ? ['Plan ID', 'Covers Member'] : ['Plan ID']
+const hasCoversMemberField = recurringPlansTable.fields.some(f => f.name === 'Covers Member');
+const recurringPlanQuery = await recurringPlansTable.selectRecordsAsync({
+  fields: hasCoversMemberField ? ['Plan ID', 'Covers Member'] : ['Plan ID']
 });
-const planById = new Map(planQ.records.map(r => [r.getCellValueAsString('Plan ID'), r.id]));
-const coversSet = new Set(
-  hasCovers
-    ? planQ.records.filter(r => (r.getCellValue('Covers Member') ?? []).length)
-                   .map(r => r.getCellValueAsString('Plan ID'))
+const recurringPlanIdByPlanId = new Map(recurringPlanQuery.records.map(r => [r.getCellValueAsString('Plan ID'), r.id]));
+const planIdsWithCoversMemberAssigned = new Set(
+  hasCoversMemberField
+    ? recurringPlanQuery.records.filter(r => (r.getCellValue('Covers Member') ?? []).length)
+                                 .map(r => r.getCellValueAsString('Plan ID'))
     : []
 );
 
 // 3 ── Create missing Members, refresh the ones that drifted
-const newMembers = [], memberUpdates = [];
-const seen = new Set();
+const membersToCreate = [], membersToUpdate = [];
+const seenContactIds = new Set();
 
-for (const p of plans) {
-  const cid = p.contact_id == null ? '' : String(p.contact_id);
-  if (!cid || seen.has(cid)) continue;
-  seen.add(cid);
+for (const plan of plans) {
+  const contactId = plan.contact_id == null ? '' : String(plan.contact_id);
+  if (!contactId || seenContactIds.has(contactId)) continue;
+  seenContactIds.add(contactId);
 
-  const incoming = {
-    first: str(p.first_name),
-    last:  str(p.last_name),
-    email: str(p.email),
-    phone: str(p.phone)
+  const incomingMemberFields = {
+    first: toText(plan.first_name),
+    last:  toText(plan.last_name),
+    email: toText(plan.email),
+    phone: toText(plan.phone)
   };
 
-  if (!memberByContact.has(cid)) {
-    memberByContact.set(cid, null);          // reserve so we don't queue a duplicate
-    newMembers.push({ fields: {
-      'Contact ID': cid,
-      'First Name': incoming.first,
-      'Last Name': incoming.last,
-      'Email': incoming.email,
-      'Phone': incoming.phone
+  if (!memberIdByContactId.has(contactId)) {
+    memberIdByContactId.set(contactId, null);          // reserve so we don't queue a duplicate
+    membersToCreate.push({ fields: {
+      'Contact ID': contactId,
+      'First Name': incomingMemberFields.first,
+      'Last Name': incomingMemberFields.last,
+      'Email': incomingMemberFields.email,
+      'Phone': incomingMemberFields.phone
     }});
     continue;
   }
 
   // Existing member — only write the fields that actually changed, so we're not
   // churning every record (and every "last modified" timestamp) nightly.
-  const current = memberSnapshot.get(cid) ?? {};
-  const changed = {};
-  if (incoming.first && incoming.first !== current.first) changed['First Name'] = incoming.first;
-  if (incoming.last  && incoming.last  !== current.last)  changed['Last Name']  = incoming.last;
-  if (incoming.email && incoming.email !== current.email) changed['Email']      = incoming.email;
-  if (incoming.phone && incoming.phone !== current.phone) changed['Phone']      = incoming.phone;
-  if (Object.keys(changed).length) memberUpdates.push({ id: memberByContact.get(cid), fields: changed });
+  const currentMemberFields = memberFieldsByContactId.get(contactId) ?? {};
+  const changedMemberFields = {};
+  if (incomingMemberFields.first && incomingMemberFields.first !== currentMemberFields.first) changedMemberFields['First Name'] = incomingMemberFields.first;
+  if (incomingMemberFields.last  && incomingMemberFields.last  !== currentMemberFields.last)  changedMemberFields['Last Name']  = incomingMemberFields.last;
+  if (incomingMemberFields.email && incomingMemberFields.email !== currentMemberFields.email) changedMemberFields['Email']      = incomingMemberFields.email;
+  if (incomingMemberFields.phone && incomingMemberFields.phone !== currentMemberFields.phone) changedMemberFields['Phone']      = incomingMemberFields.phone;
+  if (Object.keys(changedMemberFields).length) membersToUpdate.push({ id: memberIdByContactId.get(contactId), fields: changedMemberFields });
 }
 
-for (let i = 0; i < newMembers.length; i += 50) {
-  const batch = newMembers.slice(i, i + 50);
-  const ids = await membersTbl.createRecordsAsync(batch);
-  ids.forEach((rid, j) => memberByContact.set(batch[j].fields['Contact ID'], rid));
+for (let i = 0; i < membersToCreate.length; i += 50) {
+  const newMemberBatch = membersToCreate.slice(i, i + 50);
+  const createdMemberIds = await membersTable.createRecordsAsync(newMemberBatch);
+  createdMemberIds.forEach((createdMemberId, index) => memberIdByContactId.set(newMemberBatch[index].fields['Contact ID'], createdMemberId));
 }
-for (let i = 0; i < memberUpdates.length; i += 50) {
-  await membersTbl.updateRecordsAsync(memberUpdates.slice(i, i + 50));
+for (let i = 0; i < membersToUpdate.length; i += 50) {
+  await membersTable.updateRecordsAsync(membersToUpdate.slice(i, i + 50));
 }
-console.log(`Members created: ${newMembers.length}, refreshed: ${memberUpdates.length}`);
+console.log(`Members created: ${membersToCreate.length}, refreshed: ${membersToUpdate.length}`);
 
 // 4 ── Widen the select fields to whatever Givebutter actually sent
-await ensureChoices(plansTbl, 'Status',    plans.map(p => p.status));
-await ensureChoices(plansTbl, 'Frequency', plans.map(p => p.frequency));
+await ensureSelectChoices(recurringPlansTable, 'Status',    plans.map(p => p.status));
+await ensureSelectChoices(recurringPlansTable, 'Frequency', plans.map(p => p.frequency));
 
 // 5 ── Upsert the plans
-const now = new Date().toISOString();
-const toCreate = [], toUpdate = [];
+const syncedAt = new Date().toISOString();
+const recurringPlansToCreate = [], recurringPlansToUpdate = [];
 
-for (const p of plans) {
-  const fields = {
-    'Plan ID': String(p.id),
-    'Status': selVal(p.status),
-    'Amount': Number(p.amount) || 0,
-    'Frequency': selVal(p.frequency),
-    'Method': str(p.method),
-    'Fee Covered': Boolean(p.fee_covered),
-    'Start Date': dateOnly(p.start_at),
-    'Next Bill Date': dateOnly(p.next_bill_date),
-    'Canceled At': dateOnly(p.canceled_at),
-    'Last Synced': now
+for (const plan of plans) {
+  const planFields = {
+    'Plan ID': String(plan.id),
+    'Status': toSelectField(plan.status),
+    'Amount': Number(plan.amount) || 0,
+    'Frequency': toSelectField(plan.frequency),
+    'Method': toText(plan.method),
+    'Fee Covered': Boolean(plan.fee_covered),
+    'Start Date': toDateOnly(plan.start_at),
+    'Next Bill Date': toDateOnly(plan.next_bill_date),
+    'Canceled At': toDateOnly(plan.canceled_at),
+    'Last Synced': syncedAt
   };
 
-  const memberRecId = memberByContact.get(p.contact_id == null ? '' : String(p.contact_id));
-  if (memberRecId) {
-    fields['Member'] = [{ id: memberRecId }];
+  const memberRecordId = memberIdByContactId.get(plan.contact_id == null ? '' : String(plan.contact_id));
+  if (memberRecordId) {
+    planFields['Member'] = [{ id: memberRecordId }];
     // Default the beneficiary to the payer, but NEVER overwrite a manual
     // assignment — that's how a gift membership stays pointed at the spouse.
-    if (hasCovers && !coversSet.has(String(p.id))) {
-      fields['Covers Member'] = [{ id: memberRecId }];
+    if (hasCoversMemberField && !planIdsWithCoversMemberAssigned.has(String(plan.id))) {
+      planFields['Covers Member'] = [{ id: memberRecordId }];
     }
   }
 
-  const existing = planById.get(String(p.id));
-  if (existing) toUpdate.push({ id: existing, fields });
-  else toCreate.push({ fields });
+  const existingRecurringPlanId = recurringPlanIdByPlanId.get(String(plan.id));
+  if (existingRecurringPlanId) recurringPlansToUpdate.push({ id: existingRecurringPlanId, fields: planFields });
+  else recurringPlansToCreate.push({ fields: planFields });
 }
 
-for (let i = 0; i < toCreate.length; i += 50) await plansTbl.createRecordsAsync(toCreate.slice(i, i + 50));
-for (let i = 0; i < toUpdate.length; i += 50) await plansTbl.updateRecordsAsync(toUpdate.slice(i, i + 50));
+for (let i = 0; i < recurringPlansToCreate.length; i += 50) await recurringPlansTable.createRecordsAsync(recurringPlansToCreate.slice(i, i + 50));
+for (let i = 0; i < recurringPlansToUpdate.length; i += 50) await recurringPlansTable.updateRecordsAsync(recurringPlansToUpdate.slice(i, i + 50));
 
-console.log(`Plans — created ${toCreate.length}, updated ${toUpdate.length}`);
+console.log(`Plans — created ${recurringPlansToCreate.length}, updated ${recurringPlansToUpdate.length}`);
 
 // 6 ── Keep each member's Tier Rule link pointing at the matching Tiers row.
 //      This is what lets "Classes Allowed" be a rollup off the Tiers table
@@ -231,39 +231,39 @@ console.log(`Plans — created ${toCreate.length}, updated ${toUpdate.length}`);
 //      that changed during THIS run may not be recalculated yet — it corrects
 //      on the next nightly run, and the check-in automation repairs it on the
 //      spot if someone shows up before then.
-const tiersTbl = base.tables.find(t => t.name === 'Tiers');
-const hasTierRule = membersTbl.fields.some(f => f.name === 'Tier Rule');
+const tiersTable = base.tables.find(t => t.name === 'Tiers');
+const membersTableHasTierRuleField = membersTable.fields.some(f => f.name === 'Tier Rule');
 
-if (tiersTbl && hasTierRule) {
+if (tiersTable && membersTableHasTierRuleField) {
   // Match on AMOUNT, not on tier name. Tier is now derived FROM this link,
   // so matching by name would be circular.
-  const tierQ = await tiersTbl.selectRecordsAsync({ fields: ['Tier', 'Min Monthly Price'] });
-  const rules = tierQ.records
-    .map(r => ({ id: r.id, name: r.getCellValueAsString('Tier'), min: r.getCellValue('Min Monthly Price') ?? 0 }))
+  const tierQuery = await tiersTable.selectRecordsAsync({ fields: ['Tier', 'Min Monthly Price'] });
+  const tierRules = tierQuery.records
+    .map(record => ({ id: record.id, name: record.getCellValueAsString('Tier'), min: record.getCellValue('Min Monthly Price') ?? 0 }))
     .sort((a, b) => b.min - a.min);            // richest first
 
-  const ruleFor = (amt) => (!amt || amt <= 0) ? null : (rules.find(r => amt >= r.min) ?? null);
+  const tierRuleForAmount = (amount) => (!amount || amount <= 0) ? null : (tierRules.find(rule => amount >= rule.min) ?? null);
 
-  const linkQ = await membersTbl.selectRecordsAsync({ fields: ['Membership Amount', 'Tier Rule'] });
-  const linkUpdates = [];
+  const memberTierLinkQuery = await membersTable.selectRecordsAsync({ fields: ['Membership Amount', 'Tier Rule'] });
+  const tierRuleLinkUpdates = [];
 
-  for (const r of linkQ.records) {
-    const want = ruleFor(r.getCellValue('Membership Amount') ?? 0);
-    const have = (r.getCellValue('Tier Rule') ?? [])[0]?.id ?? null;
-    if ((want?.id ?? null) === have) continue;
-    linkUpdates.push({ id: r.id, fields: { 'Tier Rule': want ? [{ id: want.id }] : [] } });
+  for (const record of memberTierLinkQuery.records) {
+    const desiredTierRule = tierRuleForAmount(record.getCellValue('Membership Amount') ?? 0);
+    const currentTierRuleId = (record.getCellValue('Tier Rule') ?? [])[0]?.id ?? null;
+    if ((desiredTierRule?.id ?? null) === currentTierRuleId) continue;
+    tierRuleLinkUpdates.push({ id: record.id, fields: { 'Tier Rule': desiredTierRule ? [{ id: desiredTierRule.id }] : [] } });
   }
 
-  for (let i = 0; i < linkUpdates.length; i += 50) {
-    await membersTbl.updateRecordsAsync(linkUpdates.slice(i, i + 50));
+  for (let i = 0; i < tierRuleLinkUpdates.length; i += 50) {
+    await membersTable.updateRecordsAsync(tierRuleLinkUpdates.slice(i, i + 50));
   }
-  console.log(`Tier Rule links updated: ${linkUpdates.length}`);
+  console.log(`Tier Rule links updated: ${tierRuleLinkUpdates.length}`);
 } else {
   console.log('Skipping Tier Rule sync — Tiers table or Tier Rule field not found.');
 }
 
 // 7 ── Close out the log row (only reached if everything above succeeded)
-await logTbl.updateRecordAsync(logId, {
-  'Records Created': toCreate.length + newMembers.length,
-  'Records Updated': toUpdate.length + memberUpdates.length
+await syncLogTable.updateRecordAsync(syncLogRecordId, {
+  'Records Created': recurringPlansToCreate.length + membersToCreate.length,
+  'Records Updated': recurringPlansToUpdate.length + membersToUpdate.length
 });
