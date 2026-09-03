@@ -377,7 +377,14 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
     return upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt + 1);
   }
   if (!response.ok) {
-    throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${await response.text()}`);
+    const responseBody = await response.text();
+    // Logged here (not just thrown) so the run log shows the actual fields we
+    // tried to write -- the re-fetched Givebutter record, not the webhook
+    // payload, is what ends up in recordFields, and those can disagree. Every
+    // upsert call site funnels through here, so this covers all of them
+    // instead of needing its own try/catch at each one.
+    console.error(`Airtable upsert ${response.status} on ${tableId} failed for fields: ${JSON.stringify(recordFields)}`);
+    throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${responseBody}`);
   }
 
   const body = await response.json();
@@ -460,12 +467,9 @@ if (eventType.startsWith('plan.')) {
     planFields['Covers Member'] = [{ id: memberRecordId }];
   }
 
-  try {
-    await upsertAirtableRecord(recurringPlansTable.id, ['Plan ID'], planFields);
-  } catch (e) {
-    console.log(`Failed to upsert ${recurringPlansTable.name} with ${JSON.stringify(planFields)}`);
-    throw e;
-  }
+  // upsertAirtableRecord itself logs the attempted fields on failure before
+  // rethrowing (see its own comment) -- no need to duplicate that here.
+  await upsertAirtableRecord(recurringPlansTable.id, ['Plan ID'], planFields);
   console.log(`${eventType} → plan ${plan.id} (${plan.status}) synced`);
 
 } else if (eventType.startsWith('transaction.') || eventType.startsWith('refund.')) {
