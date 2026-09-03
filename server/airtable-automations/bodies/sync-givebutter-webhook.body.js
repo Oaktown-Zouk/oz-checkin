@@ -22,27 +22,11 @@
 // record field pointing at Recurring Plans — created by hand first;
 // automations can't add fields.
 //
-// ── WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable() ───────────
-// Givebutter fires more than one webhook event for a single new signup (e.g.
-// plan.created/plan.updated alongside the first transaction.succeeded), all
-// carrying the same Contact ID. Airtable runs each webhook firing as its own
-// independent script execution — nothing serializes them. An earlier version
-// of this script used base.getTable(...).selectRecordsAsync() to check
-// whether a Member with that Contact ID already existed, then
-// createRecordAsync() if not. That's a read-then-write race with no lock
-// between the two steps: two concurrent executions can both read "not
-// found" and both create a row, producing two Members for one real person
-// (this happened in production on 2026-09-02 — see this folder's README).
-//
-// You can't fix a read-then-write race by adding a lock record in Airtable —
-// acquiring that lock is itself a read-then-write with the same race, just
-// moved to a different table. The only real fix is to stop deciding
-// existence in script code at all, and hand that decision to Airtable's own
-// backend, which the REST API does atomically via `performUpsert`. Two
-// concurrent upserts on the same Contact ID cannot both create a row — one
-// creates, the other necessarily updates the row the first one just made. So
-// every find-or-create in this script goes through upsertAirtableRecord()
-// below instead of selectRecordsAsync()+createRecordAsync().
+// WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable(): concurrent
+// webhook firings for the same signup can each find no existing Member and
+// both create one (happened in production on 2026-09-02 — see this folder's
+// README), so every find-or-create here uses Airtable's atomic REST
+// `performUpsert` instead of selectRecordsAsync()+createRecordAsync().
 // ═══════════════════════════════════════════════════════════════════════
 
 const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
