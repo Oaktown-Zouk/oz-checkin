@@ -85,6 +85,19 @@ instead — same posture as the nightly scripts' `ensureSelectChoices`, which on
 ever widens a choice list from a real Scripting-extension run, never silently from
 an automation.
 
+**Same bug, second field type.** With the select fix live, the very next run hit a
+different 422 on the same table: `INVALID_RECORD_ID`, `Value "[object Object]" is
+not a valid record ID`, on `Member`/`Covers Member` — logged fields showed
+`[{"id":"recn8rJ47sTjofLZE"}]`. Same root cause as `Status`, one field type over:
+the Scripting SDK writes a linked record as `[{id: "recXXX"}]`; the REST API wants
+a plain array of id strings (`["recXXX"]`) and stringifies the object form to
+`"[object Object]"` when it tries to parse it as an id. `toRestFields()` now
+flattens both shapes — select `{name}` → string, and link `[{id}]` → `[id]` — so
+this class of bug is closed for every field type these scripts currently write, not
+just the one that happened to fail first. (Text/number/boolean/date fields are the
+same shape in both APIs; multi-select isn't used by any of these scripts today, so
+it isn't handled — would need the same treatment if one is ever added.)
+
 ## 2026-09-03 Transactions never got Plan ID / Is Recurring / Refunded* from the nightly sync
 
 `Transactions` is documented as "disambiguated by `Is Recurring` + `Plan ID`
