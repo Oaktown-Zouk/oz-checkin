@@ -38,7 +38,31 @@ script step by hand.
   webhook (`plan.*`, `transaction.*`, `refund.*`, `contact.created`), re-fetches the
   changed record and upserts it immediately rather than waiting for the nightly batch.
 
+`grant-dropin-credits.js` is different from the four above: it's **Automation B**
+(see `docs/airtable-schema.md`'s "Credits" section), triggered by a qualifying
+`Transactions` record rather than anything Givebutter-shaped, and it's a plain
+hand-maintained file — not generated, no `src`/`bodies` split, since it's small
+enough not to warrant one. Edit it directly and paste it into Airtable.
+
 See `docs/airtable-schema.md` for what each Airtable table/field means to this app.
+
+## 2026-09-03 grant-dropin-credits.js: memberId was a name, not a record id
+
+`input.config()`'s `memberIds` input variable was mapped to the linked `Member`
+field's *primary field value* (the person's name) rather than its record id —
+Airtable's automation input-variable UI defaults to that unless you dig in and pick
+the record id explicitly. `"Member": [{id: memberId}]` then tried to link a new
+`Credits` record using a name string as if it were an Airtable record id, which
+doesn't resolve to anything.
+
+Fixed by not trusting the input variable for this at all: the script now fetches the
+`Transactions` record directly by `transactionId` and reads its own `Member` field,
+which the Scripting API always returns as real `{id, name}` linked-record objects
+regardless of how any input variable happens to be configured. Also fixed in the same
+pass: `creditsTable.createRecordsAsync(...)` was missing its `await` (the run could
+finish, and Airtable would mark it successful, before the credits were actually
+written — and any creation error would be silently dropped), and the final log line
+interpolated the whole `creditsToCreate` array instead of `.length`.
 
 ## 2026-09-02 duplicate-Member investigation
 
