@@ -22,9 +22,9 @@
     <div id="guided-form-widget" class="gfw-container">
       <div class="gfw-step" data-step="start">
         <h3 class="gfw-question">Is this your first time attending?</h3>
-        <div class="gfw-options">
-          <button class="gfw-btn" data-goto="first">Yes</button>
-          <button class="gfw-btn" data-goto="returning">No</button>
+        <div class="gfw-options gfw-options-vertical">
+          <button class="gfw-btn" data-goto="first">Yes, I'd like to claim my free first class</button>
+          <button class="gfw-btn" data-goto="returning">No, I'm here to pay for class</button>
         </div>
       </div>
 
@@ -61,6 +61,17 @@
       <div class="gfw-step" data-step="first-dropin-one-waivers" hidden>
         <div class="gfw-embed">
           <givebutter-widget id="gOKNYY" account="K2zE8rPXlwbTczim"></givebutter-widget>
+        </div>
+        <!-- Escape hatch for someone who's already used their free class and landed
+             back on this step (e.g. via a bookmark or browser back) — goes straight
+             to buying one drop-in. Its own back button lands on "returning-dropin"
+             (the returning-student flow), not back here — an acceptable inaccuracy
+             rather than threading a real "came from the free-class step" state
+             through the rest of the returning-student flow just for this. -->
+        <div class="gfw-options">
+          <button class="gfw-btn" data-goto="returning-dropin-one">
+            Already taken your free class? Click to buy a drop-in pass.
+          </button>
         </div>
         <button class="gfw-back" data-goto="first-dropin-one">&larr; Back</button>
       </div>
