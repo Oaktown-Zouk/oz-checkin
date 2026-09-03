@@ -309,6 +309,34 @@ function missingSelectChoiceNames(existingChoices, incomingValues) {
     return [...missing];
 }
 
+// restFields.ts
+// buildRecurringPlanFields/buildTransactionFields (planFields.ts,
+// transactionFields.ts) produce the Scripting SDK's cell-value shape for a
+// single select -- {name: "..."} -- which is correct for the nightly scripts'
+// table.createRecordsAsync()/updateRecordsAsync() calls, but wrong for a raw
+// REST API write: Airtable's REST API wants a select field as a plain
+// string, and rejects the Scripting-shaped object with "Cannot parse value
+// for field X" even when the value is a real, existing choice (confirmed via
+// the base's own field metadata during the 2026-09-03 webhook incident -- see
+// docs/airtable-automations/README.md). This adapts a fields object built for
+// the Scripting SDK into REST-safe form right before a REST write, without
+// changing what the shared builders themselves produce -- they stay correct
+// for the nightly scripts, which never touch this function.
+function toRestFields(fields) {
+    const converted = {};
+    for (const [key, value] of Object.entries(fields)) {
+        converted[key] = isSelectCellValue(value) ? value.name : value;
+    }
+    return converted;
+}
+function isSelectCellValue(value) {
+    return (typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        "name" in value &&
+        Object.keys(value).length === 1);
+}
+
 // retry.ts
 // Airtable's rate limit is 5 req/sec per base. maxAttempts=3 means up to 3
 // retries after the initial attempt (4 tries total) -- matches
@@ -358,7 +386,17 @@ let recordsUpdated = 0;
 // instead of the write being rejected outright — this is the REST API's
 // equivalent of updateOptionsAsync (see ensureSelectChoices in the nightly
 // scripts), and unlike that method it actually works from an automation.
+//
+// toRestFields() matters here specifically: buildRecurringPlanFields /
+// buildTransactionFields build a select field as {name: "..."} — correct for
+// the Scripting SDK the nightly scripts use, but the REST API this function
+// actually talks to wants a plain string and rejects the object with "Cannot
+// parse value" even for a real, existing choice (confirmed against the
+// base's own field metadata — see docs/airtable-automations/README.md).
+// typecast alone does not fix this; it's a format problem, not a
+// missing-choice one.
 async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt = 0) {
+  const restFields = toRestFields(recordFields);
   const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`, {
     method: 'PATCH',
     headers: {
@@ -368,7 +406,7 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
     body: JSON.stringify({
       performUpsert: { fieldsToMergeOn },
       typecast: true,
-      records: [{ fields: recordFields }]
+      records: [{ fields: restFields }]
     })
   });
 
@@ -380,10 +418,12 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
     const responseBody = await response.text();
     // Logged here (not just thrown) so the run log shows the actual fields we
     // tried to write -- the re-fetched Givebutter record, not the webhook
-    // payload, is what ends up in recordFields, and those can disagree. Every
-    // upsert call site funnels through here, so this covers all of them
-    // instead of needing its own try/catch at each one.
-    console.error(`Airtable upsert ${response.status} on ${tableId} failed for fields: ${JSON.stringify(recordFields)}`);
+    // payload, is what ends up in recordFields, and those can disagree. Logs
+    // restFields (what was actually sent over the wire), not recordFields, so
+    // a format bug like this one is visible directly instead of needing to be
+    // re-derived. Every upsert call site funnels through here, so this covers
+    // all of them instead of needing its own try/catch at each one.
+    console.error(`Airtable upsert ${response.status} on ${tableId} failed for fields: ${JSON.stringify(restFields)}`);
     throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${responseBody}`);
   }
 

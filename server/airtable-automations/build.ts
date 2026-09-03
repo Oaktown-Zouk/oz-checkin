@@ -28,6 +28,7 @@ const PURE_MODULES = [
   "planFields.ts",
   "transactionFields.ts",
   "selectChoices.ts",
+  "restFields.ts",
   "retry.ts",
 ];
 
