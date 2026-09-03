@@ -46,6 +46,18 @@ enough not to warrant one. Edit it directly and paste it into Airtable.
 
 See `docs/airtable-schema.md` for what each Airtable table/field means to this app.
 
+## 2026-09-03 webhook 422 on a select field: `Cannot parse value for field Status`
+
+The webhook's REST `performUpsert` call had no way to widen a single-select field's
+choice list when Givebutter sent a value Airtable hadn't seen before — Airtable
+rejects that write outright rather than guessing. `updateOptionsAsync` (what the
+nightly scripts use to widen a select field — see `ensureSelectChoices`) doesn't
+help here even in principle: it's Scripting-extension-only and throws when called
+from an automation, which every one of these scripts, including the webhook, runs
+as. Fixed with `typecast: true` on the REST request body — a plain API flag, not an
+SDK method, so it actually works from an automation, and Airtable auto-adds the
+missing choice the same way `updateOptionsAsync` would have.
+
 ## 2026-09-03 Transactions never got Plan ID / Is Recurring / Refunded* from the nightly sync
 
 `Transactions` is documented as "disambiguated by `Is Recurring` + `Plan ID`
