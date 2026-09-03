@@ -213,26 +213,14 @@ function tierRuleLinkFields(desiredTierRule, currentTierRuleId) {
 }
 
 // transactionFields.ts
-// The nightly Transactions script's field set -- deliberately narrower than
-// the webhook's below (no Plan ID / Is Recurring / Refunded fields). Kept as
-// a separate function rather than unified with buildWebhookTransactionFields:
-// making them the same function would either add fields the nightly sync has
-// never written, or drop fields the webhook depends on -- both real behavior
-// changes, not just a refactor.
-function buildNightlyTransactionFields(transaction, syncedAt) {
-    return {
-        "Transaction ID": String(transaction.id),
-        "Amount": Number(transaction.amount) || 0,
-        "Fee": Number(transaction.fee) || 0,
-        "Donated": Number(transaction.donated) || 0,
-        "Status": toSelectField(transaction.status),
-        "Payment Method": toText(transaction.payment_method ?? transaction.method),
-        "Campaign": toText(transaction.campaign?.title ?? transaction.campaign_code),
-        "Transacted At": transaction.transacted_at ?? transaction.created_at ?? null,
-        "Last Synced": syncedAt,
-    };
-}
-function buildWebhookTransactionFields(transaction, syncedAt) {
+// One field set for both the nightly sync and the webhook -- the nightly sync used
+// to write a narrower set (no Plan ID / Is Recurring / Refunded fields), which meant
+// any transaction only ever nightly-synced was indistinguishable from a plain
+// one-time drop-in even when it was really a recurring membership charge (Transactions
+// is "disambiguated by Is Recurring + Plan ID presence" per docs/airtable-schema.md --
+// a disambiguation that silently didn't work for most rows). Full parity closes that
+// gap regardless of which sync path a given transaction happened to go through.
+function buildTransactionFields(transaction, syncedAt) {
     return {
         "Transaction ID": String(transaction.id),
         "Amount": Number(transaction.amount) || 0,
@@ -249,6 +237,22 @@ function buildWebhookTransactionFields(transaction, syncedAt) {
         "Refunded Amount": Number(transaction.refunded_amount ?? 0) || 0,
         "Last Synced": syncedAt,
     };
+}
+// A transaction's Plan ID is Givebutter's own plan id (plain text, for matching/
+// audit) -- this resolves that to the matching Recurring Plans row's Airtable
+// record id, for the actual link field. `recurringPlanIdByPlanId` is a Plan ID ->
+// Airtable record id map the caller builds once per run (nightly) or looks up
+// per-event (webhook); returns null rather than an empty-array link patch when
+// there's no Plan ID or no match yet -- a transaction can arrive before its plan has
+// been synced, and leaving the link untouched (not forced empty) lets a later sync
+// fill it in once the plan exists, instead of writing a wrong "no plan" answer.
+function recurringPlanLinkField(planId, recurringPlanIdByPlanId) {
+    if (!planId)
+        return null;
+    const recurringPlanRecordId = recurringPlanIdByPlanId.get(planId);
+    if (!recurringPlanRecordId)
+        return null;
+    return { "Recurring Plans": [{ id: recurringPlanRecordId }] };
 }
 
 // selectChoices.ts
@@ -300,6 +304,10 @@ function retryDelayMs(attempt) {
 //
 // This runs in an AUTOMATION: fetch() works (no browser, no CORS), but
 // updateOptionsAsync does not, so new select values must already exist.
+//
+// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
+// record field pointing at Recurring Plans — created by hand first;
+// automations can't add fields.
 //
 // ── WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable() ───────────
 // Givebutter fires more than one webhook event for a single new signup (e.g.
@@ -479,8 +487,20 @@ if (eventType.startsWith('plan.')) {
     transaction.email ?? transaction.contact?.email, transaction.phone ?? transaction.contact?.phone
   );
 
-  const transactionFields = buildWebhookTransactionFields(transaction, syncedAt);
+  const transactionFields = buildTransactionFields(transaction, syncedAt);
   if (memberRecordId) transactionFields['Member'] = [{ id: memberRecordId }];
+
+  // Same idea as the Covers Member lookup above: a transaction can arrive before
+  // its plan has ever been synced (event ordering isn't guaranteed), in which case
+  // there's nothing to link yet -- recurringPlanLinkField returns null rather than
+  // an empty link, and the nightly Transactions sync fills it in once the plan
+  // exists.
+  const planIdText = toText(transaction.plan_id);
+  if (planIdText) {
+    const recurringPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID'] });
+    const recurringPlanRecord = recurringPlanQuery.records.find((record) => record.getCellValueAsString('Plan ID') === planIdText);
+    if (recurringPlanRecord) transactionFields['Recurring Plans'] = [{ id: recurringPlanRecord.id }];
+  }
 
   await upsertAirtableRecord(transactionsTable.id, ['Transaction ID'], transactionFields);
   console.log(`${eventType} → transaction ${transaction.id} ($${transaction.amount}, ${transaction.plan_id ? 'membership' : 'drop-in'}) synced`);

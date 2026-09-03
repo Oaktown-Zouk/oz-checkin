@@ -6,7 +6,15 @@
 //
 // Rolling window, not a full pull — self-heals any gap shorter than
 // LOOKBACK_DAYS. For the one-time historical backfill, set it to 3650,
-// run manually, then set it back to 7 before enabling the schedule.
+// run manually, then set it back to 7 before enabling the schedule. (Also the
+// way to backfill Plan ID / Is Recurring / Refunded* / the Recurring Plans
+// link onto every existing transaction after adding those fields below — this
+// script previously wrote none of them, so every already-synced row is
+// missing them until a backfill run.)
+//
+// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
+// record field pointing at Recurring Plans — created by hand first;
+// automations can't add fields.
 //
 // NAMES: writes First Name / Last Name only when creating a member, or to
 // fill a blank. It never overwrites a name that /plans already set, because
@@ -19,9 +27,10 @@ const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const LOOKBACK_DAYS = 7;      // ← 3650 for the historical backfill
 const MAX_PAGES     = 40;     // Airtable caps a script at 50 fetch() calls
 
-const membersTable      = base.getTable('Members');
-const transactionsTable = base.getTable('Transactions');
-const syncLogTable      = base.getTable('Sync Log');
+const membersTable        = base.getTable('Members');
+const recurringPlansTable = base.getTable('Recurring Plans');
+const transactionsTable   = base.getTable('Transactions');
+const syncLogTable        = base.getTable('Sync Log');
 
 async function fetchFromGivebutter(path) {
   const response = await fetch(`${GIVEBUTTER_API_BASE}${path}`, {
@@ -88,6 +97,12 @@ for (const record of memberQuery.records) {
 const transactionQuery = await transactionsTable.selectRecordsAsync({ fields: ['Transaction ID'] });
 const transactionIdToRecordId = new Map(transactionQuery.records.map(record => [record.getCellValueAsString('Transaction ID'), record.id]));
 
+// For linking each transaction to its actual Recurring Plans record (not just the
+// plain-text Plan ID) — see recurringPlanLinkField. Built once per run rather than
+// per transaction, same as the other index maps above.
+const recurringPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID'] });
+const recurringPlanIdByPlanId = new Map(recurringPlanQuery.records.map(record => [record.getCellValueAsString('Plan ID'), record.id]));
+
 // 3 ── One-time donors get a Member row too.
 //      Membership Status will read "Lapsed / Donor" — they only become a
 //      member when an active recurring plan shows up in the plans sync.
@@ -135,10 +150,13 @@ const syncedAt = new Date().toISOString();
 const transactionsToCreate = [], transactionsToUpdate = [];
 
 for (const transaction of transactions) {
-  const transactionFields = buildNightlyTransactionFields(transaction, syncedAt);
+  const transactionFields = buildTransactionFields(transaction, syncedAt);
 
   const memberRecordId = memberIdByContactId.get(transaction.contact_id == null ? '' : String(transaction.contact_id));
   if (memberRecordId) transactionFields['Member'] = [{ id: memberRecordId }];
+
+  const planLinkField = recurringPlanLinkField(transactionFields['Plan ID'], recurringPlanIdByPlanId);
+  if (planLinkField) Object.assign(transactionFields, planLinkField);
 
   const existingTransactionId = transactionIdToRecordId.get(String(transaction.id));
   if (existingTransactionId) transactionsToUpdate.push({ id: existingTransactionId, fields: transactionFields });

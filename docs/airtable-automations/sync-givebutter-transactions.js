@@ -213,26 +213,14 @@ function tierRuleLinkFields(desiredTierRule, currentTierRuleId) {
 }
 
 // transactionFields.ts
-// The nightly Transactions script's field set -- deliberately narrower than
-// the webhook's below (no Plan ID / Is Recurring / Refunded fields). Kept as
-// a separate function rather than unified with buildWebhookTransactionFields:
-// making them the same function would either add fields the nightly sync has
-// never written, or drop fields the webhook depends on -- both real behavior
-// changes, not just a refactor.
-function buildNightlyTransactionFields(transaction, syncedAt) {
-    return {
-        "Transaction ID": String(transaction.id),
-        "Amount": Number(transaction.amount) || 0,
-        "Fee": Number(transaction.fee) || 0,
-        "Donated": Number(transaction.donated) || 0,
-        "Status": toSelectField(transaction.status),
-        "Payment Method": toText(transaction.payment_method ?? transaction.method),
-        "Campaign": toText(transaction.campaign?.title ?? transaction.campaign_code),
-        "Transacted At": transaction.transacted_at ?? transaction.created_at ?? null,
-        "Last Synced": syncedAt,
-    };
-}
-function buildWebhookTransactionFields(transaction, syncedAt) {
+// One field set for both the nightly sync and the webhook -- the nightly sync used
+// to write a narrower set (no Plan ID / Is Recurring / Refunded fields), which meant
+// any transaction only ever nightly-synced was indistinguishable from a plain
+// one-time drop-in even when it was really a recurring membership charge (Transactions
+// is "disambiguated by Is Recurring + Plan ID presence" per docs/airtable-schema.md --
+// a disambiguation that silently didn't work for most rows). Full parity closes that
+// gap regardless of which sync path a given transaction happened to go through.
+function buildTransactionFields(transaction, syncedAt) {
     return {
         "Transaction ID": String(transaction.id),
         "Amount": Number(transaction.amount) || 0,
@@ -249,6 +237,22 @@ function buildWebhookTransactionFields(transaction, syncedAt) {
         "Refunded Amount": Number(transaction.refunded_amount ?? 0) || 0,
         "Last Synced": syncedAt,
     };
+}
+// A transaction's Plan ID is Givebutter's own plan id (plain text, for matching/
+// audit) -- this resolves that to the matching Recurring Plans row's Airtable
+// record id, for the actual link field. `recurringPlanIdByPlanId` is a Plan ID ->
+// Airtable record id map the caller builds once per run (nightly) or looks up
+// per-event (webhook); returns null rather than an empty-array link patch when
+// there's no Plan ID or no match yet -- a transaction can arrive before its plan has
+// been synced, and leaving the link untouched (not forced empty) lets a later sync
+// fill it in once the plan exists, instead of writing a wrong "no plan" answer.
+function recurringPlanLinkField(planId, recurringPlanIdByPlanId) {
+    if (!planId)
+        return null;
+    const recurringPlanRecordId = recurringPlanIdByPlanId.get(planId);
+    if (!recurringPlanRecordId)
+        return null;
+    return { "Recurring Plans": [{ id: recurringPlanRecordId }] };
 }
 
 // selectChoices.ts
@@ -289,7 +293,15 @@ function retryDelayMs(attempt) {
 //
 // Rolling window, not a full pull — self-heals any gap shorter than
 // LOOKBACK_DAYS. For the one-time historical backfill, set it to 3650,
-// run manually, then set it back to 7 before enabling the schedule.
+// run manually, then set it back to 7 before enabling the schedule. (Also the
+// way to backfill Plan ID / Is Recurring / Refunded* / the Recurring Plans
+// link onto every existing transaction after adding those fields below — this
+// script previously wrote none of them, so every already-synced row is
+// missing them until a backfill run.)
+//
+// REQUIRES a "Recurring Plans" field on Transactions — a Link to another
+// record field pointing at Recurring Plans — created by hand first;
+// automations can't add fields.
 //
 // NAMES: writes First Name / Last Name only when creating a member, or to
 // fill a blank. It never overwrites a name that /plans already set, because
@@ -302,9 +314,10 @@ const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const LOOKBACK_DAYS = 7;      // ← 3650 for the historical backfill
 const MAX_PAGES     = 40;     // Airtable caps a script at 50 fetch() calls
 
-const membersTable      = base.getTable('Members');
-const transactionsTable = base.getTable('Transactions');
-const syncLogTable      = base.getTable('Sync Log');
+const membersTable        = base.getTable('Members');
+const recurringPlansTable = base.getTable('Recurring Plans');
+const transactionsTable   = base.getTable('Transactions');
+const syncLogTable        = base.getTable('Sync Log');
 
 async function fetchFromGivebutter(path) {
   const response = await fetch(`${GIVEBUTTER_API_BASE}${path}`, {
@@ -371,6 +384,12 @@ for (const record of memberQuery.records) {
 const transactionQuery = await transactionsTable.selectRecordsAsync({ fields: ['Transaction ID'] });
 const transactionIdToRecordId = new Map(transactionQuery.records.map(record => [record.getCellValueAsString('Transaction ID'), record.id]));
 
+// For linking each transaction to its actual Recurring Plans record (not just the
+// plain-text Plan ID) — see recurringPlanLinkField. Built once per run rather than
+// per transaction, same as the other index maps above.
+const recurringPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID'] });
+const recurringPlanIdByPlanId = new Map(recurringPlanQuery.records.map(record => [record.getCellValueAsString('Plan ID'), record.id]));
+
 // 3 ── One-time donors get a Member row too.
 //      Membership Status will read "Lapsed / Donor" — they only become a
 //      member when an active recurring plan shows up in the plans sync.
@@ -418,10 +437,13 @@ const syncedAt = new Date().toISOString();
 const transactionsToCreate = [], transactionsToUpdate = [];
 
 for (const transaction of transactions) {
-  const transactionFields = buildNightlyTransactionFields(transaction, syncedAt);
+  const transactionFields = buildTransactionFields(transaction, syncedAt);
 
   const memberRecordId = memberIdByContactId.get(transaction.contact_id == null ? '' : String(transaction.contact_id));
   if (memberRecordId) transactionFields['Member'] = [{ id: memberRecordId }];
+
+  const planLinkField = recurringPlanLinkField(transactionFields['Plan ID'], recurringPlanIdByPlanId);
+  if (planLinkField) Object.assign(transactionFields, planLinkField);
 
   const existingTransactionId = transactionIdToRecordId.get(String(transaction.id));
   if (existingTransactionId) transactionsToUpdate.push({ id: existingTransactionId, fields: transactionFields });

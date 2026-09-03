@@ -182,9 +182,22 @@ subscription risks the next sync reverting the change.
 ## Transactions (`tbl97hoFODKY50QcH`)
 
 Raw Givebutter charges — one-time and recurring share this table, disambiguated by
-`Is Recurring` + `Plan ID` presence. `Drop-in Valid` (formula, 14-day expiry) is
-superseded by `Credits` for actual redemption; may still be useful for reporting, not
-for check-in logic.
+`Is Recurring` + `Plan ID` (Givebutter's own plan id, plain text) presence. Also
+`Recurring Plans` — a real link to the matching `Recurring Plans` row, resolved from
+`Plan ID` — for actually navigating from a transaction to its plan, rather than just
+matching text. `Drop-in Valid` (formula, 14-day expiry) is superseded by `Credits`
+for actual redemption; may still be useful for reporting, not for check-in logic.
+
+Until 2026-09-03, `Is Recurring`/`Plan ID`/`Recurring Plans`/`Refunded*` were only
+ever written by the real-time webhook sync — the nightly Transactions sync (the
+complete, authoritative one) wrote none of them, so any transaction that was only
+ever nightly-synced was indistinguishable from a one-time drop-in even if it was
+really a recurring membership charge, and Automation B's own "is this a membership
+payment" check (`docs/airtable-automations/grant-dropin-credits.js`) could be
+fooled by it. Fixed by giving the nightly sync full field parity with the webhook —
+see `docs/airtable-automations/README.md`. A historical backfill (nightly script's
+`LOOKBACK_DAYS` set to 3650 for one manual run) is needed to fill these in on
+already-synced rows.
 
 ## Tiers (`tblf5kiolgFrtQaIG`)
 
