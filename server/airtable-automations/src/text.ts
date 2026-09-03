@@ -27,9 +27,18 @@ export function normalizeSelectText(value: unknown): string | null {
   return value == null ? null : String(value).trim() || null;
 }
 
-// Single select WRITE format. The Scripting API wants {name: "..."} or
-// {id: "..."} -- a bare string is rejected with "cannot accept the provided
+// Single select WRITE format for the Scripting SDK (table.createRecordAsync /
+// updateRecordAsync, used by the nightly scripts) -- {name: "..."} or
+// {id: "..."}; a bare string is rejected with "cannot accept the provided
 // value", even when the choice exists verbatim.
+//
+// This is SDK-specific, not universal: Airtable's REST API wants the
+// opposite -- a plain string -- and rejects this {name} shape outright, even
+// for a real, existing choice (see restFields.ts's toRestFields, and the
+// 2026-09-03 webhook incident in docs/airtable-automations/README.md). Any
+// REST-based write (the webhook's upsertAirtableRecord) must run its fields
+// through toRestFields() after building them with this -- it isn't safe to
+// send this shape to REST as-is.
 export function toSelectField(value: unknown): { name: string } | null {
   const text = normalizeSelectText(value);
   return text ? { name: text } : null;
