@@ -83,11 +83,9 @@ plan amount at all. Two things handle this:
   credits shown instead.
 - **`npm run audit:credits`** (`server/src/scripts/auditCreditConsumption.ts`) — since
   a tier-less member's `Classes Allowed` rolls up to `0`, every one of their check-ins
-  should have consumed a credit (`Check-ins."Credits Consumed" = 1`) or been flagged
-  `Needs Review`. This script finds any that did neither and, if that member currently
-  has an available credit, sets `Credits Consumed = 1` on the check-in. It never
-  fabricates a credit — a genuine price/tier mismatch needs a human decision about
-  what actually happened, not an automatic guess.
+  should have `Check-ins."Credits Consumed" = 1`. This script finds any that don't and
+  sets it, same as `gateCheckIns` would have at creation time — including flagging
+  `Needs Review` if that push takes the member's running balance negative.
 
 ## Check-ins (`tblUN06HQtcMIucxK`)
 
@@ -115,8 +113,9 @@ plan amount at all. Two things handle this:
 - `Checked In At (Valid)` (formula) — `Checked In At` unless undone, else blank; feeds
   `Members.Last Check-in At`.
 - `Needs Review` / `Review Reason` — set by the app (`services/checkins.ts`'s
-  `gateCheckIns`) when a check-in exceeds the member's tier allowance and no credit is
-  available to cover it.
+  `gateCheckIns`) when consuming a credit for this check-in pushes the member's
+  balance below zero (`Review Reason` is always `"Negative balance"`). Cleared by
+  `undoCheckIn` along with `Credits Consumed` if this check-in had them.
 - `Credits Consumed` (number) — `1` if this check-in consumed a credit, else `0`/blank.
   Set by `gateCheckIns`, cleared by `undoCheckIn` — both read/write this same field
   directly, no other table involved. `Members."Credits Consumed"` rolls this up per

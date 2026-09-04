@@ -11,10 +11,11 @@
 // sanity check against drift (e.g. a check-in created directly in Airtable, bypassing
 // the app entirely).
 //
-// A gap is only auto-fixed if the member currently has an available credit — this
-// script never fabricates a credit (that's a judgment call, see the Dvij Patel case in
-// docs/airtable-schema.md, which needed a specific transaction/backstory this script
-// has no way to know). Gaps with no available credit are just reported.
+// Every gap found gets fixed the same way gateCheckIns would have: Credits Consumed
+// set to 1 unconditionally (a numeric balance can go negative, so there's no reason
+// to withhold it), and Needs Review/Review Reason = "Negative balance" set too if
+// applying it pushes that member's running balance below zero — tracked per member
+// across this run's own fixes, same reasoning as gateCheckIns's in-memory balance.
 //
 // Dry run by default — pass --apply to write.
 
@@ -55,42 +56,41 @@ async function main() {
 
   console.log(`${gaps.length} check-in(s) belong to a tier-less member with no credit consumed:\n`);
 
-  // Available Credits is a snapshot from the top of this run — an --apply write made
-  // moments earlier here doesn't retroactively lower it, so gaps for the same member
-  // are claimed against a running "already claimed this run" count instead.
-  const claimedThisRun = new Map<string, number>();
-  let fixable = 0;
-  let unfixable = 0;
+  // Running balance per member across this run's own fixes — a --apply write made
+  // moments earlier here doesn't retroactively lower Available Credits (a formula) in
+  // this already-fetched snapshot, so each member's balance is tracked in memory
+  // instead, decremented by every gap fixed for them so far.
+  const runningBalance = new Map<string, number>();
+  let flagged = 0;
   for (const c of gaps) {
     const memberId = c.fields.Member![0];
-    const available = (availableCreditsById.get(memberId) ?? 0) - (claimedThisRun.get(memberId) ?? 0);
-    const reviewNote = c.fields["Needs Review"] ? `flagged: ${c.fields["Review Reason"]}` : "not flagged";
+    if (!runningBalance.has(memberId)) runningBalance.set(memberId, availableCreditsById.get(memberId) ?? 0);
+    const balanceAfter = runningBalance.get(memberId)! - 1;
+    runningBalance.set(memberId, balanceAfter);
 
-    if (available > 0) {
-      fixable++;
-      claimedThisRun.set(memberId, (claimedThisRun.get(memberId) ?? 0) + 1);
-      console.log(
-        `  ${c.id} | ${nameById.get(memberId)} (${accessById.get(memberId)}) | ${c.fields["Checked In At"]} | ${reviewNote}` +
-          ` -> would set Credits Consumed = 1`
-      );
-      if (APPLY) {
-        await updateRecord<CheckinFields>(TABLES.checkins, c.id, { "Credits Consumed": 1 });
-      }
-    } else {
-      unfixable++;
-      console.log(
-        `  ${c.id} | ${nameById.get(memberId)} (${accessById.get(memberId)}) | ${c.fields["Checked In At"]} | ${reviewNote}` +
-          ` -> NO available credit, needs manual review`
-      );
+    const alreadyFlagged = c.fields["Needs Review"];
+    const willFlag = balanceAfter < 0 && !alreadyFlagged;
+    if (willFlag) flagged++;
+    const note = alreadyFlagged ? `already flagged: ${c.fields["Review Reason"]}` : willFlag ? "will flag: Negative balance" : "not flagged";
+
+    console.log(
+      `  ${c.id} | ${nameById.get(memberId)} (${accessById.get(memberId)}) | ${c.fields["Checked In At"]} | ${note}` +
+        ` -> would set Credits Consumed = 1`
+    );
+    if (APPLY) {
+      await updateRecord<CheckinFields>(TABLES.checkins, c.id, {
+        "Credits Consumed": 1,
+        ...(willFlag ? { "Needs Review": true, "Review Reason": "Negative balance" } : {}),
+      });
     }
   }
 
-  console.log(`\n${fixable} fixable by setting Credits Consumed, ${unfixable} need manual attention.`);
+  console.log(`\n${gaps.length} check-in(s) to fix, ${flagged} of them newly flagged for a negative balance.`);
 
   if (!APPLY) {
-    console.log("\nDry run only — no writes made. Re-run with --apply to fix the fixable ones.");
+    console.log("\nDry run only — no writes made. Re-run with --apply to fix these.");
   } else {
-    console.log(`\nDone. ${fixable} check-in(s) updated.`);
+    console.log(`\nDone. ${gaps.length} check-in(s) updated.`);
   }
 }
 

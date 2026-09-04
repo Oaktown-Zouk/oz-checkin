@@ -56,15 +56,16 @@ async function gateCheckIns(
   for (let i = 0; i < createdCheckins.length; i++) {
     const nth = priorCount + i + 1;
     if (nth > classesAllowed) {
-      if (availableCredits > 0) {
-        await updateRecord<CheckinFields>(TABLES.checkins, createdCheckins[i].id, { "Credits Consumed": 1 });
-        availableCredits -= 1;
-      } else {
-        await updateRecord<CheckinFields>(TABLES.checkins, createdCheckins[i].id, {
-          "Needs Review": true,
-          "Review Reason": "Beyond tier allowance, no credit available",
-        });
-      }
+      // A number can go negative now that credits aren't a row-per-credit table —
+      // nothing blocks consuming one, this just flags every check-in whose
+      // consumption leaves the balance negative so they're easy to find for
+      // reconciliation (a batch that overdraws by more than one flags each of them,
+      // not just the first).
+      availableCredits -= 1;
+      await updateRecord<CheckinFields>(TABLES.checkins, createdCheckins[i].id, {
+        "Credits Consumed": 1,
+        ...(availableCredits < 0 ? { "Needs Review": true, "Review Reason": "Negative balance" } : {}),
+      });
     }
   }
 }
@@ -111,11 +112,14 @@ export async function undoCheckIn(checkinId: string): Promise<StudentStatus> {
   // gateCheckIns's move off of an Airtable automation for the same reason: no
   // waiting on a separate async trigger. checkin.fields["Credits Consumed"] is
   // already on the record fetched above, so no extra read is needed to find it,
-  // and there's no second table to touch (unlike the old Credits-row-unlink
-  // approach) — just reset this same check-in's own field.
+  // and there's no second table to touch — just reset this same check-in's own
+  // fields. Also clears Needs Review/Review Reason if gateCheckIns had flagged
+  // this check-in for tipping the balance negative — undoing it means it no
+  // longer counts toward that balance at all.
   await updateRecord<CheckinFields>(TABLES.checkins, checkinId, {
     "Undone At": new Date().toISOString(),
     ...(checkin.fields["Credits Consumed"] ? { "Credits Consumed": 0 } : {}),
+    ...(checkin.fields["Needs Review"] ? { "Needs Review": false, "Review Reason": "" } : {}),
   });
   // The live rollup (Checked In Today (Live) -> Remaining Today) self-corrects on its
   // own once Undone At is set — nothing else to do for that part.

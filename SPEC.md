@@ -106,12 +106,16 @@ Credits"` (formula) — the one number the app reads — is
 
 **Consuming and freeing a credit are application code**: `gateCheckIns`
 (`services/checkins.ts`) counts that student's existing non-undone check-ins on the
-target date (live or backdated), compares against their current `Classes Allowed`,
-and either does nothing, sets `Credits Consumed = 1` on the check-in (tracking the
-running balance in memory across a multi-check-in batch — no per-check-in re-read
-needed), or flags the check-in for review — one implementation for both cases, called
-synchronously by `createCheckIns` for every check-in it creates. `undoCheckIn` resets
-`Credits Consumed` back to `0` in the same write that sets `Undone At`.
+target date (live or backdated) and compares against their current `Classes Allowed`.
+A check-in within the allowance touches nothing; one beyond it always sets
+`Credits Consumed = 1` — a numeric balance can go negative, so there's no "no credit
+available" case that blocks or diverts a check-in, only ones that spend down to zero
+and beyond. Every check-in whose consumption leaves the running balance (tracked in
+memory across a multi-check-in batch — no per-check-in re-read needed) negative also
+gets `Needs Review = true` / `Review Reason = "Negative balance"`, so a member who's
+run out is easy to find for reconciliation rather than turned away.
+`undoCheckIn` resets `Credits Consumed` back to `0`, and clears `Needs Review`/
+`Review Reason` if this check-in had them, in the same write that sets `Undone At`.
 
 See `docs/airtable-schema.md`'s "Credits" section for the full field-by-field
 reference.
@@ -208,9 +212,9 @@ someone else's write-up.
   downstream of it (`Remaining Today`), self-corrects on undo automatically, and even
   self-heals if a check-in is ever deleted directly in Airtable rather than undone
   through the app.
-- A student with `Needs Review` set on a check-in (beyond their allowance, no credit
-  available) shows that inline on their row — front desk judgment call; the picker
-  still confirms before submitting in that case.
+- A student with `Needs Review` set on a check-in (one that pushed their credit
+  balance negative) shows that inline on their row — front desk judgment call; the
+  picker still confirms before submitting in that case.
 
 ### Viewing and correcting past days
 

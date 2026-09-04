@@ -46,11 +46,12 @@ describe("createCheckIns (live, no effectiveAt)", () => {
     assert.equal(status.checkinsToday[0].needsReview, false);
   });
 
-  it("over allowance with no credit available: flags Needs Review", async () => {
+  it("over allowance with no credit available: still consumes one, going negative, and flags Needs Review", async () => {
     seedMember({ "Classes Allowed": 0 });
     const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
+    assert.equal(status.availableCredits, -1);
     assert.equal(status.checkinsToday[0].needsReview, true);
-    assert.equal(status.checkinsToday[0].reviewReason, "Beyond tier allowance, no credit available");
+    assert.equal(status.checkinsToday[0].reviewReason, "Negative balance");
   });
 
   it("sets Method to whatever the caller passed (Staff vs Kiosk)", async () => {
@@ -197,6 +198,24 @@ describe("undoCheckIn", () => {
     const afterUndo = await undoCheckIn(checkinId);
     assert.equal(afterUndo.availableCredits, 1);
     assert.equal(afterUndo.checkedInToday, false);
+  });
+
+  it("clears Needs Review/Review Reason along with the credit it freed", async () => {
+    seedMember({ "Classes Allowed": 0 });
+
+    const created = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
+    const checkinId = created.checkinsToday[0].id;
+    assert.equal(created.checkinsToday[0].needsReview, true);
+
+    const afterUndo = await undoCheckIn(checkinId);
+    assert.equal(afterUndo.availableCredits, 0);
+
+    const [record] = await listRecords<CheckinFields>(TABLES.checkins, {
+      fields: ["Needs Review", "Review Reason", "Credits Consumed"],
+    });
+    assert.equal(record.fields["Needs Review"], false);
+    assert.equal(record.fields["Review Reason"], "");
+    assert.equal(record.fields["Credits Consumed"], 0);
   });
 
   it("throws ConflictError if already undone", async () => {
