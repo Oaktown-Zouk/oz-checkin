@@ -90,10 +90,11 @@ Credits are a plain numeric balance rolling up through links. `Members."Availabl
 Credits"` (formula) — the one number the app reads — is
 `Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`:
 
-- `Transactions."Credits Purchased"` — set by **Automation B**
-  (`docs/airtable-automations/grant-dropin-credits.js`) when a `Transactions` record
-  qualifies as a drop-in purchase (succeeded, one-time, no plan). Rolls up to
-  `Members."Credits Purchased"`.
+- `Transactions."Credits Purchased"` — set by
+  `docs/airtable-automations/grant-dropin-credits.js`, which runs on every
+  `Transactions` record created and sets this when the payment qualifies as a
+  drop-in purchase (not a membership charge, and at least the minimum drop-in
+  price). Rolls up to `Members."Credits Purchased"`.
 - `Members."New Member Credit"` — defaults to `1` in Airtable's own field config, so
   every new `Members` row gets the signup bonus automatically, with no automation
   needed to grant it.

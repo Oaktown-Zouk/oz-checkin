@@ -197,8 +197,8 @@ export interface TransactionFields {
   "Plan ID"?: string;
   "Is Recurring"?: boolean;
   Refunded?: boolean;
-  // How many drop-in credits this transaction bought (Automation B). Rolls up into
-  // Members."Credits Purchased"; also shown directly on this transaction's own
-  // studentTimeline.ts "payment" entry.
+  // How many drop-in credits this transaction bought (set by the
+  // grant-dropin-credits.js automation). Rolls up into Members."Credits Purchased";
+  // also shown directly on this transaction's own studentTimeline.ts "payment" entry.
   "Credits Purchased"?: number;
 }

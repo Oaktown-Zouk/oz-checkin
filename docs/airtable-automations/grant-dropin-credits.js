@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════
-// Automation B (see docs/airtable-schema.md's "Credits" section) — sets how many
-// drop-in credits a qualifying Transactions record is worth (succeeded, one-time,
-// no plan). Trigger: "When a record matches conditions" on Transactions, filtered
-// to that qualifying view.
+// grant-dropin-credits.js (see docs/airtable-schema.md's "Credits" section) — sets
+// how many drop-in credits a qualifying Transactions record is worth (succeeded,
+// one-time, no plan). Trigger: "When a record is created" on Transactions — the
+// qualifying check happens inside the script itself (below), not a filtered
+// trigger view, so it runs on every new Transaction and no-ops on the ones that
+// don't qualify.
 //
 // Input variables (mapped from the triggering Transaction record):
 //   transactionId — the Transaction's own Airtable record id
