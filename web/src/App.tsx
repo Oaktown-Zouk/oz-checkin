@@ -17,6 +17,7 @@ import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
 import { NavMenu } from "./components/NavMenu.js";
+import { studioLocalToUtc } from "./programSchedule.js";
 import { ErrorBanner, applyOptimisticCheckin } from "shared";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
@@ -209,7 +210,7 @@ export function App() {
     // whether or not the write actually succeeded.
     setStudents((prev) => prev.map((s) => (s.id === studentId ? applyOptimisticCheckin(s, selections, programNameById) : s)));
 
-    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    const effectiveIso = effectiveAt ? studioLocalToUtc(effectiveAt).toISOString() : undefined;
     api
       .checkIn(studentId, selections, effectiveIso, "Staff")
       .catch((err) => {
