@@ -8,7 +8,7 @@ import type {
   CheckinFields,
   RecurringPlanFields,
   TransactionFields,
-  CreditFields,
+  CompCreditFields,
   LevelupFields,
   NoteFields,
 } from "../airtable/fields.js";
@@ -39,7 +39,7 @@ describe("mergeMembers", () => {
     await assert.rejects(() => mergeMembers(SURVIVOR, "recNope"), NotFoundError);
   });
 
-  it("reassigns check-ins, recurring plans (both link fields), transactions, levelups, and notes", async () => {
+  it("reassigns check-ins, recurring plans (both link fields), transactions, comp credits, levelups, and notes", async () => {
     resetMockStore({
       [TABLES.members]: [
         { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
@@ -52,16 +52,18 @@ describe("mergeMembers", () => {
         { id: "recPlan1", fields: { Member: [DUPLICATE], "Covers Member": [DUPLICATE] } },
       ],
       [TABLES.transactions]: [{ id: "recTxn1", fields: { Member: [DUPLICATE] } }],
+      [TABLES.compCredits]: [{ id: "recComp1", fields: { Member: [DUPLICATE], Amount: 1 } }],
       [TABLES.levelups]: [{ id: "recLevelup1", fields: { Member: [DUPLICATE], Role: "Lead", To: 2 } }],
       [TABLES.notes]: [{ id: "recNote1", fields: { Member: [DUPLICATE], Summary: "test" } }],
     });
 
     await mergeMembers(SURVIVOR, DUPLICATE);
 
-    const [checkins, plans, transactions, levelups, notes] = await Promise.all([
+    const [checkins, plans, transactions, compCredits, levelups, notes] = await Promise.all([
       listRecords<CheckinFields>(TABLES.checkins),
       listRecords<RecurringPlanFields>(TABLES.recurringPlans),
       listRecords<TransactionFields>(TABLES.transactions),
+      listRecords<CompCreditFields>(TABLES.compCredits),
       listRecords<LevelupFields>(TABLES.levelups),
       listRecords<NoteFields>(TABLES.notes),
     ]);
@@ -69,6 +71,7 @@ describe("mergeMembers", () => {
     assert.deepEqual(plans[0].fields.Member, [SURVIVOR]);
     assert.deepEqual(plans[0].fields["Covers Member"], [SURVIVOR]);
     assert.deepEqual(transactions[0].fields.Member, [SURVIVOR]);
+    assert.deepEqual(compCredits[0].fields.Member, [SURVIVOR]);
     assert.deepEqual(levelups[0].fields.Member, [SURVIVOR]);
     assert.deepEqual(notes[0].fields.Member, [SURVIVOR]);
   });
@@ -82,154 +85,17 @@ describe("mergeMembers", () => {
     assert.equal(duplicate?.fields.Duplicate, true);
   });
 
-  describe("credits", () => {
-    it("deletes the duplicate's New Member credit (not just leaves it orphaned) when the survivor already has one", async () => {
-      resetMockStore({
-        [TABLES.members]: [
-          { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
-          { id: DUPLICATE, fields: { "Full Name": "Duplicate Dana", Email: "Dana@Example.com" } },
-        ],
-        [TABLES.credits]: [
-          { id: "recCreditSurvivor", fields: { Member: [SURVIVOR], Reason: "New Member", "Granted At": "2026-01-01" } },
-          { id: "recCreditDuplicate", fields: { Member: [DUPLICATE], Reason: "New Member", "Granted At": "2026-02-01" } },
-        ],
-      });
-
-      await mergeMembers(SURVIVOR, DUPLICATE);
-
-      const credits = await listRecords<CreditFields>(TABLES.credits);
-      assert.equal(credits.length, 1);
-      assert.equal(credits[0].id, "recCreditSurvivor");
-      assert.deepEqual(credits[0].fields.Member, [SURVIVOR]);
-    });
-
-    it("collapses two New Member credits on the duplicate alone down to the earliest one, deleting the rest", async () => {
-      resetMockStore({
-        [TABLES.members]: [
-          { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
-          { id: DUPLICATE, fields: { "Full Name": "Duplicate Dana", Email: "Dana@Example.com" } },
-        ],
-        [TABLES.credits]: [
-          { id: "recCreditLater", fields: { Member: [DUPLICATE], Reason: "New Member", "Granted At": "2026-02-01" } },
-          { id: "recCreditEarlier", fields: { Member: [DUPLICATE], Reason: "New Member", "Granted At": "2026-01-01" } },
-        ],
-      });
-
-      await mergeMembers(SURVIVOR, DUPLICATE);
-
-      const credits = await listRecords<CreditFields>(TABLES.credits);
-      assert.equal(credits.length, 1);
-      assert.equal(credits[0].id, "recCreditEarlier");
-      assert.deepEqual(credits[0].fields.Member, [SURVIVOR]);
-    });
-
-    it("prefers an already-used New Member credit over an untouched one, wherever each currently sits", async () => {
-      resetMockStore({
-        [TABLES.members]: [
-          { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
-          { id: DUPLICATE, fields: { "Full Name": "Duplicate Dana", Email: "Dana@Example.com" } },
-        ],
-        [TABLES.checkins]: [{ id: "recCheckinUsedIt", fields: { Member: [DUPLICATE] } }],
-        [TABLES.credits]: [
-          { id: "recCreditUnused", fields: { Member: [SURVIVOR], Reason: "New Member", "Granted At": "2026-01-01" } },
-          {
-            id: "recCreditUsed",
-            fields: {
-              Member: [DUPLICATE],
-              Reason: "New Member",
-              "Granted At": "2026-02-01",
-              "Consumed By Check-in": ["recCheckinUsedIt"],
-            },
-          },
-        ],
-      });
-
-      await mergeMembers(SURVIVOR, DUPLICATE);
-
-      const credits = await listRecords<CreditFields>(TABLES.credits);
-      assert.equal(credits.length, 1);
-      assert.equal(credits[0].id, "recCreditUsed");
-      assert.deepEqual(credits[0].fields.Member, [SURVIVOR]);
-    });
-
-    it("leaves both credits alone and flags their check-ins for review when two New Member credits are each already used", async () => {
-      resetMockStore({
-        [TABLES.members]: [
-          { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
-          { id: DUPLICATE, fields: { "Full Name": "Duplicate Dana", Email: "Dana@Example.com" } },
-        ],
-        [TABLES.checkins]: [
-          { id: "recCheckinA", fields: { Member: [SURVIVOR] } },
-          { id: "recCheckinB", fields: { Member: [DUPLICATE] } },
-        ],
-        [TABLES.credits]: [
-          {
-            id: "recCreditA",
-            fields: { Member: [SURVIVOR], Reason: "New Member", "Consumed By Check-in": ["recCheckinA"] },
-          },
-          {
-            id: "recCreditB",
-            fields: { Member: [DUPLICATE], Reason: "New Member", "Consumed By Check-in": ["recCheckinB"] },
-          },
-        ],
-      });
-
-      await mergeMembers(SURVIVOR, DUPLICATE);
-
-      const credits = await listRecords<CreditFields>(TABLES.credits);
-      assert.equal(credits.length, 2, "neither used credit should be deleted");
-
-      const checkins = await listRecords<CheckinFields>(TABLES.checkins);
-      for (const checkin of checkins) {
-        assert.equal(checkin.fields["Needs Review"], true);
-        assert.match(checkin.fields["Review Reason"] ?? "", /New Member/);
-      }
-    });
-
-    it("reassigns the duplicate's New Member credit when the survivor doesn't have one", async () => {
-      resetMockStore({
-        [TABLES.members]: [
-          { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
-          { id: DUPLICATE, fields: { "Full Name": "Duplicate Dana", Email: "Dana@Example.com" } },
-        ],
-        [TABLES.credits]: [{ id: "recCreditDuplicate", fields: { Member: [DUPLICATE], Reason: "New Member" } }],
-      });
-
-      await mergeMembers(SURVIVOR, DUPLICATE);
-
-      const credits = await listRecords<CreditFields>(TABLES.credits);
-      assert.deepEqual(credits[0].fields.Member, [SURVIVOR]);
-    });
-
-    it("always reassigns non-New-Member credits, and Purchased By independently of Member", async () => {
-      resetMockStore({
-        [TABLES.members]: [
-          { id: SURVIVOR, fields: { "Full Name": "Duplicate Dana", Email: "dana@example.com" } },
-          { id: DUPLICATE, fields: { "Full Name": "Duplicate Dana", Email: "Dana@Example.com" } },
-        ],
-        [TABLES.credits]: [
-          { id: "recCreditSurvivor", fields: { Member: [SURVIVOR], Reason: "New Member" } },
-          {
-            id: "recCreditDropIn",
-            fields: { Member: [DUPLICATE], "Purchased By": [DUPLICATE], Reason: "Drop-in Purchase" },
-          },
-        ],
-      });
-
-      await mergeMembers(SURVIVOR, DUPLICATE);
-
-      const credits = await listRecords<CreditFields>(TABLES.credits);
-      const dropIn = credits.find((c) => c.id === "recCreditDropIn");
-      assert.deepEqual(dropIn?.fields.Member, [SURVIVOR]);
-      assert.deepEqual(dropIn?.fields["Purchased By"], [SURVIVOR]);
-    });
-  });
-
   describe("gap-filling", () => {
-    it("copies Phone, Lead Level, Follow Level, and Contact ID onto the survivor when it's missing them", async () => {
+    it("copies Phone, Lead Level, Follow Level, Contact ID, and New Member Credit onto the survivor when it's missing them", async () => {
       seedMembers(
         {},
-        { Phone: "555-1234", "Lead Level": 2, "Follow Level": 3, "Contact ID": "gb-contact-1" }
+        {
+          Phone: "555-1234",
+          "Lead Level": 2,
+          "Follow Level": 3,
+          "Contact ID": "gb-contact-1",
+          "New Member Credit": 1,
+        }
       );
 
       const updated = await mergeMembers(SURVIVOR, DUPLICATE);
@@ -239,12 +105,13 @@ describe("mergeMembers", () => {
 
       const survivor = await getRecordOrNull<MemberFields>(TABLES.members, SURVIVOR);
       assert.equal(survivor?.fields.Phone, "555-1234");
+      assert.equal(survivor?.fields["New Member Credit"], 1);
     });
 
-    it("never overwrites a value the survivor already has", async () => {
+    it("never overwrites a value the survivor already has, including New Member Credit", async () => {
       seedMembers(
-        { Phone: "555-0000", "Lead Level": 1, "Contact ID": "gb-contact-survivor" },
-        { Phone: "555-1234", "Lead Level": 2, "Contact ID": "gb-contact-duplicate" }
+        { Phone: "555-0000", "Lead Level": 1, "Contact ID": "gb-contact-survivor", "New Member Credit": 1 },
+        { Phone: "555-1234", "Lead Level": 2, "Contact ID": "gb-contact-duplicate", "New Member Credit": 1 }
       );
 
       const updated = await mergeMembers(SURVIVOR, DUPLICATE);
@@ -253,6 +120,11 @@ describe("mergeMembers", () => {
 
       const survivor = await getRecordOrNull<MemberFields>(TABLES.members, SURVIVOR);
       assert.equal(survivor?.fields.Phone, "555-0000");
+      // Both sides had their own New Member Credit (the double-Member-row race
+      // scenario) — survivor keeps its own 1 rather than summing to 2. The
+      // duplicate's is simply dropped when the duplicate is hidden, never
+      // reassigned or added, since it isn't a rollup.
+      assert.equal(survivor?.fields["New Member Credit"], 1);
     });
   });
 });

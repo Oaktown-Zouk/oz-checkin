@@ -8,12 +8,6 @@ balance at a glance. **Airtable is the system of record**, including Givebutter 
 thin layer of Netlify Functions that reads Airtable's computed fields and writes the
 handful of things that are genuinely this app's own business logic.
 
-> This is the second major version of the app. The first ran on Fastify + SQLite with
-> its own polling sync against Google Forms (waivers) and Givebutter. That's gone —
-> Google Forms/waivers were dropped as a product decision, and Airtable now owns the
-> Givebutter sync. See the transition history in git log / the project's migration
-> plan if you need the old architecture for context.
-
 ## Features
 
 - **Check-in** against a searchable roster, with tier/access-status and credit-balance
@@ -27,10 +21,11 @@ handful of things that are genuinely this app's own business logic.
   spent. The app reads Airtable's computed `Remaining Today`/`Access Status` rather
   than reimplementing that logic — a formula change in Airtable takes effect without a
   code deploy. See `docs/airtable-schema.md`.
-- **Credits system**: a `Credits` table (granted on new-member signup, on a qualifying
-  one-time Givebutter payment, or manually as a comp), consumed or flagged for
-  front-desk review by application code (not Airtable automations) whenever a
-  check-in exceeds the day's tier allowance. See "Credits system" below.
+- **Credits system**: a plain numeric balance (purchased on a qualifying one-time
+  Givebutter payment, granted flat on new-member signup, or manually as an
+  individually-tracked comp), consumed or flagged for front-desk review by
+  application code (not Airtable automations) whenever a check-in exceeds the day's
+  tier allowance. See "Credits system" below.
 - **Dance level tracking** — a Lead level and a Follow level (1–4 or unset) per
   student, shown as small badges and editable inline, with every actual change logged
   to a `Levelups` table (who signed off on it, and when).
@@ -63,9 +58,7 @@ handful of things that are genuinely this app's own business logic.
 ## Scale & constraints
 
 - ~1,000 students total, ~100 checked in on a typical class day.
-- Multiple class days/programs are natively supported (`Programs`/`Weekdays`), not
-  hardcoded to one weekday — a real scheduling model, not a UI-level gate like the old
-  app's Thursday-only check.
+- Multiple class days/programs are natively supported (`Programs`/`Weekdays`).
 - Runs as Netlify Functions (static SPA + serverless API) — free-tier friendly, no
   always-on process to keep alive, no local database.
 - Solo/small-team operator, per-account Google OAuth (see "Auth" below) — every account
@@ -74,7 +67,7 @@ handful of things that are genuinely this app's own business logic.
 ## System of record: Airtable
 
 Airtable holds everything: the member roster, Givebutter-synced payments/memberships,
-this app's own tables (`Credits`, and fields it writes like `Check-ins.Undone At`), and
+this app's own tables (`Comp Credits`, and fields it writes like `Check-ins.Undone At`), and
 the class schedule (`Programs`/`Sessions`/`Events`). Airtable's own automations sync
 Givebutter (contacts, transactions, recurring plans) independently of this app —
 verified live and running (`Sync Log` table). **This app never calls the Givebutter
@@ -86,33 +79,46 @@ directly rather than reimplementing their logic in the server. A future formula 
 Airtable (e.g. changing the drop-in credit expiry window) takes effect on next read,
 with no code deploy.
 
-Full table/field-level mapping (old-schema-to-Airtable history, and which fields to
-read for what) lives in **`docs/airtable-schema.md`** — this file stays product/
-architecture-level, that one is the technical schema reference.
+Full table/field-level mapping (which fields to read for what) lives in
+**`docs/airtable-schema.md`** — this file stays product/architecture-level, that one
+is the technical schema reference.
 
 ## Credits system
 
-The old app's "buy a pass, redeem it at check-in" model is now a first-class `Credits`
-table. Granting is still entirely Airtable automations; **consuming and freeing a
-credit are application code**, not automations:
+Credits are a plain numeric balance rolling up through links. `Members."Available
+Credits"` (formula) — the one number the app reads — is
+`Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`:
 
-- **`Credits`** — `Member` (holder), `Purchased By` (payer, for a future transfer
-  feature), `Reason` (`New Member` / `Drop-in Purchase` / `Comp`), `Source Transaction`,
-  `Granted At`, `Consumed By Check-in`, `Available` (formula: true iff `Consumed By
-  Check-in` is unlinked — this makes a credit self-heal if the check-in that consumed
-  it is ever deleted directly in Airtable, not just undone through the app).
-- **Automation A** grants a credit when a new `Members` record is created.
-- **Automation B** grants a credit when a `Transactions` record qualifies as a
-  drop-in purchase (succeeded, one-time, no plan).
+- `Transactions."Credits Purchased"` — set by
+  `docs/airtable-automations/grant-dropin-credits.js`, which runs on every
+  `Transactions` record created and sets this when the payment qualifies as a
+  drop-in purchase (not a membership charge, and at least the minimum drop-in
+  price). Rolls up to `Members."Credits Purchased"`.
+- `Members."New Member Credit"` — defaults to `1` in Airtable's own field config, so
+  every new `Members` row gets the signup bonus automatically, with no automation
+  needed to grant it.
+- **`Comp Credits`** — its own table (`Member`, `Amount`, `Reason`, `Granted`), kept
+  separate specifically so comp grants stay individually auditable. Rolls up to
+  `Members."Credits Comped"` (`Members."Comp Credits"` is a separate, auto-created
+  plain link field — not the rollup).
+- `Check-ins."Credits Consumed"` — application code, not an automation (see below).
+  Rolls up to `Members."Credits Consumed"`.
 
-The app's own gating logic (`gateCheckIns`, `services/checkins.ts`) counts that
-student's existing non-undone check-ins on the target date (live or backdated),
-compares against their current `Classes Allowed`, and either does nothing, consumes
-the oldest available credit, or flags the check-in for review — one implementation
-for both cases, called synchronously by `createCheckIns` for every check-in it
-creates. `undoCheckIn` (`services/checkins.ts`) frees a credit immediately on undo,
-reading the check-in's own `Credits` reverse link (populated by whichever credit
-consumed it) to find the credit to free — no separate table scan needed.
+**Consuming and freeing a credit are application code**: `gateCheckIns`
+(`services/checkins.ts`) counts that student's existing non-undone check-ins on the
+target date (live or backdated) and compares against their current `Classes Allowed`.
+A check-in within the allowance touches nothing; one beyond it always sets
+`Credits Consumed = 1` — a numeric balance can go negative, so there's no "no credit
+available" case that blocks or diverts a check-in, only ones that spend down to zero
+and beyond. Every check-in whose consumption leaves the running balance (tracked in
+memory across a multi-check-in batch — no per-check-in re-read needed) negative also
+gets `Needs Review = true` / `Review Reason = "Negative balance"`, so a member who's
+run out is easy to find for reconciliation rather than turned away.
+`undoCheckIn` resets `Credits Consumed` back to `0`, and clears `Needs Review`/
+`Review Reason` if this check-in had them, in the same write that sets `Undone At`.
+
+See `docs/airtable-schema.md`'s "Credits" section for the full field-by-field
+reference.
 
 ## Dance levels
 
@@ -121,7 +127,7 @@ front-desk-set (`Members.Lead Level` / `Follow Level`). Displayed as small badge
 blue square with the digit for Lead, a purple circle for Follow, gray when unset — at
 the left edge of the badge row in both the check-in list and the student detail page.
 Clicking either badge (or the corresponding stat box on the detail page) opens a picker
-dialog. Unchanged from the previous version of this app.
+dialog.
 
 **Every actual change is logged** to a `Levelups` table (`server/src/services/
 studentStatus.ts`'s `updateStudentLevel`) — teacher-facing history of when a student
@@ -199,17 +205,16 @@ someone else's write-up.
   computed **client-side** against whichever date is currently relevant (live or
   backdated), so backdating re-filters instantly with no extra round-trip.
 - **Access/credit gating is tier-based**, computed by Airtable (see "Credits system"
-  above) — not the old app's "one free check-in per active membership."
+  above).
 - **Undo preserves history**: `Check-ins.Undone At` gets set rather than deleting the
   row. The daily count (`Members.Checked In Today (Live)`) is a *live rollup* of
   non-undone same-day check-ins, not a maintained counter — so it, and everything
   downstream of it (`Remaining Today`), self-corrects on undo automatically, and even
   self-heals if a check-in is ever deleted directly in Airtable rather than undone
   through the app.
-- A student with `Needs Review` set on a check-in (beyond their allowance, no credit
-  available) shows that inline on their row — front desk judgment call, same spirit as
-  the old app's "no payment on file, confirm anyway" pattern (the picker still confirms
-  before submitting in that case).
+- A student with `Needs Review` set on a check-in (one that pushed their credit
+  balance negative) shows that inline on their row — front desk judgment call; the
+  picker still confirms before submitting in that case.
 
 ### Viewing and correcting past days
 
@@ -235,9 +240,9 @@ A student can buy a Recurring Plan (membership) **for someone else** — Givebut
 no concept of this. `Recurring Plans` already splits `Member` (raw Givebutter payer,
 refreshed by sync) from `Covers Member` (who it's for, for access/display purposes);
 transferring is just updating `Covers Member` to the new holder. Reached via the 3-dot
-menu on a row, or a button on the student detail page. Credit transfers
-(`Credits.Purchased By` exists in the schema for the same purpose) aren't built —
-not requested yet.
+menu on a row, or a button on the student detail page. Credit transfers (a `Credit
+Transfers` table, adding to a recipient's balance and subtracting an equal amount from
+a source) are deferred — not built yet.
 
 ## Merging duplicate students
 
@@ -260,37 +265,30 @@ Transfer membership in the roster row's 3-dot menu
   row the dialog was opened from) when exactly one side has one.
 - **What moves**: every link from the loser to the survivor — `Check-ins.Member`,
   `Recurring Plans.Member` and `.Covers Member` (independently — see "Membership
-  transfers" above for why they can diverge), `Transactions.Member`, `Credits.Member`
-  and `.Purchased By`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
+  transfers" above for why they can diverge), `Transactions.Member`,
+  `Comp Credits.Member`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
   (`Classes Allowed`, `Tier Name`, `Available Credits`, `Remaining Today`,
   `Recently Active`) are Airtable rollups/formulas over these same linked tables, so
   once the links move, those numbers recompute themselves — merging is repointing
-  links, not recomputing counts by hand.
-- **The one-per-student exception**: an Airtable automation grants every new `Members`
-  row its own `New Member` signup credit, so a duplicate pair can genuinely end up
-  with two (each row got its own grant). Reassigning both would double it up, and
-  just leaving the loser's behind would strand it forever, uncounted and
-  unreachable — so `mergeMembers` collapses every `New Member` credit belonging to
-  either side down to exactly one on the survivor: it prefers one that's already
-  been consumed by a real check-in (that's the actual record of what happened) over
-  an untouched duplicate grant, breaking ties on `Granted At`, and **deletes** every
-  other `New Member` credit outright — the one and only place this app deletes an
-  Airtable record, since a genuinely erroneous duplicate grant isn't data worth
-  preserving the way everything else here is. The one exception to the exception: if
-  two or more of the candidates are *already used*, that may mean the student really
-  was given two free classes under two different duplicate rows — not a simple
-  duplicate grant to silently collapse — so the merge leaves all of them alone and
-  flags the check-ins that consumed them (`Needs Review` / `Review Reason`) for a
-  human instead. Every other `Credits.Reason` reassigns normally, uncapped.
+  links, not recomputing counts by hand. This is also why credits need no
+  merge-specific handling any more (see "Credits system" above): `Credits Consumed`/
+  `Credits Purchased`/`Credits Comped` are all rollups over tables already in this same
+  reassignment pass.
+- **The one-per-student exception**: `Members."New Member Credit"` defaults to `1`
+  on every row, so a duplicate pair can genuinely end up with two (each row got its
+  own default). It isn't a rollup, so `fillMemberGaps` (below) just copy-if-missing's
+  it like `Phone`/`Lead Level`: the common case (survivor already has its own `1`) is
+  a no-op, and the duplicate's is simply dropped, never summed, once the duplicate is
+  hidden.
 - **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
   (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
   but still there to audit. Flagged last, only once every reassignment has actually
   landed, so a failure partway through leaves it visible and the merge safely
   retryable — Airtable has no cross-table transaction, but every reassignment is
   independently idempotent.
-- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, and `Contact ID` copy from
-  the loser onto the survivor only when the survivor doesn't already have a value —
-  never overwrites something the survivor already has.
+- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, `Contact ID`, and
+  `New Member Credit` copy from the loser onto the survivor only when the survivor
+  doesn't already have a value — never overwrites something the survivor already has.
 - **Not automated on purpose**: if both sides have their own active Recurring Plan,
   that's the studio actually double-billing someone — merging the `Members` rows
   doesn't fix that, only canceling one subscription in Givebutter does. The dialog
@@ -464,14 +462,18 @@ in for Airtable behind the exact interface `services/*.ts` already calls — see
 `NODE_ENV !== "production"`).
 
 **What the mock actually computes**, vs. what's just fixture-static (seed data sets it
-directly, exactly as if Airtable had already resolved it): `Members.Available
-Credits`/`Checked In Today (Live)`/`Remaining Today` and `Credits.Available` are
-computed live from the mock's own Checkins/Credits state (`mockCompute.ts`), because
-the app's own logic depends on them staying consistent with its own mutations.
-Automations C and D (consume/flag on a live check-in, free a credit on undo — see
-"Credits system" above) are simulated as synchronous side effects of
-`createRecords`/`updateRecord`, which is strictly *better* than real Airtable for
-testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
+directly, exactly as if Airtable had already resolved it): `Members."Available
+Credits"`/`"Checked In Today (Live)"`/`"Remaining Today"` are computed live from the
+mock's own Checkins/Transactions/Comp Credits state (`mockCompute.ts`), summing the
+same way the real Airtable formula does (`Credits Purchased + New Member Credit +
+Credits Comped - Credits Consumed`, see "Credits system" above), because the app's own
+logic depends on them staying consistent with its own mutations.
+`gateCheckIns`/`undoCheckIn` themselves (consume/flag on a live check-in, free a
+credit on undo — application code, not automations, see "Credits system" above)
+don't need any special mock support at all: they're plain
+`listRecords`/`updateRecord` calls the mock already serves like any other write,
+which is strictly *better* than real Airtable for testing purposes: no automation lag
+to wait out or get bitten by. `Access Status`,
 `Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`,
 `Recurring Plans.Is Active/Paid Access`, `Levelups`' `Event`/`Issuer Name`/
 `Full Name (from Member)` lookups, and `Notes`' `Name`/`Full Name`/`Issuer Name`
@@ -633,10 +635,14 @@ clicking a name.
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
 - A newest-first timeline synthesized from `Recurring Plans`, `Transactions`,
-  `Credits`, `Check-ins`, `Levelups`, and `Notes` for that student — not a stored
+  `Comp Credits`, `Check-ins`, `Levelups`, and `Notes` for that student — not a stored
   event log. Event types: `membership_started`, `membership_status` (non-active
   statuses only), `payment` (one per held Transaction, labeled as membership payment
-  or one-time pass by whether it carries a plan), `credit_granted`, `checkin`,
+  or one-time pass by whether it carries a plan, with purchased credits folded into
+  that same label rather than a separate event — e.g. "One-time pass purchased
+  ($20.00, 3 credits)"), `credit_granted` (Comp Credits only now — purchased credits
+  are folded into `payment` above, and the flat New Member Credit signup bonus has no
+  discrete event at all), `checkin`,
   `levelup` (skipped for a student's first-ever level in a role — see "Dance levels"
   above — labeled "Assessed into Level X as a Lead/Follow" on an increase, "Changed
   to Level X as a Lead/Follow" on a decrease, or "Level cleared as a Lead/Follow" if
@@ -668,11 +674,9 @@ front-desk involvement.
   search-result tap.
 - **Name search**: a search bar, filtered client-side against the cached roster's
   `name` — matches everyone, not just eligible students (see below), so a decline can
-  name the actual reason instead of a blanket "not found." (An earlier version of
-  this page also had a QR-code camera scanner as an alternative to typing a name —
-  removed since people didn't seem to need it; `Members.Contact ID` is unused by this
-  page now, though the separate student self-service app still has its own "show my
-  QR code" view, kept as-is even though nothing currently reads it.)
+  name the actual reason instead of a blanket "not found." `Members.Contact ID` is
+  unused by this page; the separate student self-service app still has its own "show
+  my QR code" view.
 - **Loading feedback**: a search-result tap opens a loading dialog instantly
   (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
   `GET /api/kiosk/students/:id` round trip that resolves it completes — there's never
@@ -744,10 +748,9 @@ front-desk involvement.
     ("...per week?"), each offering One or Two classes. Every one of those four
     combinations maps to its own Givebutter product/widget id (`kioskProducts.ts`'s
     `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`). Picking a count goes straight to that
-    product's embedded widget — there's no longer a second, per-product QR step here;
-    the one QR code on the "Buy a pass" screen already covers every product, since the
-    public widget it points at offers the same drop-in/membership/count choice on its
-    own.
+    product's embedded widget — the one QR code on the "Buy a pass" screen already
+    covers every product, since the public widget it points at offers the same
+    drop-in/membership/count choice on its own.
   - **Pricing policy notes**: the drop-in and membership widget screens show the same
     sliding-scale wording the public widget shows above its own embeds (`shared/src/
     purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_POLICY_NOTE`/
@@ -881,12 +884,12 @@ between two local views, plain `useState`, nothing worth deep-linking to:
   backend having nowhere to send one anyway.
 - **QR Code** (`StudentQrPage.tsx`) — renders the student's kiosk check-in QR code
   client-side (the `qrcode` package, browser build), encoding the bare Givebutter
-  Contact ID — the same payload `server/src/scripts/generateQrCode.ts` prints. No
-  backend change was needed: `GET /api/me/timeline` already returned
-  `status.contactId`. A member with no Contact ID yet (Givebutter sync gap) sees a
-  plain "ask the front desk" message instead of a broken image. (The kiosk itself no
-  longer has a QR camera scanner to decode this against — removed in favor of typing
-  a name; this page is kept as-is even though nothing currently reads its code back.)
+  Contact ID — the same payload `server/src/scripts/generateQrCode.ts` prints.
+  `GET /api/me/timeline` already returns `status.contactId`, so no backend change was
+  needed. A member with no Contact ID yet (Givebutter sync gap) sees a plain "ask the
+  front desk" message instead of a broken image. The kiosk itself has no QR camera
+  scanner to decode this against — front desk and kiosk check-in both use name search
+  instead.
 
 Log out lives inside the nav menu now too, rather than its own standalone button —
 one control at the top of the page instead of two.
@@ -920,7 +923,7 @@ an already-set var). `npm run dev:student-server` / `dev:student-web` (mirroring
 
 **Deploy**: a second Netlify site pointed at this same repo, with `web-student/` as
 its publish target — config lives at `web-student/netlify.toml`, not a repo-root
-`netlify-student.toml` as originally planned. Netlify only ever discovers a file
+`netlify-student.toml`. Netlify only ever discovers a file
 literally named `netlify.toml` (confirmed via Netlify's own docs and support forum —
 no custom filename is recognized, regardless of any "Configuration file path"
 setting), so the site's "Package directory" should be set to `web-student` instead,
@@ -938,12 +941,11 @@ this repo's code can do on its own. Live at `my.oaktownzouk.com`.
 unauthenticated page built and deployed as part of this same Netlify site, with
 nothing in common with the student self-service app above beyond sharing its
 build/deploy. It's a step-by-step sign-up/purchase form (first-time vs. returning,
-drop-in vs. membership, class count → an embedded Givebutter widget) that used to be
-hand-authored HTML/CSS/JS pasted separately into oaktownzouk.com (Google Sites) and
-theoaklandgrove.com/zouk (Squarespace) — kept in source control now instead, at
-`my.oaktownzouk.com/signup`, with both of those sites meant to `<iframe>` it rather
-than carry their own copy, so an update here reaches every surface without needing to
-touch either site by hand. Google Sites needs "Embed → By URL," not "Embed code" —
+drop-in vs. membership, class count → an embedded Givebutter widget) served from
+`my.oaktownzouk.com/signup`, with oaktownzouk.com (Google Sites) and
+theoaklandgrove.com/zouk (Squarespace) each `<iframe>`-ing it rather than carrying
+their own copy, so an update here reaches every surface without needing to touch
+either site by hand. Google Sites needs "Embed → By URL," not "Embed code" —
 the latter wraps arbitrary pasted HTML in a sandboxed `gstatic.com` iframe that's
 confirmed to break at least one third-party embed (YouTube, elsewhere on that same
 site) under Safari specifically; "By URL" is a plainer iframe of an external page and

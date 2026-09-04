@@ -1,0 +1,283 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Givebutter webhook → Airtable, near-instant
+//
+//   Trigger: "When webhook received"
+//   Action:  "Run a script"
+//   Input variables (map after capturing a test payload — see setup below):
+//       eventName   → the payload's event name, e.g. "transaction.succeeded"
+//       resourceId  → the payload's data.id
+//
+// THIN WEBHOOK BY DESIGN. The payload is used only to learn *which* record
+// changed; the record itself is then re-fetched from Givebutter. That means:
+//   - we never depend on Givebutter's exact payload shape
+//   - a replayed or out-of-order webhook can't write stale data
+//   - a forged POST can at worst make us re-sync a record we already sync
+// The last point matters because Airtable's webhook trigger has NO signature
+// verification — anyone with the URL can call it.
+//
+// This runs in an AUTOMATION: fetch() works (no browser, no CORS), but
+// updateOptionsAsync does not, so new select values must already exist.
+//
+// WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable(): concurrent
+// webhook firings for the same signup can each find no existing Member and
+// both create one, so every find-or-create here uses Airtable's atomic REST
+// `performUpsert` instead of selectRecordsAsync()+createRecordAsync().
+// ═══════════════════════════════════════════════════════════════════════
+
+const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
+const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
+
+// Dedicated PAT, scoped to data.records:read + data.records:write on THIS
+// base only — deliberately separate from the app server's own AIRTABLE_PAT
+// (server/.env) so this script's blast radius is limited to what it actually
+// needs, and so it's not a second copy of a credential something else already
+// depends on.
+const AIRTABLE_PAT = 'REPLACE_WITH_DEDICATED_PAT';
+const AIRTABLE_BASE_ID = base.id;
+
+// ═══ END CONFIG ═══
+
+const { eventName, resourceId } = input.config();
+
+const membersTable        = base.getTable('Members');
+const recurringPlansTable = base.getTable('Recurring Plans');
+const transactionsTable   = base.getTable('Transactions');
+const syncLogTable        = base.getTable('Sync Log');
+
+async function fetchFromGivebutter(path) {
+  const response = await fetch(`${GIVEBUTTER_API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${GIVEBUTTER_API_KEY}`, Accept: 'application/json' }
+  });
+  if (!response.ok) throw new Error(`Givebutter ${response.status} on ${path}: ${await response.text()}`);
+  const body = await response.json();
+  return body.data ?? body;
+}
+
+// Running totals for the Sync Log row — every upsert reports whether it
+// created or updated so the log reflects real REST-API outcomes rather than
+// a guess.
+let recordsCreated = 0;
+let recordsUpdated = 0;
+
+// Atomic find-or-create/update, keyed on fieldsToMergeOn — this is what
+// closes the race that selectRecordsAsync()+createRecordAsync() can't.
+// Airtable does the existence check and the write as one server-side
+// operation; if more than one existing record already matches the key it
+// errors instead of guessing, which is exactly what should happen rather
+// than silently picking one.
+//
+// toRestFields() matters here: buildRecurringPlanFields/buildTransactionFields
+// build a select field as {name: "..."} — correct for the Scripting SDK the
+// nightly scripts use, but the REST API this function actually talks to wants
+// a plain string and rejects the object with "Cannot parse value" even for a
+// real, existing choice (confirmed against the base's own field metadata —
+// see docs/airtable-automations/CHANGELOG.md).
+//
+// No `typecast: true` here on purpose: that would also auto-add a choice
+// Airtable has never seen at all, silently growing the option list from
+// whatever Givebutter happens to send. A genuinely new value should fail
+// loudly (same as the nightly scripts' ensureSelectChoices, which only ever
+// widens a choice list from a real Scripting-extension run, never an
+// automation) rather than get added unreviewed.
+async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt = 0) {
+  const restFields = toRestFields(recordFields);
+  // Logged before every attempt, success or failure -- restFields (what's
+  // actually sent over the wire, post-conversion), not recordFields, so a
+  // format bug is visible directly instead of needing to be re-derived. Every
+  // upsert call site funnels through here, so this covers all of them without
+  // needing its own logging at each one, and a retry (below) logs its own
+  // line too since this runs again on each recursive attempt.
+  console.log(`Upserting ${tableId} (attempt ${attempt}) keyed on ${JSON.stringify(fieldsToMergeOn)} with fields: ${JSON.stringify(restFields)}`);
+  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_PAT}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      performUpsert: { fieldsToMergeOn },
+      records: [{ fields: restFields }]
+    })
+  });
+
+  if (shouldRetryAfterStatus(response.status, attempt)) {
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
+    return upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt + 1);
+  }
+  if (!response.ok) {
+    const responseBody = await response.text();
+    // The fields are already in the log line above; this just marks the
+    // outcome and carries Airtable's actual error detail.
+    console.error(`Airtable upsert ${response.status} on ${tableId} FAILED: ${responseBody}`);
+    throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${responseBody}`);
+  }
+
+  const body = await response.json();
+  const record = body.records[0]; // { id, fields, createdTime }
+  const wasCreated = (body.createdRecords ?? []).includes(record.id);
+  if (wasCreated) recordsCreated++; else recordsUpdated++;
+  return { id: record.id, created: wasCreated };
+}
+
+async function upsertMemberByContactId(contactId, firstName, lastName, email, phone) {
+  const contactIdText = toText(contactId);
+  if (!contactIdText) return null;
+
+  // Read only to decide WHICH FIELD VALUES to send — never to decide
+  // whether a row exists. A stale read here can at worst redundantly fill
+  // an already-filled gap, or (if this read raced another execution's
+  // create) send create-shaped fields into what turns out to be an update.
+  // Either outcome just rewrites a field to what is, in practice, the same
+  // Givebutter value the other execution already wrote — never a second
+  // row, because upsertAirtableRecord is what decides existence, atomically.
+  const memberQuery = await membersTable.selectRecordsAsync({ fields: ['Contact ID', 'First Name', 'Last Name'] });
+  const existingMemberRecord = memberQuery.records.find((record) => record.getCellValueAsString('Contact ID') === contactIdText);
+
+  const memberFields = { 'Contact ID': contactIdText };
+  if (existingMemberRecord) {
+    Object.assign(
+      memberFields,
+      fillMemberFieldGaps(
+        { first: toText(firstName), last: toText(lastName) },
+        { first: existingMemberRecord.getCellValueAsString('First Name'), last: existingMemberRecord.getCellValueAsString('Last Name') }
+      )
+    );
+  } else {
+    Object.assign(memberFields, buildNewMemberFieldsWithLowercaseEmail(firstName, lastName, email, phone));
+  }
+
+  const upserted = await upsertAirtableRecord(membersTable.id, ['Contact ID'], memberFields);
+  return upserted.id;
+}
+
+// ── run ────────────────────────────────────────────────────────────────
+//
+// Same convention as the three nightly scripts: the Sync Log row is created
+// UP FRONT, before any real work, and filled in at the end. A log row left
+// with blank counts means this run died partway — check the automation's
+// run history for the actual error. (An earlier version of this script never
+// logged at all, which is part of what made the 2026-09-02 incident hard to
+// diagnose — there was no record it had even run.)
+const startedAt = new Date().toISOString();
+const syncLogRecordId = await syncLogTable.createRecordAsync({ 'Script': { name: 'Webhook' }, 'Started At': startedAt });
+
+const eventType = toText(eventName);
+const syncedAt = new Date().toISOString();
+
+console.log(`Webhook received for ${eventType}`);
+
+if (!resourceId) {
+  throw new Error(`No resourceId in payload for event "${eventType}" — re-check the input variable mapping.`);
+}
+
+if (eventType.startsWith('plan.')) {
+  const plan = await fetchFromGivebutter(`/plans/${resourceId}`);
+  const memberRecordId = await upsertMemberByContactId(plan.contact_id, plan.first_name, plan.last_name, plan.email, plan.phone);
+
+  const planFields = buildRecurringPlanFields(plan, syncedAt);
+  if (memberRecordId) planFields['Member'] = [{ id: memberRecordId }];
+
+  // Default the beneficiary to the payer, but never overwrite a gift
+  // assignment someone made by hand. This read can still race a concurrent
+  // webhook for the same plan — but memberRecordId is now the same
+  // atomically-resolved Member row for both racers (see
+  // upsertMemberByContactId above), so both sides of the race write the
+  // same Covers Member value instead of two different ones. The plan row
+  // itself can't split into two rows either, since the upsert below is
+  // keyed on Plan ID the same way.
+  const existingPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID', 'Covers Member'] });
+  const existingPlanRecord = existingPlanQuery.records.find((record) => record.getCellValueAsString('Plan ID') === String(plan.id));
+  const coversMemberAlreadyAssigned = Boolean(existingPlanRecord && (existingPlanRecord.getCellValue('Covers Member') ?? []).length > 0);
+  if (shouldAssignCoversMember(Boolean(memberRecordId), coversMemberAlreadyAssigned)) {
+    planFields['Covers Member'] = [{ id: memberRecordId }];
+  }
+
+  // upsertAirtableRecord itself logs the attempted fields on failure before
+  // rethrowing (see its own comment) -- no need to duplicate that here.
+  await upsertAirtableRecord(recurringPlansTable.id, ['Plan ID'], planFields);
+  console.log(`${eventType} → plan ${plan.id} (${plan.status}) synced`);
+
+} else if (eventType.startsWith('transaction.') || eventType.startsWith('refund.')) {
+  const transaction = await fetchFromGivebutter(`/transactions/${resourceId}`);
+  const memberRecordId = await upsertMemberByContactId(
+    transaction.contact_id, transaction.first_name, transaction.last_name,
+    transaction.email ?? transaction.contact?.email, transaction.phone ?? transaction.contact?.phone
+  );
+
+  const transactionFields = buildTransactionFields(transaction, syncedAt);
+  if (memberRecordId) transactionFields['Member'] = [{ id: memberRecordId }];
+
+  // Same idea as the Covers Member lookup above: a transaction can arrive before
+  // its plan has ever been synced (event ordering isn't guaranteed), in which case
+  // there's nothing to link yet -- recurringPlanLinkField returns null rather than
+  // an empty link, and the nightly Transactions sync fills it in once the plan
+  // exists.
+  const planIdText = toText(transaction.plan_id);
+  if (planIdText) {
+    const recurringPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID'] });
+    const recurringPlanRecord = recurringPlanQuery.records.find((record) => record.getCellValueAsString('Plan ID') === planIdText);
+    if (recurringPlanRecord) transactionFields['Recurring Plans'] = [{ id: recurringPlanRecord.id }];
+  }
+
+  await upsertAirtableRecord(transactionsTable.id, ['Transaction ID'], transactionFields);
+  console.log(`${eventType} → transaction ${transaction.id} ($${transaction.amount}, ${transaction.plan_id ? 'membership' : 'drop-in'}) synced`);
+
+} else if (eventType === 'contact.created') {
+  const contact = await fetchFromGivebutter(`/contacts/${resourceId}`);
+  await upsertMemberByContactId(contact.id, contact.first_name, contact.last_name, contact.primary_email ?? contact.email, contact.primary_phone ?? contact.phone);
+  console.log(`contact ${contact.id} synced`);
+
+} else {
+  console.log(`Ignoring event: ${eventType}`);
+}
+
+// Closed out last, only reached if everything above succeeded — same
+// contract as the three nightly scripts (see their own comment on this).
+await syncLogTable.updateRecordAsync(syncLogRecordId, {
+  'Records Created': recordsCreated,
+  'Records Updated': recordsUpdated
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// SETUP
+//
+// 1. Add "Webhook" as a choice on Sync Log ▸ Script — automations can't add
+//    select options, so do this by hand first or the log write fails.
+//
+// 2. Airtable → account → Personal access tokens → new token, named for
+//    this automation. Scopes: data.records:read, data.records:write.
+//    Access: this base only. Paste the value into AIRTABLE_PAT above.
+//
+// 3. Automations → new automation → trigger "When webhook received".
+//    Copy the generated URL. Leave the automation OFF for now.
+//
+// 4. Register it with Givebutter (webhooks are API-only there). From a
+//    terminal, once:
+//
+//    curl -X POST https://api.givebutter.com/v1/webhooks \
+//      -H "Authorization: Bearer YOUR_GIVEBUTTER_API_KEY" \
+//      -H "Content-Type: application/json" \
+//      -d '{
+//        "name": "Airtable live sync",
+//        "url": "YOUR_AIRTABLE_WEBHOOK_URL",
+//        "events": ["transaction.succeeded","refund.created",
+//                   "plan.created","plan.updated","plan.canceled",
+//                   "plan.paused","plan.resumed","plan.failed",
+//                   "contact.created"],
+//        "enabled": true
+//      }'
+//
+// 5. Back in the trigger config, click Test and make a real $1 transaction
+//    (or resume/pause a plan). Airtable captures the live payload and shows
+//    you its field paths.
+//
+// 6. Add the two input variables to the script action, mapping them to
+//    whatever the captured payload actually calls them — most likely
+//    `event` and `data.id`.
+//
+// 7. Turn the automation ON.
+//
+// KEEP THE NIGHTLY SYNCS. Webhooks get missed — a deploy, an outage, a
+// dropped delivery. The 3am runs are the reconciliation pass that makes
+// missed events self-healing. This just means you don't wait until 3am.
+// ═══════════════════════════════════════════════════════════════════════

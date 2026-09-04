@@ -45,10 +45,11 @@
       "web": {
         "packageJson": {
           "dependencies": [
+            "npm:@types/qrcode@^1.5.6",
             "npm:@types/react-dom@^18.3.0",
             "npm:@types/react@^18.3.5",
             "npm:@vitejs/plugin-react@^4.3.1",
-            "npm:jsqr@^1.4.0",
+            "npm:qrcode@^1.5.4",
             "npm:react-dom@^18.3.1",
             "npm:react@^18.3.1",
             "npm:shared@*",
@@ -60,9 +61,11 @@
       "web-student": {
         "packageJson": {
           "dependencies": [
+            "npm:@types/qrcode@^1.5.6",
             "npm:@types/react-dom@^18.3.0",
             "npm:@types/react@^18.3.5",
             "npm:@vitejs/plugin-react@^4.3.1",
+            "npm:qrcode@^1.5.4",
             "npm:react-dom@^18.3.1",
             "npm:react@^18.3.1",
             "npm:shared@*",

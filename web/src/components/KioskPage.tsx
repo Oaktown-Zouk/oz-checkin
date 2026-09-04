@@ -14,6 +14,7 @@ import type { KioskScreen } from "../kioskProducts.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
 import { KioskPurchaseFlow } from "./KioskPurchaseFlow.js";
+import { studioLocalToUtc } from "../programSchedule.js";
 import { ErrorBanner, Portal } from "shared";
 
 const ERROR_DISPLAY_MS = 5000;
@@ -77,8 +78,24 @@ export function KioskPage({
   const canBackdate = has("Backdate Kiosk");
 
   // Admin-only "simulate now" override, gated by Backdate Kiosk — see
-  // EffectiveDateControl. "" means live, same convention as the front desk's.
-  const [effectiveAt, setEffectiveAt] = useState("");
+  // EffectiveDateControl. "" means live, same convention as the front desk's. Seeded
+  // from the URL on mount (only when canBackdate — a non-admin session's URL is never
+  // trusted here, same as the server independently re-checking Backdate Kiosk on every
+  // request) so a shared/bookmarked test link actually lands on the simulated time
+  // instead of always silently opening live. Kept namespaced to this component (not
+  // App.tsx's own effectiveAt for the front desk) since the two need independent
+  // permission gates on the same query param name across different routes.
+  const [effectiveAt, setEffectiveAtState] = useState(() =>
+    canBackdate ? (new URLSearchParams(window.location.search).get("effectiveAt") ?? "") : ""
+  );
+  const setEffectiveAt = useCallback((value: string) => {
+    setEffectiveAtState(value);
+    const params = new URLSearchParams(window.location.search);
+    if (value) params.set("effectiveAt", value);
+    else params.delete("effectiveAt");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }, []);
   const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
 
   const [roster, setRoster] = useState<KioskRosterEntry[]>([]);
@@ -157,7 +174,7 @@ export function KioskPage({
   // then queues the roster refresh (the "read") once it settles, and surfaces a
   // failure via the banner since the dialog itself is gone by then.
   function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
-    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    const effectiveIso = effectiveAt ? studioLocalToUtc(effectiveAt).toISOString() : undefined;
     api
       .checkIn(studentId, selections, effectiveIso, "Kiosk")
       .catch((err) => {

@@ -51,29 +51,6 @@ function linksTo(fields: Record<string, unknown>, field: string, id: string): bo
   return ((fields[field] as string[] | undefined) ?? []).includes(id);
 }
 
-// Real Airtable auto-syncs both sides of a link (setting Credits.Consumed By
-// Check-in also populates that Check-in's own Credits reverse link, and vice versa)
-// — this mock doesn't simulate that generally, but services/checkins.ts now reads
-// the reverse link directly (undoCheckIn, to find which credit to free without a
-// table scan), so it needs to be right here specifically. `previous` is the credit's
-// Consumed By Check-in value *before* this update was applied.
-export function syncCreditCheckinLink(store: Store, creditId: string, previous: string[] | undefined): void {
-  const credit = table(store, TABLES.credits).get(creditId);
-  if (!credit) return;
-  const oldCheckinId = previous?.[0];
-  const newCheckinId = (credit.fields["Consumed By Check-in"] as string[] | undefined)?.[0];
-  if (oldCheckinId === newCheckinId) return;
-
-  if (oldCheckinId) {
-    const oldCheckin = table(store, TABLES.checkins).get(oldCheckinId);
-    if (oldCheckin) delete oldCheckin.fields.Credits;
-  }
-  if (newCheckinId) {
-    const newCheckin = table(store, TABLES.checkins).get(newCheckinId);
-    if (newCheckin) newCheckin.fields.Credits = [creditId];
-  }
-}
-
 // "Checked In Today (Live)" — count of this member's non-undone check-ins on dateStr.
 function checkedInCountOn(store: Store, memberId: string, dateStr: string): number {
   let count = 0;
@@ -87,10 +64,26 @@ function checkedInCountOn(store: Store, memberId: string, dateStr: string): numb
   return count;
 }
 
-function availableCreditsFor(store: Store, memberId: string): RawRecord[] {
-  return [...table(store, TABLES.credits).values()]
-    .filter((c) => linksTo(c.fields, "Member", memberId) && isBlank(c.fields["Consumed By Check-in"]))
-    .sort((a, b) => String(a.fields["Granted At"] ?? "").localeCompare(String(b.fields["Granted At"] ?? "")));
+// Members.Available Credits = Credits Purchased + New Member Credit + Comp Credits
+// - Credits Consumed, all summed straight off the underlying tables — same real
+// formula/rollup arrangement Airtable itself is configured with (see
+// docs/airtable-schema.md's "Credits" section), not something this mock reimplements
+// differently.
+function sumField(store: Store, tableId: string, field: string, memberId: string): number {
+  let total = 0;
+  for (const r of table(store, tableId).values()) {
+    if (!linksTo(r.fields, "Member", memberId)) continue;
+    total += Number(r.fields[field] ?? 0);
+  }
+  return total;
+}
+
+function availableCreditsFor(store: Store, member: RawRecord): number {
+  const purchased = sumField(store, TABLES.transactions, "Credits Purchased", member.id);
+  const comp = sumField(store, TABLES.compCredits, "Amount", member.id);
+  const consumed = sumField(store, TABLES.checkins, "Credits Consumed", member.id);
+  const newMemberCredit = Number(member.fields["New Member Credit"] ?? 0);
+  return purchased + newMemberCredit + comp - consumed;
 }
 
 // Members' Lookup-through-Levelups fields (see MemberFields's comment in fields.ts)
@@ -114,7 +107,7 @@ export function computeMemberFields(member: RawRecord, store: Store): Record<str
   const myLevelups = levelupsFor(store, member.id);
   return {
     ...member.fields,
-    "Available Credits": availableCreditsFor(store, member.id).length,
+    "Available Credits": availableCreditsFor(store, member),
     "Checked In Today (Live)": checkedInToday,
     "Remaining Today": classesAllowed - checkedInToday,
     "Role (from Levelups)": myLevelups.map((l) => l.fields.Role),
@@ -122,15 +115,6 @@ export function computeMemberFields(member: RawRecord, store: Store): Record<str
     "To (safe, from Levelups)": myLevelups.map((l) => (isBlank(l.fields.To) ? -1 : l.fields.To)),
     "Issuer Name (from Levelups)": myLevelups.map((l) => (l.fields["Issuer Name"] as string[] | undefined)?.[0]),
     "Created (from Levelups)": myLevelups.map((l) => l.createdTime),
-  };
-}
-
-// Credits.Available — true iff Consumed By Check-in is unlinked, so a credit
-// self-heals if its consuming check-in is ever deleted directly rather than undone.
-export function computeCreditFields(credit: RawRecord): Record<string, unknown> {
-  return {
-    ...credit.fields,
-    Available: isBlank(credit.fields["Consumed By Check-in"]) ? 1 : 0,
   };
 }
 

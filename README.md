@@ -36,10 +36,7 @@ web-student/netlify.toml     Student app's config — used both by its real depl
 ```
 
 **Airtable is the database.** This app has no local database of its own — it reads and
-writes an Airtable base directly over its REST API. An earlier version of this app ran
-on local SQLite; that code (and the one-time migration scripts that moved its data into
-Airtable) has been deleted now that the migration is fully trusted — see git history if
-you need it for reference.
+writes an Airtable base directly over its REST API.
 
 ## Prerequisites
 
