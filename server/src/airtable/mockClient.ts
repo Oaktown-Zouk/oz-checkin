@@ -5,14 +5,7 @@
 import type { AirtableRecord, ListOptions } from "./realClient.js";
 import { TABLES } from "./tableIds.js";
 import { evaluateFormula } from "./mockFormula.js";
-import {
-  computeMemberFields,
-  computeCreditFields,
-  syncCreditCheckinLink,
-  type RawRecord,
-  type SeedData,
-  type Store,
-} from "./mockCompute.js";
+import { computeMemberFields, type RawRecord, type SeedData, type Store } from "./mockCompute.js";
 import { buildSandboxSeed } from "./sandboxSeed.js";
 
 let store: Store = new Map();
@@ -27,11 +20,10 @@ function tableMap(tableId: string): Map<string, RawRecord> {
   return t;
 }
 
-// Applies the live-computed fields for tables that have any (Members, Credits) —
-// every other table's fields are fixture-static, returned exactly as stored.
+// Applies the live-computed fields for tables that have any (just Members) — every
+// other table's fields are fixture-static, returned exactly as stored.
 function withComputedFields(tableId: string, record: RawRecord): Record<string, unknown> {
   if (tableId === TABLES.members) return computeMemberFields(record, store);
-  if (tableId === TABLES.credits) return computeCreditFields(record);
   return record.fields;
 }
 
@@ -142,19 +134,10 @@ export async function updateRecord<F = Record<string, unknown>>(
   const record = tableMap(table).get(id);
   if (!record) throw new Error(`mockClient: no record ${id} in table ${table}`);
 
-  // No automation simulation here either — services/checkins.ts's undoCheckIn
-  // unlinks the consumed credit itself, via the same plain updateRecord call this
-  // mock already serves.
-  const previousConsumedBy =
-    table === TABLES.credits ? (record.fields["Consumed By Check-in"] as string[] | undefined) : undefined;
-
+  // No automation simulation here — services/checkins.ts gates and consumes/flags
+  // credits itself for every check-in (live or backdated), via plain
+  // listRecords/updateRecord calls this mock already serves.
   Object.assign(record.fields, fields);
-
-  // See syncCreditCheckinLink's comment — real Airtable keeps both sides of a link in
-  // sync on its own; this mock has to be told to.
-  if (table === TABLES.credits && "Consumed By Check-in" in (fields as Record<string, unknown>)) {
-    syncCreditCheckinLink(store, id, previousConsumedBy);
-  }
 
   return toAirtableRecord<F>(table, record);
 }

@@ -28,11 +28,16 @@ describe("getStudentTimeline", () => {
       ],
       [TABLES.transactions]: [
         { id: "recTxn1", fields: { Member: [STUDENT], Amount: 120, "Transacted At": "2025-02-01T00:00:00Z", "Is Recurring": true } },
-        { id: "recTxnDropIn", fields: { Member: [STUDENT], Amount: 20, "Transacted At": "2025-03-01T00:00:00Z" } },
+        {
+          id: "recTxnDropIn",
+          fields: { Member: [STUDENT], Amount: 20, "Transacted At": "2025-03-01T00:00:00Z", "Credits Purchased": 3 },
+        },
         // Refunded — must be excluded entirely.
         { id: "recTxnRefunded", fields: { Member: [STUDENT], Amount: 20, "Transacted At": "2025-03-15T00:00:00Z", Refunded: true } },
       ],
-      [TABLES.credits]: [{ id: "recCredit1", fields: { Member: [STUDENT], Reason: "New Member", "Granted At": "2025-01-01T00:00:00Z" } }],
+      [TABLES.compCredits]: [
+        { id: "recComp1", fields: { Member: [STUDENT], Amount: 1, Note: "welcome gift", "Created At": "2025-01-01T00:00:00Z" } },
+      ],
       [TABLES.checkins]: [
         { id: "recCheckin1", fields: { Member: [STUDENT], "Checked In At": "2025-04-01T18:00:00Z", "Class Level": [PROGRAM], Role: "Lead" } },
         { id: "recCheckin2", fields: { Member: [STUDENT], "Checked In At": "2025-04-08T18:00:00Z", "Class Level": [PROGRAM], Role: "Follow" } },
@@ -57,6 +62,14 @@ describe("getStudentTimeline", () => {
     const payments = timeline?.events.filter((e) => e.type === "payment").map((e) => e.label);
     assert.ok(payments?.some((l) => l.startsWith("Membership payment")));
     assert.ok(payments?.some((l) => l.startsWith("One-time pass purchased")));
+    // Credits Purchased folded directly into the transaction's own payment event,
+    // not a separate credit_granted entry.
+    assert.ok(payments?.some((l) => l === "One-time pass purchased ($20.00, 3 credits)"));
+
+    // The one remaining credit_granted event is the Comp Credit, not a purchased or
+    // New Member one — those two don't get their own timeline entries any more.
+    const creditEvent = timeline?.events.find((e) => e.type === "credit_granted");
+    assert.equal(creditEvent?.label, "Comp credit granted (welcome gift)");
 
     // Check-in label includes program name and role.
     const checkinEvent = timeline?.events.find((e) => e.type === "checkin" && e.at === "2025-04-08T18:00:00Z");

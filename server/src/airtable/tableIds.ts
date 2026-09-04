@@ -7,7 +7,10 @@ export const TABLES = {
   checkins: "tblUN06HQtcMIucxK",
   recurringPlans: "tblRJAL7UjNf9N0WB",
   transactions: "tbl97hoFODKY50QcH",
-  credits: "tblCFmQJntHiuMZNN",
+  // TODO: replace once the "Comp Credits" table exists in Airtable (Step 0 of
+  // docs/airtable-schema.md's Credits section) -- ask Claude to look it up via the
+  // metadata API once it's created, rather than typing it in by hand.
+  compCredits: "REPLACE_WITH_COMP_CREDITS_TABLE_ID",
   programs: "tblB90zwd3OjKxxDs",
   userRoles: "tblBeLbVbHNZIPIvz",
   rolePermissions: "tblYo1awEOvqBGVpR",
