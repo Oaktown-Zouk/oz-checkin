@@ -82,9 +82,10 @@ export function CheckInDialog({
   function handleSubmit() {
     if (selections.length === 0) return;
 
-    // A heads-up before submitting, not a hard block — the server allows the check-in
-    // either way (consuming a credit or flagging it for review).
-    if (student.remaining <= 0 && student.availableCredits === 0) {
+    // A heads-up before submitting, not a hard block — the server always allows the
+    // check-in, consuming a credit either way; this just warns when that consumption
+    // will push the balance negative (and so get flagged for review).
+    if (student.remaining <= 0 && student.availableCredits <= 0) {
       const ok = window.confirm(
         `${student.name} has no remaining classes or credits today. Check in anyway? (will be flagged for review)`
       );
