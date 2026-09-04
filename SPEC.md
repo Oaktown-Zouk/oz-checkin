@@ -58,8 +58,7 @@ handful of things that are genuinely this app's own business logic.
 ## Scale & constraints
 
 - ~1,000 students total, ~100 checked in on a typical class day.
-- Multiple class days/programs are natively supported (`Programs`/`Weekdays`), not
-  hardcoded to one weekday — a real scheduling model, not a UI-level gate.
+- Multiple class days/programs are natively supported (`Programs`/`Weekdays`).
 - Runs as Netlify Functions (static SPA + serverless API) — free-tier friendly, no
   always-on process to keep alive, no local database.
 - Solo/small-team operator, per-account Google OAuth (see "Auth" below) — every account
