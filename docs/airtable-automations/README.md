@@ -38,9 +38,10 @@ script step by hand.
   webhook (`plan.*`, `transaction.*`, `refund.*`, `contact.created`), re-fetches the
   changed record and upserts it immediately rather than waiting for the nightly batch.
 
-`grant-dropin-credits.js` is different from the four above: it's **Automation B**
-(see `docs/airtable-schema.md`'s "Credits" section), triggered by a qualifying
-`Transactions` record rather than anything Givebutter-shaped, and it's a plain
+`grant-dropin-credits.js` is different from the four above (see `docs/airtable-
+schema.md`'s "Credits" section): it's triggered by every `Transactions` record
+being created, not anything Givebutter-shaped, and does its own qualifying check
+internally rather than relying on a filtered trigger view. It's also a plain
 hand-maintained file — not generated, no `src`/`bodies` split, since it's small
 enough not to warrant one. Edit it directly and paste it into Airtable.
 

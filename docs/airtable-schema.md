@@ -137,8 +137,8 @@ the app reads:
 `Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`
 
 - `Transactions."Credits Purchased"` (number) — how many drop-in credits a
-  transaction bought. Set by Automation B (below). `Members."Credits Purchased"`
-  rolls this up per member.
+  transaction bought. Set by `grant-dropin-credits.js` (below).
+  `Members."Credits Purchased"` rolls this up per member.
 - `Members."New Member Credit"` (number) — flat signup bonus, **defaults to 1** in
   Airtable's own field config, so every new `Members` row gets one automatically
   regardless of how it's created (API, automation, or by hand) — no automation logic
@@ -166,15 +166,19 @@ described above.
 Granting is Airtable automations/config, not application code:
 - `Members."New Member Credit"` grants itself via Airtable's own field default
   (`= 1`) — no automation involved.
-- **Automation B** (`docs/airtable-automations/grant-dropin-credits.js`) — a
-  `Transactions` record entering the "qualifying drop-in" view (`succeeded`, not
-  recurring, no `Plan ID`) → sets that same transaction's own `"Credits Purchased"`.
+- **`grant-dropin-credits.js`** (`docs/airtable-automations/grant-dropin-credits.js`)
+  — runs on every `Transactions` record created; it does its own qualifying check
+  internally (not a filtered trigger view) and sets that same transaction's own
+  `"Credits Purchased"` when the payment is a drop-in (not a membership charge, and
+  at least `minDropinPrice`), otherwise a no-op.
 
 Consuming and freeing a credit are both application code (see `SPEC.md`'s "Credits
 system" for why): `services/checkins.ts`'s `gateCheckIns` (run for every check-in it
-creates, live or backdated) sets `Credits Consumed = 1` directly on the check-in when
-it goes over allowance and a credit is available; `undoCheckIn` resets it to `0` in
-the same write that sets `Undone At`.
+creates, live or backdated) sets `Credits Consumed = 1` directly on the check-in
+whenever it goes over allowance — a numeric balance can go negative, so nothing
+blocks this, it just also flags `Needs Review` when the consumption leaves the
+balance negative; `undoCheckIn` resets `Credits Consumed` (and those flags, if set)
+back in the same write that sets `Undone At`.
 
 ## Programs (`tblB90zwd3OjKxxDs`)
 
@@ -211,15 +215,16 @@ Raw Givebutter charges — one-time and recurring share this table, disambiguate
 `Recurring Plans` — a real link to the matching `Recurring Plans` row, resolved from
 `Plan ID` — for actually navigating from a transaction to its plan, rather than just
 matching text. `"Credits Purchased"` (number) — see "Credits" above — set by
-Automation B, rolled up per member on `Members."Credits Purchased"`. `Drop-in Valid`
-(formula, 14-day expiry) is for reporting only, not read for check-in logic.
+`grant-dropin-credits.js`, rolled up per member on `Members."Credits Purchased"`.
+`Drop-in Valid` (formula, 14-day expiry) is for reporting only, not read for
+check-in logic.
 
 `Is Recurring`/`Plan ID`/`Recurring Plans`/`Refunded*` are written by both the
 real-time webhook sync and the nightly Transactions sync (the complete, authoritative
 one), which need to stay in parity — see `docs/airtable-automations/CHANGELOG.md` —
-since Automation B's own "is this a membership payment" check
-(`docs/airtable-automations/grant-dropin-credits.js`) depends on them being set
-correctly regardless of which sync path wrote a given row. A row missing these
+since `docs/airtable-automations/grant-dropin-credits.js`'s own "is this a
+membership payment" check depends on them being set correctly regardless of which
+sync path wrote a given row. A row missing these
 fields can be backfilled by running the nightly script once with `LOOKBACK_DAYS` set
 to 3650.
 
