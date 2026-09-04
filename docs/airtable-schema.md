@@ -217,7 +217,7 @@ Automation B, rolled up per member on `Members."Credits Purchased"`. `Drop-in Va
 
 `Is Recurring`/`Plan ID`/`Recurring Plans`/`Refunded*` are written by both the
 real-time webhook sync and the nightly Transactions sync (the complete, authoritative
-one), which need to stay in parity — see `docs/airtable-automations/README.md` —
+one), which need to stay in parity — see `docs/airtable-automations/CHANGELOG.md` —
 since Automation B's own "is this a membership payment" check
 (`docs/airtable-automations/grant-dropin-credits.js`) depends on them being set
 correctly regardless of which sync path wrote a given row. A row missing these

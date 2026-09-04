@@ -4,7 +4,7 @@
 // cell-value shapes -- correct for the nightly scripts' own
 // table.createRecordsAsync()/updateRecordsAsync() calls, but wrong for a raw
 // REST API write. Two shapes differ, both confirmed against real 422s during
-// the 2026-09-03 webhook incident (see docs/airtable-automations/README.md):
+// the 2026-09-03 webhook incident (see docs/airtable-automations/CHANGELOG.md):
 //   - single select: SDK wants {name: "..."}; REST wants a plain string, and
 //     rejects the object with "Cannot parse value for field X" even for a
 //     real, existing choice.

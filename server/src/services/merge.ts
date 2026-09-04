@@ -33,7 +33,7 @@ async function repointLinks(
 // reassignment pass for the same reason: it defaults to 1 on every Member row, so the
 // common case (survivor already has its own) is a no-op — the duplicate's is simply
 // dropped when the duplicate is hidden, never summed, so a race that created two
-// Member rows for one signup (see docs/airtable-automations/README.md) still can't
+// Member rows for one signup (see docs/airtable-automations/CHANGELOG.md) still can't
 // double-count the signup bonus after a merge.
 async function fillMemberGaps(survivorId: string, duplicateFields: MemberFields): Promise<void> {
   const survivor = await getRecordOrNull<MemberFields>(TABLES.members, survivorId);
