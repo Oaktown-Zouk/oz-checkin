@@ -8,12 +8,6 @@ balance at a glance. **Airtable is the system of record**, including Givebutter 
 thin layer of Netlify Functions that reads Airtable's computed fields and writes the
 handful of things that are genuinely this app's own business logic.
 
-> This is the second major version of the app. The first ran on Fastify + SQLite with
-> its own polling sync against Google Forms (waivers) and Givebutter. That's gone —
-> Google Forms/waivers were dropped as a product decision, and Airtable now owns the
-> Givebutter sync. See the transition history in git log / the project's migration
-> plan if you need the old architecture for context.
-
 ## Features
 
 - **Check-in** against a searchable roster, with tier/access-status and credit-balance
@@ -65,8 +59,7 @@ handful of things that are genuinely this app's own business logic.
 
 - ~1,000 students total, ~100 checked in on a typical class day.
 - Multiple class days/programs are natively supported (`Programs`/`Weekdays`), not
-  hardcoded to one weekday — a real scheduling model, not a UI-level gate like the old
-  app's Thursday-only check.
+  hardcoded to one weekday — a real scheduling model, not a UI-level gate.
 - Runs as Netlify Functions (static SPA + serverless API) — free-tier friendly, no
   always-on process to keep alive, no local database.
 - Solo/small-team operator, per-account Google OAuth (see "Auth" below) — every account
@@ -87,16 +80,14 @@ directly rather than reimplementing their logic in the server. A future formula 
 Airtable (e.g. changing the drop-in credit expiry window) takes effect on next read,
 with no code deploy.
 
-Full table/field-level mapping (old-schema-to-Airtable history, and which fields to
-read for what) lives in **`docs/airtable-schema.md`** — this file stays product/
-architecture-level, that one is the technical schema reference.
+Full table/field-level mapping (which fields to read for what) lives in
+**`docs/airtable-schema.md`** — this file stays product/architecture-level, that one
+is the technical schema reference.
 
 ## Credits system
 
-The old "buy a pass, redeem it at check-in" model, and the earlier "first-class
-`Credits` table" version of it, are both retired as of 2026-09 in favor of plain
-numbers rolling up through links that already exist. `Members."Available Credits"`
-(formula) — the one number the app reads — is
+Credits are a plain numeric balance rolling up through links. `Members."Available
+Credits"` (formula) — the one number the app reads — is
 `Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`:
 
 - `Transactions."Credits Purchased"` — set by **Automation B**
@@ -104,8 +95,8 @@ numbers rolling up through links that already exist. `Members."Available Credits
   qualifies as a drop-in purchase (succeeded, one-time, no plan). Rolls up to
   `Members."Credits Purchased"`.
 - `Members."New Member Credit"` — defaults to `1` in Airtable's own field config, so
-  every new `Members` row gets the signup bonus automatically. **Automation A is
-  retired** — there's no automation left to grant this, the field default does it.
+  every new `Members` row gets the signup bonus automatically, with no automation
+  needed to grant it.
 - **`Comp Credits`** — its own table (`Member`, `Amount`, `Reason`, `Granted`), kept
   separate specifically so comp grants stay individually auditable. Rolls up to
   `Members."Credits Comped"` (`Members."Comp Credits"` is a separate, auto-created
@@ -113,16 +104,14 @@ numbers rolling up through links that already exist. `Members."Available Credits
 - `Check-ins."Credits Consumed"` — application code, not an automation (see below).
   Rolls up to `Members."Credits Consumed"`.
 
-**Consuming and freeing a credit are still application code**, just simpler now:
-`gateCheckIns` (`services/checkins.ts`) counts that student's existing non-undone
-check-ins on the target date (live or backdated), compares against their current
-`Classes Allowed`, and either does nothing, sets `Credits Consumed = 1` on the
-check-in (tracking the running balance in memory across a multi-check-in batch — no
-per-check-in re-read needed), or flags the check-in for review — one implementation
-for both cases, called synchronously by `createCheckIns` for every check-in it
-creates. `undoCheckIn` resets `Credits Consumed` back to `0` in the same write that
-sets `Undone At` — no second table touched, unlike the old Credits-row-unlink
-approach.
+**Consuming and freeing a credit are application code**: `gateCheckIns`
+(`services/checkins.ts`) counts that student's existing non-undone check-ins on the
+target date (live or backdated), compares against their current `Classes Allowed`,
+and either does nothing, sets `Credits Consumed = 1` on the check-in (tracking the
+running balance in memory across a multi-check-in batch — no per-check-in re-read
+needed), or flags the check-in for review — one implementation for both cases, called
+synchronously by `createCheckIns` for every check-in it creates. `undoCheckIn` resets
+`Credits Consumed` back to `0` in the same write that sets `Undone At`.
 
 See `docs/airtable-schema.md`'s "Credits" section for the full field-by-field
 reference.
@@ -134,7 +123,7 @@ front-desk-set (`Members.Lead Level` / `Follow Level`). Displayed as small badge
 blue square with the digit for Lead, a purple circle for Follow, gray when unset — at
 the left edge of the badge row in both the check-in list and the student detail page.
 Clicking either badge (or the corresponding stat box on the detail page) opens a picker
-dialog. Unchanged from the previous version of this app.
+dialog.
 
 **Every actual change is logged** to a `Levelups` table (`server/src/services/
 studentStatus.ts`'s `updateStudentLevel`) — teacher-facing history of when a student
@@ -212,7 +201,7 @@ someone else's write-up.
   computed **client-side** against whichever date is currently relevant (live or
   backdated), so backdating re-filters instantly with no extra round-trip.
 - **Access/credit gating is tier-based**, computed by Airtable (see "Credits system"
-  above) — not the old app's "one free check-in per active membership."
+  above).
 - **Undo preserves history**: `Check-ins.Undone At` gets set rather than deleting the
   row. The daily count (`Members.Checked In Today (Live)`) is a *live rollup* of
   non-undone same-day check-ins, not a maintained counter — so it, and everything
@@ -220,9 +209,8 @@ someone else's write-up.
   self-heals if a check-in is ever deleted directly in Airtable rather than undone
   through the app.
 - A student with `Needs Review` set on a check-in (beyond their allowance, no credit
-  available) shows that inline on their row — front desk judgment call, same spirit as
-  the old app's "no payment on file, confirm anyway" pattern (the picker still confirms
-  before submitting in that case).
+  available) shows that inline on their row — front desk judgment call; the picker
+  still confirms before submitting in that case.
 
 ### Viewing and correcting past days
 
@@ -284,11 +272,10 @@ Transfer membership in the roster row's 3-dot menu
   reassignment pass.
 - **The one-per-student exception**: `Members."New Member Credit"` defaults to `1`
   on every row, so a duplicate pair can genuinely end up with two (each row got its
-  own default). This needs no delete-and-flag logic the way the old `Credits`-table
-  design did, though — it isn't a rollup, so `fillMemberGaps` (below) just
-  copy-if-missing's it like `Phone`/`Lead Level`: the common case (survivor already
-  has its own `1`) is a no-op, and the duplicate's is simply dropped, never summed,
-  once the duplicate is hidden.
+  own default). It isn't a rollup, so `fillMemberGaps` (below) just copy-if-missing's
+  it like `Phone`/`Lead Level`: the common case (survivor already has its own `1`) is
+  a no-op, and the duplicate's is simply dropped, never summed, once the duplicate is
+  hidden.
 - **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
   (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
   but still there to audit. Flagged last, only once every reassignment has actually
@@ -683,11 +670,9 @@ front-desk involvement.
   search-result tap.
 - **Name search**: a search bar, filtered client-side against the cached roster's
   `name` — matches everyone, not just eligible students (see below), so a decline can
-  name the actual reason instead of a blanket "not found." (An earlier version of
-  this page also had a QR-code camera scanner as an alternative to typing a name —
-  removed since people didn't seem to need it; `Members.Contact ID` is unused by this
-  page now, though the separate student self-service app still has its own "show my
-  QR code" view, kept as-is even though nothing currently reads it.)
+  name the actual reason instead of a blanket "not found." `Members.Contact ID` is
+  unused by this page; the separate student self-service app still has its own "show
+  my QR code" view.
 - **Loading feedback**: a search-result tap opens a loading dialog instantly
   (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
   `GET /api/kiosk/students/:id` round trip that resolves it completes — there's never
@@ -759,10 +744,9 @@ front-desk involvement.
     ("...per week?"), each offering One or Two classes. Every one of those four
     combinations maps to its own Givebutter product/widget id (`kioskProducts.ts`'s
     `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`). Picking a count goes straight to that
-    product's embedded widget — there's no longer a second, per-product QR step here;
-    the one QR code on the "Buy a pass" screen already covers every product, since the
-    public widget it points at offers the same drop-in/membership/count choice on its
-    own.
+    product's embedded widget — the one QR code on the "Buy a pass" screen already
+    covers every product, since the public widget it points at offers the same
+    drop-in/membership/count choice on its own.
   - **Pricing policy notes**: the drop-in and membership widget screens show the same
     sliding-scale wording the public widget shows above its own embeds (`shared/src/
     purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_POLICY_NOTE`/
@@ -896,12 +880,12 @@ between two local views, plain `useState`, nothing worth deep-linking to:
   backend having nowhere to send one anyway.
 - **QR Code** (`StudentQrPage.tsx`) — renders the student's kiosk check-in QR code
   client-side (the `qrcode` package, browser build), encoding the bare Givebutter
-  Contact ID — the same payload `server/src/scripts/generateQrCode.ts` prints. No
-  backend change was needed: `GET /api/me/timeline` already returned
-  `status.contactId`. A member with no Contact ID yet (Givebutter sync gap) sees a
-  plain "ask the front desk" message instead of a broken image. (The kiosk itself no
-  longer has a QR camera scanner to decode this against — removed in favor of typing
-  a name; this page is kept as-is even though nothing currently reads its code back.)
+  Contact ID — the same payload `server/src/scripts/generateQrCode.ts` prints.
+  `GET /api/me/timeline` already returns `status.contactId`, so no backend change was
+  needed. A member with no Contact ID yet (Givebutter sync gap) sees a plain "ask the
+  front desk" message instead of a broken image. The kiosk itself has no QR camera
+  scanner to decode this against — front desk and kiosk check-in both use name search
+  instead.
 
 Log out lives inside the nav menu now too, rather than its own standalone button —
 one control at the top of the page instead of two.
@@ -935,7 +919,7 @@ an already-set var). `npm run dev:student-server` / `dev:student-web` (mirroring
 
 **Deploy**: a second Netlify site pointed at this same repo, with `web-student/` as
 its publish target — config lives at `web-student/netlify.toml`, not a repo-root
-`netlify-student.toml` as originally planned. Netlify only ever discovers a file
+`netlify-student.toml`. Netlify only ever discovers a file
 literally named `netlify.toml` (confirmed via Netlify's own docs and support forum —
 no custom filename is recognized, regardless of any "Configuration file path"
 setting), so the site's "Package directory" should be set to `web-student` instead,
@@ -953,12 +937,11 @@ this repo's code can do on its own. Live at `my.oaktownzouk.com`.
 unauthenticated page built and deployed as part of this same Netlify site, with
 nothing in common with the student self-service app above beyond sharing its
 build/deploy. It's a step-by-step sign-up/purchase form (first-time vs. returning,
-drop-in vs. membership, class count → an embedded Givebutter widget) that used to be
-hand-authored HTML/CSS/JS pasted separately into oaktownzouk.com (Google Sites) and
-theoaklandgrove.com/zouk (Squarespace) — kept in source control now instead, at
-`my.oaktownzouk.com/signup`, with both of those sites meant to `<iframe>` it rather
-than carry their own copy, so an update here reaches every surface without needing to
-touch either site by hand. Google Sites needs "Embed → By URL," not "Embed code" —
+drop-in vs. membership, class count → an embedded Givebutter widget) served from
+`my.oaktownzouk.com/signup`, with oaktownzouk.com (Google Sites) and
+theoaklandgrove.com/zouk (Squarespace) each `<iframe>`-ing it rather than carrying
+their own copy, so an update here reaches every surface without needing to touch
+either site by hand. Google Sites needs "Embed → By URL," not "Embed code" —
 the latter wraps arbitrary pasted HTML in a sandboxed `gstatic.com` iframe that's
 confirmed to break at least one third-party embed (YouTube, elsewhere on that same
 site) under Safari specifically; "By URL" is a plainer iframe of an external page and
