@@ -27,10 +27,11 @@ handful of things that are genuinely this app's own business logic.
   spent. The app reads Airtable's computed `Remaining Today`/`Access Status` rather
   than reimplementing that logic — a formula change in Airtable takes effect without a
   code deploy. See `docs/airtable-schema.md`.
-- **Credits system**: a `Credits` table (granted on new-member signup, on a qualifying
-  one-time Givebutter payment, or manually as a comp), consumed or flagged for
-  front-desk review by application code (not Airtable automations) whenever a
-  check-in exceeds the day's tier allowance. See "Credits system" below.
+- **Credits system**: a plain numeric balance (purchased on a qualifying one-time
+  Givebutter payment, granted flat on new-member signup, or manually as an
+  individually-tracked comp), consumed or flagged for front-desk review by
+  application code (not Airtable automations) whenever a check-in exceeds the day's
+  tier allowance. See "Credits system" below.
 - **Dance level tracking** — a Lead level and a Follow level (1–4 or unset) per
   student, shown as small badges and editable inline, with every actual change logged
   to a `Levelups` table (who signed off on it, and when).
@@ -74,7 +75,7 @@ handful of things that are genuinely this app's own business logic.
 ## System of record: Airtable
 
 Airtable holds everything: the member roster, Givebutter-synced payments/memberships,
-this app's own tables (`Credits`, and fields it writes like `Check-ins.Undone At`), and
+this app's own tables (`Comp Credits`, and fields it writes like `Check-ins.Undone At`), and
 the class schedule (`Programs`/`Sessions`/`Events`). Airtable's own automations sync
 Givebutter (contacts, transactions, recurring plans) independently of this app —
 verified live and running (`Sync Log` table). **This app never calls the Givebutter
@@ -92,27 +93,38 @@ architecture-level, that one is the technical schema reference.
 
 ## Credits system
 
-The old app's "buy a pass, redeem it at check-in" model is now a first-class `Credits`
-table. Granting is still entirely Airtable automations; **consuming and freeing a
-credit are application code**, not automations:
+The old "buy a pass, redeem it at check-in" model, and the earlier "first-class
+`Credits` table" version of it, are both retired as of 2026-09 in favor of plain
+numbers rolling up through links that already exist. `Members."Available Credits"`
+(formula) — the one number the app reads — is
+`Credits Purchased + New Member Credit + Comp Credits - Credits Consumed`:
 
-- **`Credits`** — `Member` (holder), `Purchased By` (payer, for a future transfer
-  feature), `Reason` (`New Member` / `Drop-in Purchase` / `Comp`), `Source Transaction`,
-  `Granted At`, `Consumed By Check-in`, `Available` (formula: true iff `Consumed By
-  Check-in` is unlinked — this makes a credit self-heal if the check-in that consumed
-  it is ever deleted directly in Airtable, not just undone through the app).
-- **Automation A** grants a credit when a new `Members` record is created.
-- **Automation B** grants a credit when a `Transactions` record qualifies as a
-  drop-in purchase (succeeded, one-time, no plan).
+- `Transactions."Credits Purchased"` — set by **Automation B**
+  (`docs/airtable-automations/grant-dropin-credits.js`) when a `Transactions` record
+  qualifies as a drop-in purchase (succeeded, one-time, no plan). Rolls up to
+  `Members."Credits Purchased"`.
+- `Members."New Member Credit"` — defaults to `1` in Airtable's own field config, so
+  every new `Members` row gets the signup bonus automatically. **Automation A is
+  retired** — there's no automation left to grant this, the field default does it.
+- **`Comp Credits`** — its own table (`Member`, `Amount`, `Note`, `Created At`), kept
+  separate specifically so comp grants stay individually auditable. Rolls up to
+  `Members."Comp Credits"`.
+- `Check-ins."Credits Consumed"` — application code, not an automation (see below).
+  Rolls up to `Members."Credits Consumed"`.
 
-The app's own gating logic (`gateCheckIns`, `services/checkins.ts`) counts that
-student's existing non-undone check-ins on the target date (live or backdated),
-compares against their current `Classes Allowed`, and either does nothing, consumes
-the oldest available credit, or flags the check-in for review — one implementation
+**Consuming and freeing a credit are still application code**, just simpler now:
+`gateCheckIns` (`services/checkins.ts`) counts that student's existing non-undone
+check-ins on the target date (live or backdated), compares against their current
+`Classes Allowed`, and either does nothing, sets `Credits Consumed = 1` on the
+check-in (tracking the running balance in memory across a multi-check-in batch — no
+per-check-in re-read needed), or flags the check-in for review — one implementation
 for both cases, called synchronously by `createCheckIns` for every check-in it
-creates. `undoCheckIn` (`services/checkins.ts`) frees a credit immediately on undo,
-reading the check-in's own `Credits` reverse link (populated by whichever credit
-consumed it) to find the credit to free — no separate table scan needed.
+creates. `undoCheckIn` resets `Credits Consumed` back to `0` in the same write that
+sets `Undone At` — no second table touched, unlike the old Credits-row-unlink
+approach.
+
+See `docs/airtable-schema.md`'s "Credits" section for the full field-by-field
+reference.
 
 ## Dance levels
 
@@ -235,9 +247,9 @@ A student can buy a Recurring Plan (membership) **for someone else** — Givebut
 no concept of this. `Recurring Plans` already splits `Member` (raw Givebutter payer,
 refreshed by sync) from `Covers Member` (who it's for, for access/display purposes);
 transferring is just updating `Covers Member` to the new holder. Reached via the 3-dot
-menu on a row, or a button on the student detail page. Credit transfers
-(`Credits.Purchased By` exists in the schema for the same purpose) aren't built —
-not requested yet.
+menu on a row, or a button on the student detail page. Credit transfers (a `Credit
+Transfers` table, adding to a recipient's balance and subtracting an equal amount from
+a source) are deferred — not built yet.
 
 ## Merging duplicate students
 
@@ -260,27 +272,31 @@ Transfer membership in the roster row's 3-dot menu
   row the dialog was opened from) when exactly one side has one.
 - **What moves**: every link from the loser to the survivor — `Check-ins.Member`,
   `Recurring Plans.Member` and `.Covers Member` (independently — see "Membership
-  transfers" above for why they can diverge), `Transactions.Member`, `Credits.Member`
-  and `.Purchased By`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
+  transfers" above for why they can diverge), `Transactions.Member`,
+  `Comp Credits.Member`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
   (`Classes Allowed`, `Tier Name`, `Available Credits`, `Remaining Today`,
   `Recently Active`) are Airtable rollups/formulas over these same linked tables, so
   once the links move, those numbers recompute themselves — merging is repointing
-  links, not recomputing counts by hand.
-- **The one-per-student exception**: an Airtable automation grants every new `Members`
-  row its own `New Member` signup credit. If both halves of a duplicate pair got one,
-  reassigning both would double it up — that credit specifically is left attached to
-  the loser instead (see next bullet), every other `Credits.Reason` reassigns
-  normally.
+  links, not recomputing counts by hand. This is also why credits need no
+  merge-specific handling any more (see "Credits system" above): `Credits Consumed`/
+  `Credits Purchased`/`Comp Credits` are all rollups over tables already in this same
+  reassignment pass.
+- **The one-per-student exception**: `Members."New Member Credit"` defaults to `1`
+  on every row, so a duplicate pair can genuinely end up with two (each row got its
+  own default). This needs no delete-and-flag logic the way the old `Credits`-table
+  design did, though — it isn't a rollup, so `fillMemberGaps` (below) just
+  copy-if-missing's it like `Phone`/`Lead Level`: the common case (survivor already
+  has its own `1`) is a no-op, and the duplicate's is simply dropped, never summed,
+  once the duplicate is hidden.
 - **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
   (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
-  but still there to audit, including whatever didn't get reassigned (the extra
-  `New Member` credit above). Flagged last, only once every reassignment has actually
+  but still there to audit. Flagged last, only once every reassignment has actually
   landed, so a failure partway through leaves it visible and the merge safely
   retryable — Airtable has no cross-table transaction, but every reassignment is
   independently idempotent.
-- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, and `Contact ID` copy from
-  the loser onto the survivor only when the survivor doesn't already have a value —
-  never overwrites something the survivor already has.
+- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, `Contact ID`, and
+  `New Member Credit` copy from the loser onto the survivor only when the survivor
+  doesn't already have a value — never overwrites something the survivor already has.
 - **Not automated on purpose**: if both sides have their own active Recurring Plan,
   that's the studio actually double-billing someone — merging the `Members` rows
   doesn't fix that, only canceling one subscription in Givebutter does. The dialog
@@ -454,14 +470,18 @@ in for Airtable behind the exact interface `services/*.ts` already calls — see
 `NODE_ENV !== "production"`).
 
 **What the mock actually computes**, vs. what's just fixture-static (seed data sets it
-directly, exactly as if Airtable had already resolved it): `Members.Available
-Credits`/`Checked In Today (Live)`/`Remaining Today` and `Credits.Available` are
-computed live from the mock's own Checkins/Credits state (`mockCompute.ts`), because
-the app's own logic depends on them staying consistent with its own mutations.
-Automations C and D (consume/flag on a live check-in, free a credit on undo — see
-"Credits system" above) are simulated as synchronous side effects of
-`createRecords`/`updateRecord`, which is strictly *better* than real Airtable for
-testing purposes: no automation lag to wait out or get bitten by. `Access Status`,
+directly, exactly as if Airtable had already resolved it): `Members."Available
+Credits"`/`"Checked In Today (Live)"`/`"Remaining Today"` are computed live from the
+mock's own Checkins/Transactions/Comp Credits state (`mockCompute.ts`), summing the
+same way the real Airtable formula does (`Credits Purchased + New Member Credit +
+Comp Credits - Credits Consumed`, see "Credits system" above), because the app's own
+logic depends on them staying consistent with its own mutations.
+`gateCheckIns`/`undoCheckIn` themselves (consume/flag on a live check-in, free a
+credit on undo — application code, not automations, see "Credits system" above)
+don't need any special mock support at all: they're plain
+`listRecords`/`updateRecord` calls the mock already serves like any other write,
+which is strictly *better* than real Airtable for testing purposes: no automation lag
+to wait out or get bitten by. `Access Status`,
 `Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`,
 `Recurring Plans.Is Active/Paid Access`, `Levelups`' `Event`/`Issuer Name`/
 `Full Name (from Member)` lookups, and `Notes`' `Name`/`Full Name`/`Issuer Name`
@@ -623,10 +643,14 @@ clicking a name.
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
 - A newest-first timeline synthesized from `Recurring Plans`, `Transactions`,
-  `Credits`, `Check-ins`, `Levelups`, and `Notes` for that student — not a stored
+  `Comp Credits`, `Check-ins`, `Levelups`, and `Notes` for that student — not a stored
   event log. Event types: `membership_started`, `membership_status` (non-active
   statuses only), `payment` (one per held Transaction, labeled as membership payment
-  or one-time pass by whether it carries a plan), `credit_granted`, `checkin`,
+  or one-time pass by whether it carries a plan, with purchased credits folded into
+  that same label rather than a separate event — e.g. "One-time pass purchased
+  ($20.00, 3 credits)"), `credit_granted` (Comp Credits only now — purchased credits
+  are folded into `payment` above, and the flat New Member Credit signup bonus has no
+  discrete event at all), `checkin`,
   `levelup` (skipped for a student's first-ever level in a role — see "Dance levels"
   above — labeled "Assessed into Level X as a Lead/Follow" on an increase, "Changed
   to Level X as a Lead/Follow" on a decrease, or "Level cleared as a Lead/Follow" if

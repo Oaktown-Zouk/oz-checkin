@@ -33,18 +33,16 @@ describe("createCheckIns (live, no effectiveAt)", () => {
     assert.equal(status.checkinsToday[0].needsReview, false);
   });
 
-  it("over allowance with an available credit: consumes the oldest one", async () => {
+  it("over allowance with credits available: consumes one", async () => {
     resetMockStore({
-      [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
-      [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
-      [TABLES.credits]: [
-        { id: "recCreditOld", fields: { Member: [MEMBER], "Granted At": "2020-01-01T00:00:00.000Z" } },
-        { id: "recCreditNew", fields: { Member: [MEMBER], "Granted At": "2025-01-01T00:00:00.000Z" } },
+      [TABLES.members]: [
+        { id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0, "New Member Credit": 2 } },
       ],
+      [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
     });
 
     const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
-    assert.equal(status.availableCredits, 1); // the newer one is still available
+    assert.equal(status.availableCredits, 1); // started with 2, consumed 1
     assert.equal(status.checkinsToday[0].needsReview, false);
   });
 
@@ -74,12 +72,13 @@ describe("createCheckIns (live, no effectiveAt)", () => {
 
   it("two selections in one call: only the one that crosses the allowance line consumes a credit", async () => {
     resetMockStore({
-      [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.members]: [
+        { id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 1, "New Member Credit": 1 } },
+      ],
       [TABLES.programs]: [
         { id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } },
         { id: PROGRAM_2, fields: { "Program Name": "Zouk L2", Status: "Active" } },
       ],
-      [TABLES.credits]: [{ id: "recCredit1", fields: { Member: [MEMBER], "Granted At": "2025-01-01T00:00:00.000Z" } }],
     });
 
     const status = await createCheckIns(MEMBER, [
@@ -107,11 +106,7 @@ describe("createCheckIns (backdated)", () => {
   });
 
   it("over allowance for the target date with a credit available: consumes it", async () => {
-    resetMockStore({
-      [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
-      [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
-      [TABLES.credits]: [{ id: "recCredit1", fields: { Member: [MEMBER], "Granted At": "2025-01-01T00:00:00.000Z" } }],
-    });
+    seedMember({ "Classes Allowed": 0, "New Member Credit": 1 });
     const status = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }], { effectiveAt: PAST_DATE });
     assert.equal(status.checkinsToday[0].needsReview, false);
     assert.equal(status.availableCredits, 0);
@@ -193,11 +188,7 @@ describe("createCheckIns (backdated)", () => {
 
 describe("undoCheckIn", () => {
   it("frees the credit it consumed and updates checkedInToday", async () => {
-    resetMockStore({
-      [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 0 } }],
-      [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
-      [TABLES.credits]: [{ id: "recCredit1", fields: { Member: [MEMBER], "Granted At": "2025-01-01T00:00:00.000Z" } }],
-    });
+    seedMember({ "Classes Allowed": 0, "New Member Credit": 1 });
 
     const created = await createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]);
     assert.equal(created.availableCredits, 0);

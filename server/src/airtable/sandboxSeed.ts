@@ -49,9 +49,6 @@ export const FIXTURE_IDS = {
     // Same start time as zoukL1 — the sandbox's one same-timeslot pair.
     bachataL1: "recProgramBachataL1",
   },
-  credits: {
-    trialTinaCredit: "recCreditTrialTina",
-  },
   recurringPlans: {
     activeAmyPlan: "recPlanActiveAmy",
     twinTaraPlan: "recPlanTwinTara",
@@ -68,8 +65,7 @@ export const FIXTURE_IDS = {
 } as const;
 
 export function buildSandboxSeed(): SeedData {
-  const { members, programs, credits, recurringPlans, checkins, rolePermissions } = FIXTURE_IDS;
-  const nowIso = new Date().toISOString();
+  const { members, programs, recurringPlans, checkins, rolePermissions } = FIXTURE_IDS;
   const todayAt = (hhmm: string) => {
     const [h, m] = hhmm.split(":").map(Number);
     const d = new Date();
@@ -103,6 +99,11 @@ export function buildSandboxSeed(): SeedData {
           "Tier Name": null,
           "Classes Allowed": 0,
           "Recently Active": 0,
+          // The default every real Member row gets from Airtable's own field
+          // default (see docs/airtable-schema.md's "Credits" section) — gives her
+          // one available credit, same scenario the old dedicated Credits fixture
+          // row used to cover.
+          "New Member Credit": 1,
         },
       },
       {
@@ -222,16 +223,6 @@ export function buildSandboxSeed(): SeedData {
           // default seed has, for specs exercising the "pick one class in a slot,
           // the rest of the slot grays out" behavior (see e2e/*-checkin.spec.ts).
           "Start Time": "19:00",
-        },
-      },
-    ],
-    [TABLES.credits]: [
-      {
-        id: credits.trialTinaCredit,
-        fields: {
-          Member: [members.trialTina],
-          Reason: "New Member",
-          "Granted At": nowIso,
         },
       },
     ],
