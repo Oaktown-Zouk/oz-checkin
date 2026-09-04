@@ -97,7 +97,7 @@ The old "buy a pass, redeem it at check-in" model, and the earlier "first-class
 `Credits` table" version of it, are both retired as of 2026-09 in favor of plain
 numbers rolling up through links that already exist. `Members."Available Credits"`
 (formula) — the one number the app reads — is
-`Credits Purchased + New Member Credit + Comp Credits - Credits Consumed`:
+`Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`:
 
 - `Transactions."Credits Purchased"` — set by **Automation B**
   (`docs/airtable-automations/grant-dropin-credits.js`) when a `Transactions` record
@@ -106,9 +106,10 @@ numbers rolling up through links that already exist. `Members."Available Credits
 - `Members."New Member Credit"` — defaults to `1` in Airtable's own field config, so
   every new `Members` row gets the signup bonus automatically. **Automation A is
   retired** — there's no automation left to grant this, the field default does it.
-- **`Comp Credits`** — its own table (`Member`, `Amount`, `Note`, `Created At`), kept
+- **`Comp Credits`** — its own table (`Member`, `Amount`, `Reason`, `Granted`), kept
   separate specifically so comp grants stay individually auditable. Rolls up to
-  `Members."Comp Credits"`.
+  `Members."Credits Comped"` (`Members."Comp Credits"` is a separate, auto-created
+  plain link field — not the rollup).
 - `Check-ins."Credits Consumed"` — application code, not an automation (see below).
   Rolls up to `Members."Credits Consumed"`.
 
@@ -279,7 +280,7 @@ Transfer membership in the roster row's 3-dot menu
   once the links move, those numbers recompute themselves — merging is repointing
   links, not recomputing counts by hand. This is also why credits need no
   merge-specific handling any more (see "Credits system" above): `Credits Consumed`/
-  `Credits Purchased`/`Comp Credits` are all rollups over tables already in this same
+  `Credits Purchased`/`Credits Comped` are all rollups over tables already in this same
   reassignment pass.
 - **The one-per-student exception**: `Members."New Member Credit"` defaults to `1`
   on every row, so a duplicate pair can genuinely end up with two (each row got its
@@ -474,7 +475,7 @@ directly, exactly as if Airtable had already resolved it): `Members."Available
 Credits"`/`"Checked In Today (Live)"`/`"Remaining Today"` are computed live from the
 mock's own Checkins/Transactions/Comp Credits state (`mockCompute.ts`), summing the
 same way the real Airtable formula does (`Credits Purchased + New Member Credit +
-Comp Credits - Credits Consumed`, see "Credits system" above), because the app's own
+Credits Comped - Credits Consumed`, see "Credits system" above), because the app's own
 logic depends on them staying consistent with its own mutations.
 `gateCheckIns`/`undoCheckIn` themselves (consume/flag on a live check-in, free a
 credit on undo — application code, not automations, see "Credits system" above)

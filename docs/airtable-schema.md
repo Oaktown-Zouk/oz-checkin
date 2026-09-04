@@ -41,10 +41,12 @@ Computed fields to read directly, never recompute:
 - `Remaining Today` (formula) — `Classes Allowed - Checked In Today (Live)`. Fully
   live: self-corrects on undo or on a check-in being deleted directly in Airtable.
 - `Checked In Today (Live)` (rollup) — sum of today's non-undone check-ins.
-- `Available Credits` (formula) — `Credits Purchased + New Member Credit + Comp
-  Credits - Credits Consumed`. `Credits Purchased`/`Credits Consumed`/`Comp Credits`
+- `Available Credits` (formula) — `Credits Purchased + New Member Credit + Credits
+  Comped - Credits Consumed`. `Credits Purchased`/`Credits Consumed`/`Credits Comped`
   are themselves rollups (from `Transactions`, `Check-ins`, and `Comp Credits`
-  respectively) — see those tables' own sections and "Credits" below.
+  respectively) — see those tables' own sections and "Credits" below. (`Members."Comp
+  Credits"` is a different field — the plain reverse-link Airtable auto-created for
+  `Comp Credits.Member` — not the rollup; the app never reads it.)
 - `Recently Active` (formula) — `1`/`0` depending on whether `Last Activity` (below)
   is within the last 30 days. Drives roster sort order (recently-active members sort
   above stale ones); the 30-day threshold lives entirely in this formula, tunable
@@ -135,7 +137,7 @@ As of 2026-09, credits are plain numbers rolling up through existing links, not 
 dedicated row-per-credit table — the old `Credits` table (`tblCFmQJntHiuMZNN`) is
 retired. `Members."Available Credits"` (formula) is the single number the app reads:
 
-`Credits Purchased + New Member Credit + Comp Credits - Credits Consumed`
+`Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`
 
 - `Transactions."Credits Purchased"` (number) — how many drop-in credits a
   transaction bought. Set by Automation B (below). `Members."Credits Purchased"`
@@ -151,9 +153,10 @@ retired. `Members."Available Credits"` (formula) is the single number the app re
   summed.
 - **`Comp Credits`** table (its own table, not a plain field — kept separate
   specifically so comp grants stay individually auditable): `Member` (link),
-  `Amount` (number), `Note` (text, optional), `Created At` (Airtable's **Created
+  `Amount` (number), `Reason` (text, optional), `Granted` (Airtable's **Created
   time** field type, auto-set, never written by the app).
-  `Members."Comp Credits"` rolls up the sum of `Amount` per member.
+  `Members."Credits Comped"` rolls up the sum of `Amount` per member (`Members."Comp
+  Credits"` is a separate, auto-created plain link field — not the rollup).
 - `Check-ins."Credits Consumed"` (number, `1` or blank/`0`) — see "Check-ins" above.
   `Members."Credits Consumed"` rolls this up per member.
 
