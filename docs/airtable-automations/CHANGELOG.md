@@ -8,8 +8,7 @@ currently does.
 
 Moved off the row-per-credit `Credits` table: the script now just sets
 `Transactions."Credits Purchased"` on the triggering record, which a `Members`
-rollup picks up automatically. No `Member` lookup needed at all anymore, which also
-fully retires the memberId-resolution bug below.
+rollup picks up automatically. No `Member` lookup needed at all anymore.
 
 ## 2026-09-03 webhook 422s: REST wants plain values, not Scripting SDK shapes
 
@@ -27,14 +26,6 @@ like a plain one-time drop-in even when it was really a recurring membership
 charge, which could fool `grant-dropin-credits.js`'s membership-vs-drop-in check.
 Fixed by sharing one field-builder between both sync paths, plus adding a real
 `Recurring Plans` link field on `Transactions`.
-
-## 2026-09-03 grant-dropin-credits.js: memberId was a name, not a record id
-
-The `memberIds` input variable resolved to the Member's display name rather than
-its record id, so linking a new `Credits` row with it silently failed. Fixed by
-reading `Member` directly off the `Transactions` record instead of trusting the
-input variable — moot now that the script no longer looks up a Member at all (see
-above).
 
 ## 2026-09-02 duplicate-Member investigation
 
