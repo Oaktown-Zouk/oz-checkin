@@ -3,6 +3,39 @@
 Verioned by ISO week number `{year}w{WW}`, with a `.N` suffix for a same-week bugfix
 release shipped after that week's main deploy already went out.
 
+## 2026w37 (2026-09-07)
+
+### Improvements
+
+- **Credits are now a plain running number instead of a table of individual credit
+  records.** A member can go into a negative balance instead of being blocked or
+  flagged the moment they're out — only flagged for review if a check-in actually
+  leaves them negative, so reconciling is a quick "who's negative" look instead of a
+  manual audit.
+- **Comp credits (manually granted, e.g. as a courtesy) now live in their own table**,
+  separate from purchased/signup credits, so they stay individually auditable.
+- **The nightly Givebutter contacts sync now pulls incrementally** (last 7 days)
+  instead of a full re-pull every run.
+
+### Bugfixes
+
+- **Fixed the front desk and kiosk check-in dialogs showing a member's "remaining"
+  count as 0 (or negative) even when they had a real drop-in credit** — the counter
+  wasn't factoring credits in at all for members with no membership allowance.
+- **Fixed the kiosk "available" counter reading 0 on any day with no scheduled
+  classes** (i.e. any day but Thursday), even for a member with real credits.
+- **Fixed a timezone bug in "Backdate check-ins"**: a backdated time typed on a
+  browser not set to Pacific was silently misinterpreted, throwing off both the
+  recorded check-in time and which classes the kiosk considered visible.
+- **Fixed two Givebutter webhook sync failures** caused by sending Airtable a write
+  in the wrong shape for select and linked-record fields — real transactions/plans
+  were failing to sync.
+- **Fixed the nightly Transactions sync not recording whether a payment was a
+  membership charge**, which could let a real membership payment slip through and
+  get credited as a one-time drop-in instead.
+- **Fixed a race condition that could create a duplicate Member record** when a new
+  signup fired multiple Givebutter webhook events in quick succession.
+
 ## 2026w36.1 (2026-09-02)
 
 ### Bugfixes
