@@ -96,14 +96,17 @@ export interface ProgramFields {
 // A manually (or future-automation) granted comp credit -- kept as its own table
 // rather than a plain number specifically so comp grants stay individually
 // auditable, the same reasoning that originally made the old Credits table a table.
-// Members."Comp Credits" rolls up the sum of Amount per member. "Created At" is
-// Airtable's own Created time field type -- auto-set on row creation, never written
-// by the app, so there's no separate "when was this granted" entry to maintain.
+// Members."Credits Comped" rolls up the sum of Amount per member (not
+// Members."Comp Credits" -- that name belongs to the plain reverse-link field
+// Airtable auto-created for the Member link below; the rollup is a separate field).
+// "Granted" is Airtable's own Created time field type -- auto-set on row creation,
+// never written by the app, so there's no separate "when was this granted" entry to
+// maintain.
 export interface CompCreditFields {
   Member?: string[];
   Amount?: number;
-  Note?: string;
-  "Created At"?: string;
+  Reason?: string;
+  Granted?: string;
 }
 
 export interface RecurringPlanFields {

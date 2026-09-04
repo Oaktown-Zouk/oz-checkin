@@ -36,7 +36,7 @@ describe("getStudentTimeline", () => {
         { id: "recTxnRefunded", fields: { Member: [STUDENT], Amount: 20, "Transacted At": "2025-03-15T00:00:00Z", Refunded: true } },
       ],
       [TABLES.compCredits]: [
-        { id: "recComp1", fields: { Member: [STUDENT], Amount: 1, Note: "welcome gift", "Created At": "2025-01-01T00:00:00Z" } },
+        { id: "recComp1", fields: { Member: [STUDENT], Amount: 1, Reason: "welcome gift", Granted: "2025-01-01T00:00:00Z" } },
       ],
       [TABLES.checkins]: [
         { id: "recCheckin1", fields: { Member: [STUDENT], "Checked In At": "2025-04-01T18:00:00Z", "Class Level": [PROGRAM], Role: "Lead" } },

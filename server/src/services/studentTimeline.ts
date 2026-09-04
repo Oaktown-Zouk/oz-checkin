@@ -61,7 +61,7 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       fields: ["Member", "Amount", "Transacted At", "Is Recurring", "Plan ID", "Refunded", "Credits Purchased"],
     }),
     listRecords<CompCreditFields>(TABLES.compCredits, {
-      fields: ["Member", "Amount", "Note", "Created At"],
+      fields: ["Member", "Amount", "Reason", "Granted"],
     }),
     listRecords<CheckinFields>(TABLES.checkins, {
       filterByFormula: "{Undone At} = BLANK()",
@@ -124,8 +124,8 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
   for (const c of myCompCredits) {
     events.push({
       type: "credit_granted",
-      at: c.fields["Created At"] ?? "",
-      label: c.fields.Note ? `Comp credit granted (${c.fields.Note})` : "Comp credit granted",
+      at: c.fields["Granted"] ?? "",
+      label: c.fields.Reason ? `Comp credit granted (${c.fields.Reason})` : "Comp credit granted",
     });
   }
 
