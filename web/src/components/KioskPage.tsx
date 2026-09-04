@@ -14,6 +14,7 @@ import type { KioskScreen } from "../kioskProducts.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
 import { KioskPurchaseFlow } from "./KioskPurchaseFlow.js";
+import { studioLocalToUtc } from "../programSchedule.js";
 import { ErrorBanner, Portal } from "shared";
 
 const ERROR_DISPLAY_MS = 5000;
@@ -157,7 +158,7 @@ export function KioskPage({
   // then queues the roster refresh (the "read") once it settles, and surfaces a
   // failure via the banner since the dialog itself is gone by then.
   function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
-    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    const effectiveIso = effectiveAt ? studioLocalToUtc(effectiveAt).toISOString() : undefined;
     api
       .checkIn(studentId, selections, effectiveIso, "Kiosk")
       .catch((err) => {
