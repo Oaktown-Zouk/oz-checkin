@@ -96,11 +96,16 @@ export function KioskCheckInDialog({
   // visibility-filtered visiblePrograms below) — credits/allowance can't let a
   // student check into more classes than actually exist today, but which of those
   // are still visible right now is a separate, kiosk-only-relevant question.
+  //
+  // The cap only applies when there's at least one timeslot today. On a day with
+  // none at all (any non-class day — OZ only teaches Thursdays), min(...) would
+  // otherwise collapse this to 0 regardless of actual balance, showing "0 available"
+  // right next to a "1 drop-in credit" badge — confusing a real credit balance with
+  // having none, rather than just "nothing to spend it on today." The existing "No
+  // classes available right now" message already covers that case on its own.
   const timeslotsToday = new Set(activePrograms.map((p) => p.startTime)).size;
-  const localRemaining = Math.min(
-    student.remaining + student.availableCredits - selections.length,
-    timeslotsToday
-  );
+  const uncappedRemaining = student.remaining + student.availableCredits - selections.length;
+  const localRemaining = timeslotsToday > 0 ? Math.min(uncappedRemaining, timeslotsToday) : uncappedRemaining;
 
   // Only one {class, role} pick allowed per timeslot — a student can't be in two
   // classes at once, or dance one class as both Lead and Follow at once. Picking a
