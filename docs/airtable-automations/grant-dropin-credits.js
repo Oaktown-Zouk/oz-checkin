@@ -1,41 +1,26 @@
 // ═══════════════════════════════════════════════════════════════════════
-// Automation B (see docs/airtable-schema.md's "Credits" section) — grants a
-// Drop-in Purchase credit when a Transactions record qualifies (succeeded,
-// one-time, no plan). Trigger: "When a record matches conditions" on
-// Transactions, filtered to that qualifying view.
+// Automation B (see docs/airtable-schema.md's "Credits" section) — sets how many
+// drop-in credits a qualifying Transactions record is worth (succeeded, one-time,
+// no plan). Trigger: "When a record matches conditions" on Transactions, filtered
+// to that qualifying view.
 //
 // Input variables (mapped from the triggering Transaction record):
 //   transactionId — the Transaction's own Airtable record id
 //   planId        — Plan ID text field, blank for a one-time payment
 //   dollarAmount  — Amount paid
-// (memberIds is deliberately NOT read here — see the comment below.)
+//
+// No Member lookup any more -- as of the 2026-09 credits rework, this only ever
+// sets "Credits Purchased" on the triggering Transaction itself, and
+// Members."Credits Purchased" (a rollup) picks it up automatically. That fully
+// retires the class of bug this script used to have (a mis-resolved member id from
+// the old memberIds input variable, fixed once already before this rewrite) --
+// there's no member id to resolve any more, so it can't be resolved wrong.
 // ═══════════════════════════════════════════════════════════════════════
 
 const { transactionId, planId, dollarAmount } = input.config();
 
 const transactionsTable = base.getTable('Transactions');
 const tiersTable = base.getTable('Tiers');
-const creditsTable = base.getTable('Credits');
-
-// `memberIds` used to come straight from input.config(), but that input variable
-// was mapped to the linked Member field's PRIMARY FIELD VALUE (the person's name),
-// not its record id -- {id: memberId} below then tried to link a Credits record to
-// a Member using a name string as if it were an Airtable record id, which silently
-// fails to link anything real. Fetching the Transaction record directly and reading
-// its own Member field instead always returns real {id, name} linked-record
-// objects, regardless of how any input variable happens to be configured -- so this
-// is both the fix and no longer dependent on that config being right. (The
-// `memberIds` input variable can be removed from this automation's Run Script step
-// now that nothing here reads it.)
-const transactionRecord = await transactionsTable.selectRecordAsync(transactionId, { fields: ['Member'] });
-if (!transactionRecord) {
-  throw new Error(`Transaction ${transactionId} not found`);
-}
-const memberLinks = transactionRecord.getCellValue('Member') ?? [];
-if (memberLinks.length !== 1) {
-  throw new Error(`Unexpected number of members attached to transaction. Expected 1 but got ${memberLinks.length}`);
-}
-const memberId = memberLinks[0].id;
 
 const tiers = await tiersTable.selectRecordsAsync({ fields: ['Min Monthly Price'] });
 const membershipAmounts = tiers.records.map((record) => record.getCellValue('Min Monthly Price') || 9999);
@@ -50,7 +35,7 @@ if (!!planId && dollarAmount >= minMembershipAmount) {
   return;
 }
 
-console.log(`Processing payment of ${dollarAmount} from member ${memberId}`);
+console.log(`Processing payment of ${dollarAmount} for transaction ${transactionId}`);
 
 let numberOfCredits = Math.floor(dollarAmount / dropinPrice);
 if (numberOfCredits < 1 && dollarAmount >= minDropinPrice) {
@@ -62,22 +47,6 @@ if (numberOfCredits < 1) {
   return; // Consider throwing an exception instead?
 }
 
-const now = new Date().toISOString();
-const creditsToCreate = Array.from({ length: numberOfCredits }, () => ({
-  fields: {
-    Member: [{ id: memberId }],
-    'Purchased By': [{ id: memberId }],
-    'Source Transaction': [{ id: transactionId }],
-    'Granted At': now,
-    Reason: { name: 'Drop-in Purchase' },
-  },
-}));
+await transactionsTable.updateRecordAsync(transactionId, { 'Credits Purchased': numberOfCredits });
 
-// Was missing `await` -- the run could finish (and Airtable would mark it
-// successful) before these were actually written, and any creation error would be
-// silently dropped instead of failing the run.
-await creditsTable.createRecordsAsync(creditsToCreate);
-
-// Was `${creditsToCreate}`, which stringifies the array itself
-// ("[object Object],[object Object]") instead of the count.
-console.log(`Created ${creditsToCreate.length} credits for ${memberId}`);
+console.log(`Set Credits Purchased = ${numberOfCredits} on transaction ${transactionId}`);
