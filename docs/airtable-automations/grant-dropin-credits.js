@@ -9,12 +9,10 @@
 //   planId        — Plan ID text field, blank for a one-time payment
 //   dollarAmount  — Amount paid
 //
-// No Member lookup any more -- as of the 2026-09 credits rework, this only ever
-// sets "Credits Purchased" on the triggering Transaction itself, and
-// Members."Credits Purchased" (a rollup) picks it up automatically. That fully
-// retires the class of bug this script used to have (a mis-resolved member id from
-// the old memberIds input variable, fixed once already before this rewrite) --
-// there's no member id to resolve any more, so it can't be resolved wrong.
+// No Member lookup: this only ever sets "Credits Purchased" on the triggering
+// Transaction itself, and Members."Credits Purchased" (a rollup) picks it up
+// automatically -- there's no member id involved at all, so there's nothing to
+// resolve wrong. See docs/airtable-automations/CHANGELOG.md for the design history.
 // ═══════════════════════════════════════════════════════════════════════
 
 const { transactionId, planId, dollarAmount } = input.config();

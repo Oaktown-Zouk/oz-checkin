@@ -82,7 +82,7 @@ function normalizeSelectText(value) {
 // This is SDK-specific, not universal: Airtable's REST API wants the
 // opposite -- a plain string -- and rejects this {name} shape outright, even
 // for a real, existing choice (see restFields.ts's toRestFields, and the
-// 2026-09-03 webhook incident in docs/airtable-automations/README.md). Any
+// 2026-09-03 webhook incident in docs/airtable-automations/CHANGELOG.md). Any
 // REST-based write (the webhook's upsertAirtableRecord) must run its fields
 // through toRestFields() after building them with this -- it isn't safe to
 // send this shape to REST as-is.
@@ -325,7 +325,7 @@ function missingSelectChoiceNames(existingChoices, incomingValues) {
 // cell-value shapes -- correct for the nightly scripts' own
 // table.createRecordsAsync()/updateRecordsAsync() calls, but wrong for a raw
 // REST API write. Two shapes differ, both confirmed against real 422s during
-// the 2026-09-03 webhook incident (see docs/airtable-automations/README.md):
+// the 2026-09-03 webhook incident (see docs/airtable-automations/CHANGELOG.md):
 //   - single select: SDK wants {name: "..."}; REST wants a plain string, and
 //     rejects the object with "Cannot parse value for field X" even for a
 //     real, existing choice.
@@ -414,7 +414,7 @@ let recordsUpdated = 0;
 // nightly scripts use, but the REST API this function actually talks to wants
 // a plain string and rejects the object with "Cannot parse value" even for a
 // real, existing choice (confirmed against the base's own field metadata —
-// see docs/airtable-automations/README.md).
+// see docs/airtable-automations/CHANGELOG.md).
 //
 // No `typecast: true` here on purpose: that would also auto-add a choice
 // Airtable has never seen at all, silently growing the option list from

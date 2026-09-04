@@ -35,7 +35,7 @@ export function normalizeSelectText(value: unknown): string | null {
 // This is SDK-specific, not universal: Airtable's REST API wants the
 // opposite -- a plain string -- and rejects this {name} shape outright, even
 // for a real, existing choice (see restFields.ts's toRestFields, and the
-// 2026-09-03 webhook incident in docs/airtable-automations/README.md). Any
+// 2026-09-03 webhook incident in docs/airtable-automations/CHANGELOG.md). Any
 // REST-based write (the webhook's upsertAirtableRecord) must run its fields
 // through toRestFields() after building them with this -- it isn't safe to
 // send this shape to REST as-is.

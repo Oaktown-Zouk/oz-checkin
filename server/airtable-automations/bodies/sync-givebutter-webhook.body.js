@@ -71,7 +71,7 @@ let recordsUpdated = 0;
 // nightly scripts use, but the REST API this function actually talks to wants
 // a plain string and rejects the object with "Cannot parse value" even for a
 // real, existing choice (confirmed against the base's own field metadata —
-// see docs/airtable-automations/README.md).
+// see docs/airtable-automations/CHANGELOG.md).
 //
 // No `typecast: true` here on purpose: that would also auto-add a choice
 // Airtable has never seen at all, silently growing the option list from
