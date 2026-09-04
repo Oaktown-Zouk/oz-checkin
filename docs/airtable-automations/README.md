@@ -46,6 +46,20 @@ enough not to warrant one. Edit it directly and paste it into Airtable.
 
 See `docs/airtable-schema.md` for what each Airtable table/field means to this app.
 
+## 2026-09 grant-dropin-credits.js: no more Member lookup, no more Credits table
+
+As part of a broader move away from a row-per-credit `Credits` table (see the credits
+work on the `merge` branch — not yet in this branch's `docs/airtable-schema.md`, so
+that cross-reference above will read stale until the two branches meet), this script
+no longer creates `Credits` rows or resolves the transaction's `Member` at all — it
+just sets `"Credits Purchased"` (a number) on the triggering `Transactions` record
+itself, and a `Members` rollup picks it up automatically. Since the only reason this
+script ever needed the `Member` link was to attach the `Credits` rows it created to
+the right person, removing that write also removes the lookup — which, incidentally,
+fully retires the entire class of bug this script had earlier (a `memberIds` input
+variable resolving to a name instead of a record id): there's no member id left to
+resolve wrong.
+
 ## 2026-09-03 webhook 422 on a select field: `Cannot parse value for field Status`
 
 First hit on `Transactions.Status`; initially (wrongly) diagnosed as a missing
