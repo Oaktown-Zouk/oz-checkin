@@ -75,9 +75,21 @@ export function CheckInDialog({
     .map(([programId, role]) => ({ programId, role }));
 
   // Purely a local preview of what remaining will become once these picks are
-  // submitted — recomputed from student.remaining on every render, not a separate
-  // piece of state, so it can never drift from the selections that produce it.
-  const localRemaining = student.remaining - selections.length;
+  // submitted — recomputed from student.remaining/availableCredits on every render,
+  // not a separate piece of state, so it can never drift from the selections that
+  // produce it. Folds in availableCredits the same way the kiosk dialog does: a
+  // student with no membership allowance but a real drop-in credit was otherwise
+  // always previewed as "0" (or negative once a class was picked) here, even though
+  // the credit badge right above correctly showed they had one — this is what that
+  // actually was. Capped by how many distinct class timeslots exist today (from
+  // activePrograms, the same list already rendered as picker rows below — front desk
+  // shows every class regardless of time, unlike kiosk's visibility-window filter, so
+  // there's no separate "visible" list to reduce this to) only once there's at least
+  // one; on a day with none at all, showing the true uncapped balance beats a
+  // misleading 0 (see KioskCheckInDialog.tsx for the identical reasoning).
+  const timeslotsToday = new Set(activePrograms.map((p) => p.startTime)).size;
+  const uncappedRemaining = student.remaining + student.availableCredits - selections.length;
+  const localRemaining = timeslotsToday > 0 ? Math.min(uncappedRemaining, timeslotsToday) : uncappedRemaining;
 
   function handleSubmit() {
     if (selections.length === 0) return;
