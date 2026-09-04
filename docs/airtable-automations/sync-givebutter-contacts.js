@@ -35,9 +35,9 @@ const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings �
 const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
 const MAX_PAGES = 40;                  // 40 × 100 = 4,000 contacts per run
 
-// null = pull everything. Set e.g. 3 for a fast nightly incremental once the
+// null = pull everything. Set e.g. 7 for a fast nightly incremental once the
 // first full pull is done — Givebutter filters server-side on updatedAfter.
-const UPDATED_WITHIN_DAYS = null;
+const UPDATED_WITHIN_DAYS = 7;
 
 // ── shared helpers (generated — edit server/airtable-automations/src/) ──
 
@@ -447,11 +447,12 @@ await syncLogTable.updateRecordAsync(syncLogRecordId, {
 // 1. Add "Contacts" as a choice on Sync Log ▸ Script — automations can't
 //    add select options, so do this by hand first or the log write fails.
 //
-// 2. First run: leave UPDATED_WITHIN_DAYS = null for a full pull.
+// 2. First run: set UPDATED_WITHIN_DAYS = null for a full pull.
 //
-// 3. Then set it to 3 and schedule nightly at 3:30, after plans (3:00) and
-//    transactions (3:15). Members must exist before contacts update them,
-//    and a 3-day window covers any missed night.
+// 3. Then set it to 7 (the current default here) and schedule nightly at
+//    3:30, after plans (3:00) and transactions (3:15). Members must exist
+//    before contacts update them, and a 7-day window comfortably covers a
+//    missed night or two.
 //
 // EXPECT THE TABLE TO GROW. This pulls everyone Givebutter knows, not just
 // members — newsletter signups, event attendees, past donors. Every view
