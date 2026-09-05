@@ -2,7 +2,15 @@
 // actually touches — see docs/airtable-schema.md for the full base schema.
 
 export interface MemberFields {
+  // Read-only in practice — Airtable computes this from First Name/Last Name (synced
+  // from Givebutter) plus Preferred Name below, as "First (Preferred) Last". The app
+  // only ever writes Preferred Name; Full Name always reflects it automatically.
   "Full Name"?: string;
+  // Front-desk-editable, via services/preferredName.ts — folded into the Full Name
+  // formula above by Airtable itself, so setting this is the only write needed for
+  // the preferred name to show up everywhere the app already displays a student's
+  // name. Blank omits the parenthetical entirely.
+  "Preferred Name"?: string;
   Email?: string;
   Phone?: string;
   "Lead Level"?: number;

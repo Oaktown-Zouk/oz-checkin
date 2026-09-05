@@ -12,6 +12,7 @@ export function StudentList({
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
+  onUpdatePreferredName,
   onTransferMembership,
   onMerge,
 }: {
@@ -27,6 +28,7 @@ export function StudentList({
   onOpenStudent: (studentId: string) => void;
   onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
+  onUpdatePreferredName: (studentId: string, preferredName: string) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
   onMerge: (survivorId: string, duplicateId: string) => Promise<void>;
 }) {
@@ -51,6 +53,7 @@ export function StudentList({
           onOpenStudent={onOpenStudent}
           onUpdateLeadLevel={onUpdateLeadLevel}
           onUpdateFollowLevel={onUpdateFollowLevel}
+          onUpdatePreferredName={onUpdatePreferredName}
           onTransferMembership={onTransferMembership}
           onMerge={onMerge}
         />

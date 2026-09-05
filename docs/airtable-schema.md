@@ -16,9 +16,13 @@ doc. `Check-ins.Class Level` links directly to `Programs`, not a specific dated
 
 ## Members (`tbl90E8ZFxXlZrVkn`)
 
-Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
-`Follow Level` (the last two are app-writable, via the level-edit dialogs),
-`Contact ID` (Givebutter's contact id, read-only here — shown on the student
+Plain fields the app reads or writes: `Full Name` (formula, read-only — `First Name` +
+`Preferred Name` (if set, as "First (Preferred) Last") + `Last Name`), `Preferred
+Name` (app-writable, via the roster row's ⋮ menu — see `services/preferredName.ts`;
+the only write needed, since the formula folds it into `Full Name` automatically),
+`Email`, `Lead Level`, `Follow Level` (the last two are app-writable, via the
+level-edit dialogs), `Contact ID` (Givebutter's contact id, read-only here — shown on
+the student
 self-service app's own QR code page; `/kiosk` doesn't read it, since kiosk check-in
 uses name search instead, see SPEC.md's "Kiosk mode"). `Email` also drives the
 separate student

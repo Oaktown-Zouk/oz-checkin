@@ -557,6 +557,9 @@ permissions don't include the one that route needs). See "Permissions" above.
   changes — see "Dance levels".
 - `PATCH /api/students/:id/follow-level` `{ level }` — **Write Student Data.** Same
   shape.
+- `PATCH /api/students/:id/preferred-name` `{ preferredName }` — **Write Student
+  Data.** Sets `Members."Preferred Name"`; blank clears it. 400 if `preferredName`
+  isn't a string.
 - `GET /api/students/:id/memberships` — **View Student Data.** Recurring Plans
   currently held by this student (for the transfer picker).
 - `POST /api/students/:id/transfer-membership` `{ planId, targetEmail }` — **Write
@@ -617,8 +620,11 @@ permissions don't include the one that route needs). See "Permissions" above.
 - "Refresh" button, top of page — manual only, no live push (see Architecture).
 - "Backdate check-ins" link in the header (hidden once a backdate is active, replaced
   by the picker) — see "Viewing and correcting past days" above.
-- 3-dot (⋮) menu on each row: **Transfer membership** — dialog listing every Recurring
-  Plan this student currently holds, plus a target email field.
+- 3-dot (⋮) menu on each row: **Set preferred name…** — a single text field, prefilled
+  with the current value; Airtable's own `Full Name` formula folds it in as
+  "First (Preferred) Last" everywhere the app already shows a student's name, so no
+  other display code needs to know about it. **Transfer membership** — dialog listing
+  every Recurring Plan this student currently holds, plus a target email field.
 - Student names link to `/students/:id` — see "Student detail page" below.
 
 ### Student detail page
