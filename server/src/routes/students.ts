@@ -6,6 +6,7 @@ import { getStudentTimeline } from "../services/studentTimeline.js";
 import { transferMembership, heldMemberships } from "../services/transfers.js";
 import { mergeMembers } from "../services/merge.js";
 import { createNote, updateNote } from "../services/notes.js";
+import { updatePreferredName } from "../services/preferredName.js";
 import { isValidDateString } from "../lib/date.js";
 import { handleError } from "../lib/respond.js";
 
@@ -44,6 +45,18 @@ studentRoutes.patch("/:id/lead-level", requirePermission("Write Student Data"), 
 studentRoutes.patch("/:id/follow-level", requirePermission("Write Student Data"), (c) =>
   handleLevelUpdate(c, "Follow Level")
 );
+
+studentRoutes.patch("/:id/preferred-name", requirePermission("Write Student Data"), async (c) => {
+  const id = c.req.param("id") ?? "";
+  const body = await c.req.json().catch(() => ({}));
+  const { preferredName } = body as { preferredName?: string };
+  if (typeof preferredName !== "string") return c.json({ error: "preferredName is required" }, 400);
+  try {
+    return c.json(await updatePreferredName(id, preferredName.trim()));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
 
 studentRoutes.get("/:id/timeline", requirePermission("View Student Data"), async (c) => {
   const id = c.req.param("id") ?? "";

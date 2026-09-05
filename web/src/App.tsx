@@ -253,6 +253,16 @@ export function App() {
     }
   }
 
+  async function handleUpdatePreferredName(studentId: string, preferredName: string) {
+    try {
+      await api.updatePreferredName(studentId, preferredName);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   async function handleTransferMembership(studentId: string, planId: string, targetEmail: string) {
     try {
       await api.transferMembership(studentId, planId, targetEmail);
@@ -361,6 +371,7 @@ export function App() {
           onOpenStudent={navigateToStudent}
           onUpdateLeadLevel={handleUpdateLeadLevel}
           onUpdateFollowLevel={handleUpdateFollowLevel}
+          onUpdatePreferredName={handleUpdatePreferredName}
           onTransferMembership={handleTransferMembership}
           onMerge={handleMerge}
         />

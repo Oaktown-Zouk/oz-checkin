@@ -20,6 +20,10 @@ export interface RecentCheckinSelection {
 export interface StudentStatus {
   id: string;
   name: string;
+  // The raw Preferred Name field, for prefilling an edit dialog — already folded
+  // into `name` above by Airtable's own Full Name formula, so this is never used for
+  // display on its own.
+  preferredName: string | null;
   email: string;
   // Givebutter's contact id, printed on this student's kiosk QR code — see
   // services/kiosk.ts.
@@ -138,6 +142,7 @@ export function buildStatus(
   return {
     id: member.id,
     name: f["Full Name"] ?? "Unnamed member",
+    preferredName: f["Preferred Name"] ?? null,
     email: f.Email ?? "",
     contactId: f["Contact ID"] ?? null,
     leadLevel: f["Lead Level"] ?? null,
@@ -180,6 +185,7 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
       filterByFormula: "NOT({Duplicate})",
       fields: [
         "Full Name",
+        "Preferred Name",
         "Email",
         "Contact ID",
         "Lead Level",
