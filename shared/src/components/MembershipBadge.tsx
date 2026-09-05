@@ -15,11 +15,12 @@ export function MembershipBadge({
   student: StudentStatus;
   showBothWhenApplicable?: boolean;
 }) {
-  // "Active" — a live membership covers check-in, nothing gets spent. "Paid" — no
-  // active membership, but a recent drop-in/check-in means they're not a stranger.
-  // "Inactive" gets no badge at all (dropped per product decision) — check-in still
-  // works either way (front desk override), and flags for review once credits run out
-  // too. See docs/airtable-schema.md, Members.Access Status.
+  // "Active" — a live membership covers check-in, nothing gets spent. Every other
+  // Access Status ("Paid", "Inactive", "Trial") gets no access-label badge at all —
+  // none of them tell front desk anything actionable beyond what the credit badge
+  // below already shows, so they'd just be clutter. Check-in still works either way
+  // (front desk override), and flags for review once credits run out too. See
+  // docs/airtable-schema.md, Members.Access Status.
   //
   // Also requires a resolved tierName, not just Access Status = Active — Airtable's
   // Tier Rule link is maintained by an automation that runs when Membership Amount is
@@ -29,21 +30,16 @@ export function MembershipBadge({
   // them as a non-member for display purposes and fall through to credits — that's
   // the actionable info front desk actually needs.
   const isMember = student.accessStatus === "Active" && !!student.tierName;
-  const accessLabel = isMember ? "Member" : student.accessStatus === "Paid" ? "Paid" : null;
-  const accessClass = isMember ? "badge-green" : "badge-gray";
 
-  // One combined badge instead of two — the tier only matters alongside an access
-  // label; shown alone (no access label) for an Inactive student who still nominally
-  // has a tier from a lapsed membership. Active members get "N Class Membership"
-  // (capitalized, count first, always singular "Class" regardless of count) to match
-  // the "N drop-in credits" pattern below, in a higher-contrast badge — this
-  // is the single most important thing on the row.
+  // Shown alone for a non-member who still nominally has a tier from a lapsed
+  // membership. Active members get "N Class Membership" (capitalized, count first,
+  // always singular "Class" regardless of count) to match the "N drop-in credits"
+  // pattern below, in a higher-contrast badge — this is the single most important
+  // thing on the row.
   const combinedLabel = isMember
     ? `${student.tierName!.replace(/class(es)?/i, "Class")} Membership`
-    : accessLabel && student.tierName
-      ? `${accessLabel} - ${student.tierName}`
-      : (accessLabel ?? student.tierName);
-  const combinedClass = isMember ? "badge-green badge-prominent" : accessLabel ? accessClass : "badge-blue";
+    : student.tierName;
+  const combinedClass = isMember ? "badge-green badge-prominent" : "badge-blue";
 
   // Non-members always see their credits state (including "No drop-in credits
   // remaining" — that's actionable for them). A member's active membership already

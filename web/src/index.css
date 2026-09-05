@@ -286,11 +286,6 @@ body {
   color: var(--amber);
 }
 
-.badge-gray {
-  background: var(--gray-bg);
-  color: var(--gray);
-}
-
 .badge-blue {
   background: var(--blue-bg);
   color: var(--blue);
