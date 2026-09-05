@@ -13,6 +13,12 @@ export interface MemberFields {
   "Classes Allowed"?: number;
   "Remaining Today"?: number;
   "Available Credits"?: number;
+  // Flat signup bonus, defaulting to 1 in Airtable's own field config so every new
+  // Member row gets one with zero automation logic needed. Only ever read/written by
+  // services/merge.ts's fillMemberGaps (copy-if-missing, same as Phone/Lead Level) —
+  // everywhere else just reads the combined "Available Credits" formula, which folds
+  // this in along with Credits Purchased and Comp Credits.
+  "New Member Credit"?: number;
   // Set manually when Givebutter's own contact-merge tool doesn't actually remove the
   // merged-away contact — it keeps re-syncing as a separate record otherwise. Excluded
   // from the roster (see studentStatus.ts); not a schema-level dedupe, just a hide flag.
@@ -63,7 +69,12 @@ export interface CheckinFields {
   "Needs Review"?: boolean;
   "Review Reason"?: string;
   "Undone At"?: string;
-  Credits?: string[]; // link -> Credits, set once gateCheckIns consumes one (services/checkins.ts)
+  // 1 iff this check-in consumed a credit (set by services/checkins.ts's gateCheckIns,
+  // cleared by undoCheckIn), 0/blank otherwise. Members."Credits Consumed" rolls this
+  // up per member -- deleting a check-in directly in Airtable (not undoing it through
+  // the app) still self-heals that rollup, same self-healing property the old
+  // Credits-table design had.
+  "Credits Consumed"?: number;
   Method?: "Form" | "Staff" | "Kiosk";
 }
 
@@ -82,14 +93,20 @@ export interface ProgramFields {
   "Visible For"?: number;
 }
 
-export interface CreditFields {
+// A manually (or future-automation) granted comp credit -- kept as its own table
+// rather than a plain number specifically so comp grants stay individually
+// auditable, the same reasoning that originally made the old Credits table a table.
+// Members."Credits Comped" rolls up the sum of Amount per member (not
+// Members."Comp Credits" -- that name belongs to the plain reverse-link field
+// Airtable auto-created for the Member link below; the rollup is a separate field).
+// "Granted" is Airtable's own Created time field type -- auto-set on row creation,
+// never written by the app, so there's no separate "when was this granted" entry to
+// maintain.
+export interface CompCreditFields {
   Member?: string[];
-  "Purchased By"?: string[];
-  Reason?: "New Member" | "Drop-in Purchase" | "Comp";
-  "Source Transaction"?: string[];
-  "Granted At"?: string;
-  "Consumed By Check-in"?: string[];
-  Available?: number;
+  Amount?: number;
+  Reason?: string;
+  Granted?: string;
 }
 
 export interface RecurringPlanFields {
@@ -180,4 +197,8 @@ export interface TransactionFields {
   "Plan ID"?: string;
   "Is Recurring"?: boolean;
   Refunded?: boolean;
+  // How many drop-in credits this transaction bought (set by the
+  // grant-dropin-credits.js automation). Rolls up into Members."Credits Purchased";
+  // also shown directly on this transaction's own studentTimeline.ts "payment" entry.
+  "Credits Purchased"?: number;
 }

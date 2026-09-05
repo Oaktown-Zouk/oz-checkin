@@ -19,9 +19,8 @@ doc. `Check-ins.Class Level` links directly to `Programs`, not a specific dated
 Plain fields the app reads or writes: `Full Name`, `Email`, `Lead Level`,
 `Follow Level` (the last two are app-writable, via the level-edit dialogs),
 `Contact ID` (Givebutter's contact id, read-only here — shown on the student
-self-service app's own QR code page, though `/kiosk` no longer reads it back: it
-used to resolve a camera scan straight to a Member, but that scanner was removed in
-favor of just typing a name, see SPEC.md's "Kiosk mode"). `Email` also drives the
+self-service app's own QR code page; `/kiosk` doesn't read it, since kiosk check-in
+uses name search instead, see SPEC.md's "Kiosk mode"). `Email` also drives the
 separate student
 self-service app's login (`services/userAccess.ts`'s `getStudentAccessForEmail`,
 case-insensitive, excluding `Duplicate`-flagged rows, and requiring at least one
@@ -41,8 +40,12 @@ Computed fields to read directly, never recompute:
 - `Remaining Today` (formula) — `Classes Allowed - Checked In Today (Live)`. Fully
   live: self-corrects on undo or on a check-in being deleted directly in Airtable.
 - `Checked In Today (Live)` (rollup) — sum of today's non-undone check-ins.
-- `Available Credits` (rollup) — count of this member's `Credits` where
-  `Available = 1`.
+- `Available Credits` (formula) — `Credits Purchased + New Member Credit + Credits
+  Comped - Credits Consumed`. `Credits Purchased`/`Credits Consumed`/`Credits Comped`
+  are themselves rollups (from `Transactions`, `Check-ins`, and `Comp Credits`
+  respectively) — see those tables' own sections and "Credits" below. (`Members."Comp
+  Credits"` is a different field — the plain reverse-link Airtable auto-created for
+  `Comp Credits.Member` — not the rollup; the app never reads it.)
 - `Recently Active` (formula) — `1`/`0` depending on whether `Last Activity` (below)
   is within the last 30 days. Drives roster sort order (recently-active members sort
   above stale ones); the 30-day threshold lives entirely in this formula, tunable
@@ -62,9 +65,9 @@ Computed fields to read directly, never recompute:
   `Membership Amount` is updated, not this app; see "Tier Rule gaps" below for when
   it's empty.
 
-Legacy/dead, safe to ignore or delete: `Unused Drop-ins` (superseded by counting
-available `Credits`), `Checked In Today` / `Last Check-in Date` (nothing writes to
-these anymore).
+Unused, safe to ignore or delete: `Unused Drop-ins` and `Credits Available` (the app
+reads `Available Credits` instead — see "Credits" below), `Checked In Today` /
+`Last Check-in Date` (nothing writes to these).
 
 ### Tier Rule gaps
 
@@ -80,10 +83,9 @@ plan amount at all. Two things handle this:
   credits shown instead.
 - **`npm run audit:credits`** (`server/src/scripts/auditCreditConsumption.ts`) — since
   a tier-less member's `Classes Allowed` rolls up to `0`, every one of their check-ins
-  should have consumed a credit or been flagged `Needs Review`. This script finds any
-  that did neither and links the member's oldest unclaimed `Available` credit. It
-  never fabricates a new credit — a genuine price/tier mismatch needs a human decision
-  about what actually happened, not an automatic guess.
+  should have `Check-ins."Credits Consumed" = 1`. This script finds any that don't and
+  sets it, same as `gateCheckIns` would have at creation time — including flagging
+  `Needs Review` if that push takes the member's running balance negative.
 
 ## Check-ins (`tblUN06HQtcMIucxK`)
 
@@ -111,11 +113,14 @@ plan amount at all. Two things handle this:
 - `Checked In At (Valid)` (formula) — `Checked In At` unless undone, else blank; feeds
   `Members.Last Check-in At`.
 - `Needs Review` / `Review Reason` — set by the app (`services/checkins.ts`'s
-  `gateCheckIns`) when a check-in exceeds the member's tier allowance and no credit is
-  available to cover it.
-- `Credits` — reverse link, populated once a `Credits` record consumes this check-in.
-  `services/checkins.ts`'s `undoCheckIn` reads this directly to find which credit to
-  free on undo, rather than scanning the whole `Credits` table.
+  `gateCheckIns`) when consuming a credit for this check-in pushes the member's
+  balance below zero (`Review Reason` is always `"Negative balance"`). Cleared by
+  `undoCheckIn` along with `Credits Consumed` if this check-in had them.
+- `Credits Consumed` (number) — `1` if this check-in consumed a credit, else `0`/blank.
+  Set by `gateCheckIns`, cleared by `undoCheckIn` — both read/write this same field
+  directly, no other table involved. `Members."Credits Consumed"` rolls this up per
+  member, which is what `Available Credits` is computed from — deleting a check-in
+  directly in Airtable (not undoing it through the app) still self-heals that rollup.
 
 The check-in dialog preselects a student's most recent visit's programs/roles by
 scanning non-undone Check-ins app-side (`StudentStatus.lastCheckinSelections`, see
@@ -123,33 +128,57 @@ scanning non-undone Check-ins app-side (`StudentStatus.lastCheckinSelections`, s
 backdating-aware: always the true most recent visit, regardless of which date is being
 viewed.
 
-## Credits (`tblCFmQJntHiuMZNN`)
+## Credits
 
-`Member` (holder), `Purchased By` (payer — defaults same as Member, kept distinct so a
-future credit-transfer feature has somewhere to write), `Reason` (`New Member` /
-`Drop-in Purchase` / `Comp`), `Source Transaction` (link → Transactions, set only for
-`Drop-in Purchase`), `Granted At`, `Consumed By Check-in`, `Available` (formula — true
-iff `Consumed By Check-in` is unlinked, so a credit self-heals if the check-in that
-consumed it is ever deleted directly in Airtable rather than undone through the app).
+Credits are plain numbers rolling up through existing links, not a dedicated
+row-per-credit table. `Members."Available Credits"` (formula) is the single number
+the app reads:
 
-The app never reimplements "is this credit valid" — it filters `Credits` by `Member` +
-`Available = 1`.
+`Credits Purchased + New Member Credit + Credits Comped - Credits Consumed`
 
-`services/merge.ts`'s `mergeMembers` reassigns `Member` and `Purchased By`
-independently when combining two duplicate `Members` rows, except: if both sides have
-their own `Reason = New Member` credit, the loser's is left in place rather than
-reassigned, so the merged student doesn't end up with two signup credits — see
-`SPEC.md`'s "Merging duplicate students".
+- `Transactions."Credits Purchased"` (number) — how many drop-in credits a
+  transaction bought. Set by `grant-dropin-credits.js` (below).
+  `Members."Credits Purchased"` rolls this up per member.
+- `Members."New Member Credit"` (number) — flat signup bonus, **defaults to 1** in
+  Airtable's own field config, so every new `Members` row gets one automatically
+  regardless of how it's created (API, automation, or by hand) — no automation logic
+  needed for this. The one place the app ever touches this field directly is
+  `services/merge.ts`'s `fillMemberGaps`
+  (copy-if-missing, same as `Phone`/`Lead Level`) — since it defaults to 1 on every
+  row, the common case (survivor already has its own) is a no-op, so a duplicate
+  pair's second signup bonus is simply dropped when the duplicate is hidden, never
+  summed.
+- **`Comp Credits`** table (its own table, not a plain field — kept separate
+  specifically so comp grants stay individually auditable): `Member` (link),
+  `Amount` (number), `Reason` (text, optional), `Granted` (Airtable's **Created
+  time** field type, auto-set, never written by the app).
+  `Members."Credits Comped"` rolls up the sum of `Amount` per member (`Members."Comp
+  Credits"` is a separate, auto-created plain link field — not the rollup).
+- `Check-ins."Credits Consumed"` (number, `1` or blank/`0`) — see "Check-ins" above.
+  `Members."Credits Consumed"` rolls this up per member.
 
-Granting is still Airtable automations; consuming and freeing a credit are both
-application code (see SPEC.md's "Credits system" for why):
-- **A** — new `Members` record → creates a `Credits` row (`Reason = New Member`).
-- **B** — a `Transactions` record entering the "qualifying drop-in" view (`succeeded`,
-  not recurring, no `Plan ID`) → creates a `Credits` row (`Reason = Drop-in Purchase`).
+`services/merge.ts`'s `mergeMembers` needs no credit-specific logic at all: `Checkins`,
+`Transactions`, and `Comp Credits` are all reassigned by the same generic
+`repointLinks` pass every other linked table goes through, so the rollups they feed
+just follow automatically; `New Member Credit` is handled by `fillMemberGaps` as
+described above.
 
-Consuming (`services/checkins.ts`'s `gateCheckIns`, run for every check-in it
-creates, live or backdated) and freeing (`undoCheckIn`, via the check-in's own
-`Credits` reverse link) are both handled the same way regardless of path.
+Granting is Airtable automations/config, not application code:
+- `Members."New Member Credit"` grants itself via Airtable's own field default
+  (`= 1`) — no automation involved.
+- **`grant-dropin-credits.js`** (`docs/airtable-automations/grant-dropin-credits.js`)
+  — runs on every `Transactions` record created; it does its own qualifying check
+  internally (not a filtered trigger view) and sets that same transaction's own
+  `"Credits Purchased"` when the payment is a drop-in (not a membership charge, and
+  at least `minDropinPrice`), otherwise a no-op.
+
+Consuming and freeing a credit are both application code (see `SPEC.md`'s "Credits
+system" for why): `services/checkins.ts`'s `gateCheckIns` (run for every check-in it
+creates, live or backdated) sets `Credits Consumed = 1` directly on the check-in
+whenever it goes over allowance — a numeric balance can go negative, so nothing
+blocks this, it just also flags `Needs Review` when the consumption leaves the
+balance negative; `undoCheckIn` resets `Credits Consumed` (and those flags, if set)
+back in the same write that sets `Undone At`.
 
 ## Programs (`tblB90zwd3OjKxxDs`)
 
@@ -182,9 +211,22 @@ subscription risks the next sync reverting the change.
 ## Transactions (`tbl97hoFODKY50QcH`)
 
 Raw Givebutter charges — one-time and recurring share this table, disambiguated by
-`Is Recurring` + `Plan ID` presence. `Drop-in Valid` (formula, 14-day expiry) is
-superseded by `Credits` for actual redemption; may still be useful for reporting, not
-for check-in logic.
+`Is Recurring` + `Plan ID` (Givebutter's own plan id, plain text) presence. Also
+`Recurring Plans` — a real link to the matching `Recurring Plans` row, resolved from
+`Plan ID` — for actually navigating from a transaction to its plan, rather than just
+matching text. `"Credits Purchased"` (number) — see "Credits" above — set by
+`grant-dropin-credits.js`, rolled up per member on `Members."Credits Purchased"`.
+`Drop-in Valid` (formula, 14-day expiry) is for reporting only, not read for
+check-in logic.
+
+`Is Recurring`/`Plan ID`/`Recurring Plans`/`Refunded*` are written by both the
+real-time webhook sync and the nightly Transactions sync (the complete, authoritative
+one), which need to stay in parity — see `docs/airtable-automations/CHANGELOG.md` —
+since `docs/airtable-automations/grant-dropin-credits.js`'s own "is this a
+membership payment" check depends on them being set correctly regardless of which
+sync path wrote a given row. A row missing these
+fields can be backfilled by running the nightly script once with `LOOKBACK_DAYS` set
+to 3650.
 
 ## Tiers (`tblf5kiolgFrtQaIG`)
 

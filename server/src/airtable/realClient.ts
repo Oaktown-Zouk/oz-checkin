@@ -113,3 +113,14 @@ export async function updateRecord<F = Record<string, unknown>>(
     body: JSON.stringify({ fields }),
   });
 }
+
+// Genuinely destructive and irreversible — every other write in this app is designed
+// to be safely retryable (see e.g. services/merge.ts's Duplicate-flag pattern), so
+// reach for this only when a record represents erroneous data that shouldn't exist at
+// all, not as a general-purpose cleanup tool. Airtable auto-maintains both sides of a
+// link field, so deleting a record also clears it from wherever else it was linked.
+export async function deleteRecord(table: string, id: string): Promise<void> {
+  await request<{ id: string; deleted: boolean }>(`/${encodeTable(table)}/${id}`, {
+    method: "DELETE",
+  });
+}
