@@ -204,9 +204,11 @@ npm run build       # all four workspaces
 One-time setup for `test:e2e`: `npx playwright install chromium` (add
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` if you're on macOS 13 — see `SPEC.md`).
 
-`server/src/scripts/auditCreditConsumption.ts` is a separate thing: a one-off/periodic
-maintenance script that runs against the **real** base (dry-run by default,
-`--apply` to write) — not part of the test suite.
+`server/src/scripts/auditCreditConsumption.ts` and `server/src/scripts/
+backfillRebateEligibility.ts` are a separate thing: one-off/periodic maintenance
+scripts that run against the **real** base (dry-run by default, `--apply` to write) —
+not part of the test suite. See `SPEC.md`'s "Rebates" section for what the latter
+backfills.
 
 ## Useful commands
 
@@ -223,4 +225,5 @@ maintenance script that runs against the **real** base (dry-run by default,
 | `npm test` | Server unit tests, against the mock |
 | `npm run test:e2e` | Playwright E2E specs, against a sandbox Playwright boots itself |
 | `npm run audit:credits --workspace server` | Repeatable check: finds check-ins for a tier-less member (no `Tier Rule` link) missing a consumed credit, and links their oldest unclaimed available credit — dry-run by default, `--apply` to write. Reports (doesn't fabricate) a credit for gaps with none available. Mainly useful now for auditing check-ins that predate the app taking over credit consumption itself (see `SPEC.md`'s "Credits system"), or for catching drift from a check-in created outside the app entirely. |
+| `npm run backfill:rebates --workspace server` | One-time backfill: marks `Rebate Eligible`/`Rebate Status` for members who already qualified for the first-time-membership rebate before the Airtable automations started doing this on every new payment — dry-run by default, `--apply` to write. See `SPEC.md`'s "Rebates" section. |
 | `npx tsx src/scripts/setKioskPassword.ts <identifier> <newPassword>` (run from `server/`) | Sets/rotates the shared kiosk-tablet login password — see `SPEC.md`'s "Auth" section. No in-app UI for this; it's a deliberate, rare operation. |

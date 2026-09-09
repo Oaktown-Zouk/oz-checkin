@@ -10,10 +10,7 @@ import {
   withinVisibleWindow,
 } from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
-// MP3, not the original Ogg/Opus export — Safari (both macOS and iOS) has no Ogg
-// container support at all, so the chime silently never played there (Chrome, which
-// kiosk tablets don't run, decodes Ogg/Opus fine, which is how this went unnoticed).
-// MP3 plays natively in every browser this app needs to support.
+// mp3 for safari compatibility
 import chimeUrl from "../../assets/bell_g5.mp3";
 
 const ROLES = ["Lead", "Follow"] as const;
@@ -22,12 +19,6 @@ const CHIME_INTERVAL_MS = 700;
 
 // One chime per class checked in, 0.7s apart — deliberately shorter than the clip
 // itself, so consecutive chimes overlap rather than waiting for each other to finish.
-// A new Audio instance per play (rather than reusing one) is what makes that
-// possible: each instance has its own playback position, so they can ring
-// simultaneously instead of one cutting the other off. play() can reject (e.g. no
-// audio hardware, or the browser being unusually strict about it despite this always
-// being called from a direct tap) — a missed chime isn't worth surfacing an error
-// over, so this swallows that failure and just stops repeating.
 function playChime(timesRemaining: number) {
   if (timesRemaining <= 0) return;
   new Audio(chimeUrl).play().catch(() => {});

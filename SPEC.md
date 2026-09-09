@@ -120,6 +120,30 @@ run out is easy to find for reconciliation rather than turned away.
 See `docs/airtable-schema.md`'s "Credits" section for the full field-by-field
 reference.
 
+## Rebates
+
+The first time a member's recurring (membership) payment succeeds, they're eligible for
+a 50% rebate on it — tracked entirely through Airtable fields this app never computes
+itself, only writes to. `Transactions."Recurring Payment Key"` and
+`Members."First Recurring Key"` are pre-existing Airtable formula/rollup fields (a
+sortable `(date, amount)` key, and the `MIN()` of that key across a member's Transactions);
+a transaction is that member's first qualifying payment iff its own key equals the
+member's. `docs/airtable-automations/`'s `decideRebateUpdate` compares the two: when they
+match, the transaction gets `Rebate Eligible = "50%"`, and the member's `Rebate Status`
+moves from blank/`New` to `Refund Eligible` (only ever moved forward from there — a
+status further along the pipeline, e.g. `Refund Requested`, is left alone). Applied two
+ways, same decision function both times:
+
+- **`sync-givebutter-webhook.js`** — checks the one transaction each webhook event just
+  touched, right after writing it.
+- **`sync-givebutter-transactions.js`** (nightly) — a full-table self-healing pass,
+  independent of `LOOKBACK_DAYS`, over every transaction not yet marked.
+
+`server/src/scripts/backfillRebateEligibility.ts` (`npm run backfill:rebates --workspace
+server`) is a one-time, dry-run-by-default script for marking members who already
+qualified before this automation existed. See `docs/airtable-schema.md`'s "Rebates"
+section for the full field reference.
+
 ## Dance levels
 
 Each student has an independent **Lead level** and **Follow level**, 1–4 or unset,
@@ -194,9 +218,12 @@ someone else's write-up.
 - **Preselected from the student's most recent visit** (`StudentStatus.
   lastCheckinSelections`, computed once per roster fetch, not per dialog-open) — the
   programs/roles they picked last time are checked by default, restricted to whichever
-  of those programs are still on today's (or the backdated day's) active schedule.
-  Deliberately not backdating-aware: always the true most recent visit, not "most
-  recent as of the viewed date."
+  of those programs are still on today's (or the backdated day's) active schedule —
+  `activePrograms` for the front desk's `CheckInDialog`, and the narrower kiosk-only
+  `visiblePrograms` for `KioskCheckInDialog` (see "Visible window" below), so the kiosk
+  never preselects a class that's already dropped out of its own picker. Deliberately
+  not backdating-aware: always the true most recent visit, not "most recent as of the
+  viewed date."
 - **Program schedules are fetched once per session** (`GET /api/programs`, no date
   param — all `Status = Active` programs with their raw weekday/date-range/skip-date
   fields), not re-fetched every time the check-in picker opens. "Which programs are
@@ -387,12 +414,18 @@ one thing, their own data, and nothing else.
   missing-redirect bug here either way — it proxies to Vite's own dev server, which
   already does SPA-friendly fallback on its own; the failure mode only shows up
   against the real static-hosted build.
-- **Navigation:** a top-left hamburger (`NavMenu.tsx`) linking "Front Desk" and
-  "Kiosk," present on all three pages but only rendered for a session holding both
+- **Navigation:** a top-left hamburger (`NavMenu.tsx`) linking "Front Desk", "Kiosk",
+  and two quick links straight into a specific kiosk screen — "Purchase QR Code" (the
+  "Buy a pass" screen) and "New Member Signup" (the sign-up class-count screen) — for
+  jumping a student there without detouring through the kiosk's own home screen first.
+  Present on all three pages but only rendered for a session holding both
   `View Student Data` and `Create Checkins` — i.e. only when there's actually more
   than one destination it could send that session to. A `Kiosk`-only session (just
   `Create Checkins`) never sees it, since `/kiosk` is the only page it can reach
-  anyway.
+  anyway. The quick links work by giving `Route`'s `"kiosk"` variant an optional
+  `screen` field (`App.tsx`'s `navigateToKiosk(screen?)`) that `KioskPage` seeds its
+  screen state from and re-applies via a `useEffect` keyed on that prop — covering
+  both a fresh mount and an already-mounted kiosk page.
 - **Auth:** Google OAuth (authorization code flow, `server/src/routes/auth.ts`) — sign-in
   redirects to Google, the callback exchanges the code server-side and reads the
   account's email from Google's userinfo endpoint, then resolves it to a role and
@@ -683,6 +716,13 @@ front-desk involvement.
   name the actual reason instead of a blanket "not found." `Members.Contact ID` is
   unused by this page; the separate student self-service app still has its own "show
   my QR code" view.
+- **Home screen**: a large "Self Check-In" heading above the search bar, whose input
+  is styled with explicit light colors/border rather than left to the browser's
+  default form-control chrome — `:root`'s `color-scheme: light dark` otherwise makes
+  an unstyled `<input>` render in low-contrast native dark-mode styling regardless of
+  the page's own light theme. The two sign-up/purchase entry points sit at the bottom
+  of the page, smaller, under a "Need to sign up?" label — sized and placed so a
+  student walking up gravitates toward the search bar first, not the buttons.
 - **Loading feedback**: a search-result tap opens a loading dialog instantly
   (`DialogState { kind: "loading" }`, `KioskPage.tsx`), before the
   `GET /api/kiosk/students/:id` round trip that resolves it completes — there's never
@@ -732,6 +772,15 @@ front-desk involvement.
   home screen with their own small page stack (`KioskScreen`/`KioskFlowScreen`,
   `kioskProducts.ts`). No backend involvement at all: every step is either static
   client-side navigation or one of Givebutter's own hosted forms.
+  - **Leaving the flow**: every screen in the stack shows both a "← Back" (one step
+    back in the stack) and a "Done" button (straight back to the kiosk home screen,
+    `KioskFlowShell`'s `onDone`, threaded down from `KioskPurchaseFlow`'s own `onExit`
+    at every case). Entering the flow from the home screen also pushes one history
+    entry (`KioskPage.tsx`, keyed off `screen.kind` transitioning away from `"home"`)
+    so the tablet's own browser-back gesture exits the flow the same way Done does,
+    via a `popstate` listener that always resets to `{kind: "home"}`; leaving the flow
+    through any in-app path (Done, a widget's own completion) consumes that same
+    history entry with `history.back()` rather than leaving a dangling one behind.
   - **First time?** asks "How many classes would you like to take on your first
     day?" (One/Two), mirroring the public sign-up widget's own first-time flow (see
     "Public sign-up widget" under "Student self-service app" below) rather than going
@@ -746,10 +795,13 @@ front-desk involvement.
       drop-in uses, since the first class is free and only the second is actually
       charged — with a fixed heading explaining that instead of the usual pricing
       policy note (`shared`'s `FIRST_DAY_SECOND_CLASS_NOTE`).
-  - **Buy a pass** shows a QR code first — pointing at the public sign-up widget
+  - **Buy a pass** shows just a QR code — pointing at the public sign-up widget
     (`kioskProducts.ts`'s `KIOSK_SIGNUP_PAGE_URL`, `my.oaktownzouk.com/signup`), so a
-    student can finish on their own phone from the very first tap — then "Or buy on
-    this tablet" with the drop-in/membership choice below it.
+    student can finish on their own phone from the very first tap — and a smaller
+    "Don't have your phone? Buy on this tablet" button below it, deliberately less
+    prominent so a student defaults to their own phone. That button goes to its own
+    screen holding the drop-in/membership choice, which used to sit directly on the
+    QR screen.
   - **Drop-in** ("How many classes would you like to take today?") or **membership**
     ("...per week?"), each offering One or Two classes. Every one of those four
     combinations maps to its own Givebutter product/widget id (`kioskProducts.ts`'s
