@@ -10,7 +10,11 @@ import {
   withinVisibleWindow,
 } from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
-import chimeUrl from "../../assets/bell_g5.opus";
+// MP3, not the original Ogg/Opus export — Safari (both macOS and iOS) has no Ogg
+// container support at all, so the chime silently never played there (Chrome, which
+// kiosk tablets don't run, decodes Ogg/Opus fine, which is how this went unnoticed).
+// MP3 plays natively in every browser this app needs to support.
+import chimeUrl from "../../assets/bell_g5.mp3";
 
 const ROLES = ["Lead", "Follow"] as const;
 const WELCOME_MS = 5000;

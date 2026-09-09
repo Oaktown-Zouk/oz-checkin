@@ -63,19 +63,29 @@ function useQrDataUrl(url: string | undefined): string | null {
 function KioskFlowShell({
   title,
   onBack,
+  onDone,
   children,
 }: {
   title: string;
   onBack: () => void;
+  // Returns all the way to the kiosk home screen, regardless of how deep into the
+  // flow this screen is — for a student who's done (or given up) mid-flow, rather
+  // than stepping back through every screen they came through via Back alone.
+  onDone: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="kiosk-flow-screen">
       <h1 className="kiosk-flow-title">{title}</h1>
       {children}
-      <button type="button" className="btn btn-secondary kiosk-flow-back" onClick={onBack}>
-        ← Back
-      </button>
+      <div className="kiosk-flow-nav">
+        <button type="button" className="btn btn-secondary kiosk-flow-back" onClick={onBack}>
+          ← Back
+        </button>
+        <button type="button" className="btn btn-secondary kiosk-flow-back" onClick={onDone}>
+          Done
+        </button>
+      </div>
     </div>
   );
 }
@@ -83,11 +93,19 @@ function KioskFlowShell({
 // Same waiver notice the public widget shows before its own free-class step (see
 // shared/src/purchaseCopy.ts's WAIVER_NOTICE) — two inline links in the middle of
 // one sentence, so it's rendered from structured data rather than one plain string.
-function KioskWaiverScreen({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
+function KioskWaiverScreen({
+  onBack,
+  onContinue,
+  onDone,
+}: {
+  onBack: () => void;
+  onContinue: () => void;
+  onDone: () => void;
+}) {
   useIdleTimer(FLOW_IDLE_MS, onBack);
 
   return (
-    <KioskFlowShell title="Before your first class" onBack={onBack}>
+    <KioskFlowShell title="Before your first class" onBack={onBack} onDone={onDone}>
       <p className="kiosk-flow-policy-note">
         {WAIVER_NOTICE.prefix}{" "}
         <a href={WAIVER_NOTICE.codeOfConduct.url} target="_blank" rel="noopener">
@@ -105,13 +123,21 @@ function KioskWaiverScreen({ onBack, onContinue }: { onBack: () => void; onConti
   );
 }
 
-function KioskFreeClassScreen({ onBack, onIdle }: { onBack: () => void; onIdle: () => void }) {
+function KioskFreeClassScreen({
+  onBack,
+  onIdle,
+  onDone,
+}: {
+  onBack: () => void;
+  onIdle: () => void;
+  onDone: () => void;
+}) {
   useGivebutterWidgetScript();
   const containerRef = useRef<HTMLDivElement>(null);
   useIdleTimer(WIDGET_IDLE_MS, onIdle, containerRef);
 
   return (
-    <KioskFlowShell title="Sign up for a free class" onBack={onBack}>
+    <KioskFlowShell title="Sign up for a free class" onBack={onBack} onDone={onDone}>
       <div className="kiosk-widget-wrap" ref={containerRef}>
         <givebutter-widget id={SIGNUP_PRODUCT.widgetId} />
       </div>
@@ -125,13 +151,21 @@ function KioskFreeClassScreen({ onBack, onIdle }: { onBack: () => void; onIdle: 
 // DROPIN_PRODUCTS[1], the same product/price a returning student's single drop-in
 // uses. No sliding-scale policy note here, matching the public widget's own version
 // of this step — this note already covers the pricing context that step needs.
-function KioskSecondClassScreen({ onBack, onIdle }: { onBack: () => void; onIdle: () => void }) {
+function KioskSecondClassScreen({
+  onBack,
+  onIdle,
+  onDone,
+}: {
+  onBack: () => void;
+  onIdle: () => void;
+  onDone: () => void;
+}) {
   useGivebutterWidgetScript();
   const containerRef = useRef<HTMLDivElement>(null);
   useIdleTimer(WIDGET_IDLE_MS, onIdle, containerRef);
 
   return (
-    <KioskFlowShell title={FIRST_DAY_SECOND_CLASS_NOTE} onBack={onBack}>
+    <KioskFlowShell title={FIRST_DAY_SECOND_CLASS_NOTE} onBack={onBack} onDone={onDone}>
       <div className="kiosk-widget-wrap" ref={containerRef}>
         <givebutter-widget id={DROPIN_PRODUCTS[1].widgetId} />
       </div>
@@ -139,27 +173,52 @@ function KioskSecondClassScreen({ onBack, onIdle }: { onBack: () => void; onIdle
   );
 }
 
+// Leads with the QR code — finishing on a student's own phone is the preferred path
+// — and tucks the on-tablet option behind a small, deliberately less prominent
+// button, matching the "don't gravitate here" treatment the kiosk home screen's own
+// sign-up/buy-a-pass buttons already get (see KioskPage.tsx).
 function KioskBuyAPassScreen({
   onBack,
-  onSelectDropIn,
-  onSelectMembership,
+  onBuyOnTablet,
+  onDone,
 }: {
   onBack: () => void;
-  onSelectDropIn: () => void;
-  onSelectMembership: () => void;
+  onBuyOnTablet: () => void;
+  onDone: () => void;
 }) {
   useIdleTimer(FLOW_IDLE_MS, onBack);
   const dataUrl = useQrDataUrl(KIOSK_SIGNUP_PAGE_URL);
 
   return (
-    <KioskFlowShell title="Buy a pass" onBack={onBack}>
+    <KioskFlowShell title="Buy a pass" onBack={onBack} onDone={onDone}>
       <p className="kiosk-flow-subtitle">Scan to buy on your phone</p>
       {dataUrl ? (
         <img src={dataUrl} alt="QR code to buy a pass or membership on your phone" className="kiosk-qr-image" />
       ) : (
         <p className="dialog-description">Loading QR code…</p>
       )}
-      <p className="kiosk-flow-subtitle">Or buy on this tablet</p>
+      <button type="button" className="btn btn-secondary kiosk-buy-on-tablet-btn" onClick={onBuyOnTablet}>
+        Don't have your phone? Buy on this tablet
+      </button>
+    </KioskFlowShell>
+  );
+}
+
+function KioskBuyOnTabletScreen({
+  onBack,
+  onSelectDropIn,
+  onSelectMembership,
+  onDone,
+}: {
+  onBack: () => void;
+  onSelectDropIn: () => void;
+  onSelectMembership: () => void;
+  onDone: () => void;
+}) {
+  useIdleTimer(FLOW_IDLE_MS, onBack);
+
+  return (
+    <KioskFlowShell title="Buy on this tablet" onBack={onBack} onDone={onDone}>
       <div className="kiosk-flow-options">
         <button type="button" className="btn btn-primary kiosk-flow-option" onClick={onSelectDropIn}>
           Buy a drop-in
@@ -176,15 +235,17 @@ function KioskClassCountScreen({
   title,
   onBack,
   onSelect,
+  onDone,
 }: {
   title: string;
   onBack: () => void;
   onSelect: (count: 1 | 2) => void;
+  onDone: () => void;
 }) {
   useIdleTimer(FLOW_IDLE_MS, onBack);
 
   return (
-    <KioskFlowShell title={title} onBack={onBack}>
+    <KioskFlowShell title={title} onBack={onBack} onDone={onDone}>
       <div className="kiosk-flow-options">
         <button type="button" className="btn btn-primary kiosk-flow-option" onClick={() => onSelect(1)}>
           One
@@ -207,14 +268,24 @@ function policyNoteFor(product: GivebutterProduct): string | null {
   return null;
 }
 
-function KioskWidgetScreen({ product, onBack, onIdle }: { product: GivebutterProduct; onBack: () => void; onIdle: () => void }) {
+function KioskWidgetScreen({
+  product,
+  onBack,
+  onIdle,
+  onDone,
+}: {
+  product: GivebutterProduct;
+  onBack: () => void;
+  onIdle: () => void;
+  onDone: () => void;
+}) {
   useGivebutterWidgetScript();
   const containerRef = useRef<HTMLDivElement>(null);
   useIdleTimer(WIDGET_IDLE_MS, onIdle, containerRef);
   const policyNote = policyNoteFor(product);
 
   return (
-    <KioskFlowShell title="Complete your purchase" onBack={onBack}>
+    <KioskFlowShell title="Complete your purchase" onBack={onBack} onDone={onDone}>
       {policyNote && (
         <p className="kiosk-flow-policy-note">
           {policyNote} {KIOSK_PRICING_CONTACT_CLAUSE}{" "}
@@ -251,6 +322,7 @@ export function KioskPurchaseFlow({
           title="How many classes would you like to take on your first day?"
           onBack={onExit}
           onSelect={(count) => onNavigate(count === 1 ? { kind: "signupWaiver" } : { kind: "signupSecondClass" })}
+          onDone={onExit}
         />
       );
 
@@ -259,21 +331,36 @@ export function KioskPurchaseFlow({
         <KioskWaiverScreen
           onBack={() => onNavigate({ kind: "signupCount" })}
           onContinue={() => onNavigate({ kind: "signupFreeClass" })}
+          onDone={onExit}
         />
       );
 
     case "signupFreeClass":
-      return <KioskFreeClassScreen onBack={() => onNavigate({ kind: "signupWaiver" })} onIdle={onExit} />;
+      return (
+        <KioskFreeClassScreen onBack={() => onNavigate({ kind: "signupWaiver" })} onIdle={onExit} onDone={onExit} />
+      );
 
     case "signupSecondClass":
-      return <KioskSecondClassScreen onBack={() => onNavigate({ kind: "signupCount" })} onIdle={onExit} />;
+      return (
+        <KioskSecondClassScreen onBack={() => onNavigate({ kind: "signupCount" })} onIdle={onExit} onDone={onExit} />
+      );
 
     case "buyAPass":
       return (
         <KioskBuyAPassScreen
           onBack={onExit}
+          onBuyOnTablet={() => onNavigate({ kind: "buyOnTablet" })}
+          onDone={onExit}
+        />
+      );
+
+    case "buyOnTablet":
+      return (
+        <KioskBuyOnTabletScreen
+          onBack={() => onNavigate({ kind: "buyAPass" })}
           onSelectDropIn={() => onNavigate({ kind: "dropInCount" })}
           onSelectMembership={() => onNavigate({ kind: "membershipCount" })}
+          onDone={onExit}
         />
       );
 
@@ -281,8 +368,9 @@ export function KioskPurchaseFlow({
       return (
         <KioskClassCountScreen
           title="How many classes would you like to take today?"
-          onBack={() => onNavigate({ kind: "buyAPass" })}
+          onBack={() => onNavigate({ kind: "buyOnTablet" })}
           onSelect={(count) => onNavigate({ kind: "widget", product: DROPIN_PRODUCTS[count] })}
+          onDone={onExit}
         />
       );
 
@@ -290,8 +378,9 @@ export function KioskPurchaseFlow({
       return (
         <KioskClassCountScreen
           title="How many classes would you like to take per week?"
-          onBack={() => onNavigate({ kind: "buyAPass" })}
+          onBack={() => onNavigate({ kind: "buyOnTablet" })}
           onSelect={(count) => onNavigate({ kind: "widget", product: MEMBERSHIP_PRODUCTS[count] })}
+          onDone={onExit}
         />
       );
 
@@ -303,6 +392,7 @@ export function KioskPurchaseFlow({
             onNavigate(screen.product.key.startsWith("dropin") ? { kind: "dropInCount" } : { kind: "membershipCount" })
           }
           onIdle={onExit}
+          onDone={onExit}
         />
       );
   }
