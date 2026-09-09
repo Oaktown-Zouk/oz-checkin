@@ -170,8 +170,59 @@ for (let i = 0; i < transactionsToUpdate.length; i += 50) await transactionsTabl
 
 console.log(`Transactions — created ${transactionsToCreate.length}, updated ${transactionsToUpdate.length}`);
 
-// 6 ── Close out the log row (only reached if everything above succeeded)
+// 6 ── First-time-membership rebate eligibility.
+//
+// A full-table pass, not scoped to this run's LOOKBACK_DAYS window — same
+// "rolling window catches recent changes, this closes any gap" model as the rest of
+// this sync (see the file header). Recurring Payment Key (Transactions) and First
+// Recurring Key (Members) are pre-existing Airtable formula/rollup fields that
+// already compute themselves off whatever's already on each record — see
+// decideRebateUpdate's own comment for why comparing the two keys is enough,
+// without re-deriving "is this the member's first recurring payment" here. Cheap to
+// run every night in full: only candidate rows (a real key, not already marked) get
+// fetched by member, and Airtable script runs stay well under the fetch()/record
+// limits at this base's current size.
+const rebateCandidateQuery = await transactionsTable.selectRecordsAsync({
+  fields: ['Member', 'Recurring Payment Key', 'Rebate Eligible']
+});
+const rebateCandidates = rebateCandidateQuery.records.filter(
+  (record) => record.getCellValue('Recurring Payment Key') != null && record.getCellValueAsString('Rebate Eligible') !== '50%'
+);
+
+const transactionsToMarkEligible = [];
+const membersToMarkEligible = [];
+if (rebateCandidates.length) {
+  const rebateMemberIds = new Set(
+    rebateCandidates.map((record) => record.getCellValue('Member')?.[0]).filter(Boolean)
+  );
+  const rebateMemberQuery = await membersTable.selectRecordsAsync({ fields: ['First Recurring Key', 'Rebate Status'] });
+  const rebateMemberById = new Map(rebateMemberQuery.records.filter((record) => rebateMemberIds.has(record.id)).map((record) => [record.id, record]));
+
+  for (const record of rebateCandidates) {
+    const memberId = record.getCellValue('Member')?.[0];
+    const member = memberId && rebateMemberById.get(memberId);
+    if (!member) continue;
+
+    const decision = decideRebateUpdate(
+      record.getCellValue('Recurring Payment Key'),
+      member.getCellValue('First Recurring Key'),
+      member.getCellValueAsString('Rebate Status')
+    );
+    if (decision.markTransactionRebateEligible) {
+      transactionsToMarkEligible.push({ id: record.id, fields: { 'Rebate Eligible': toSelectField('50%') } });
+    }
+    if (decision.markMemberRefundEligible) {
+      membersToMarkEligible.push({ id: memberId, fields: { 'Rebate Status': toSelectField('Refund Eligible') } });
+    }
+  }
+
+  for (let i = 0; i < transactionsToMarkEligible.length; i += 50) await transactionsTable.updateRecordsAsync(transactionsToMarkEligible.slice(i, i + 50));
+  for (let i = 0; i < membersToMarkEligible.length; i += 50) await membersTable.updateRecordsAsync(membersToMarkEligible.slice(i, i + 50));
+}
+console.log(`Rebate eligibility — ${transactionsToMarkEligible.length} transaction(s) marked 50%, ${membersToMarkEligible.length} member(s) marked Refund Eligible`);
+
+// 7 ── Close out the log row (only reached if everything above succeeded)
 await syncLogTable.updateRecordAsync(syncLogRecordId, {
   'Records Created': transactionsToCreate.length + membersToCreate.length,
-  'Records Updated': transactionsToUpdate.length + memberFieldGapsToFill.length
+  'Records Updated': transactionsToUpdate.length + memberFieldGapsToFill.length + transactionsToMarkEligible.length + membersToMarkEligible.length
 });

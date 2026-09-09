@@ -30,6 +30,7 @@ const PURE_MODULES = [
   "selectChoices.ts",
   "restFields.ts",
   "retry.ts",
+  "rebateEligibility.ts",
 ];
 
 function transpileToPlainJs(tsSource: string): string {

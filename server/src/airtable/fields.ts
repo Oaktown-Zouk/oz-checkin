@@ -67,6 +67,18 @@ export interface MemberFields {
   "To (safe, from Levelups)"?: number[];
   "Issuer Name (from Levelups)"?: string[];
   "Created (from Levelups)"?: string[];
+  // Formula/rollup, read-only — MIN of the packed (date, amount) key across every
+  // recurring payment this member made; only used to compare against a
+  // Transaction's own "Recurring Payment Key" (see fields below) to find the one
+  // row that IS this member's first. Only ever read by
+  // scripts/backfillRebateEligibility.ts — the Airtable automations
+  // (server/airtable-automations/) do the same comparison on the live sync path.
+  "First Recurring Key"?: number;
+  // Written only by scripts/backfillRebateEligibility.ts (the Airtable automations
+  // handle it going forward) — see docs/airtable-schema.md's "Rebates" section for
+  // the full lifecycle. Only ever moved from blank/"New" to "Refund Eligible" here;
+  // anything further along the pipeline is left alone.
+  "Rebate Status"?: string;
 }
 
 export interface CheckinFields {
@@ -209,4 +221,12 @@ export interface TransactionFields {
   // grant-dropin-credits.js automation). Rolls up into Members."Credits Purchased";
   // also shown directly on this transaction's own studentTimeline.ts "payment" entry.
   "Credits Purchased"?: number;
+  // Formula, read-only — sortable (date, amount) encoding, non-blank only for a
+  // qualifying (Is Recurring + succeeded) transaction with an Amount and
+  // Transacted At. See MemberFields."First Recurring Key"'s comment — only ever
+  // read by scripts/backfillRebateEligibility.ts.
+  "Recurring Payment Key"?: number;
+  // Written only by scripts/backfillRebateEligibility.ts (the Airtable automations
+  // handle it going forward) — see docs/airtable-schema.md's "Rebates" section.
+  "Rebate Eligible"?: string;
 }

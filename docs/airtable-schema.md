@@ -232,6 +232,46 @@ sync path wrote a given row. A row missing these
 fields can be backfilled by running the nightly script once with `LOOKBACK_DAYS` set
 to 3650.
 
+## Rebates
+
+First-time-membership sliding-scale rebate: half of whatever a member actually paid
+on their first recurring charge comes back to them. Entirely computed/tracked
+through existing fields — no code in this app touches any of it; the Airtable
+automations (`server/airtable-automations/`) are the only thing that writes to it,
+via `server/airtable-automations/src/rebateEligibility.ts`'s `decideRebateUpdate`.
+
+- `Transactions."Recurring Payment Key"` (formula) — a sortable `(date, amount)`
+  encoding: days-since-2020 in the high digits, amount-in-cents in the low six.
+  Non-blank only for a qualifying transaction (`Is Recurring`, `Status = "succeeded"`,
+  `Amount`, `Transacted At` all present). Deliberately does **not** exclude a later
+  refund — processing a refund can't retroactively change what someone was owed.
+- `Members."First Recurring Key"` (rollup) — `MIN()` of `Recurring Payment Key`
+  across every transaction this member (the payer, not `Covers Member`) made; sorting
+  by date first means the minimum is the earliest payment, with its amount riding
+  along in the low digits.
+- `Members."First Payment Amount"` (formula) — that key's amount, unpacked via `MOD`.
+  The actual amount paid, not the tier minimum — sliding-scale members choose their
+  own amount above it, and the rebate is half of what they chose.
+- `Members."Rebate Owed"` (formula) — `ROUND(First Payment Amount * 0.5, 2)`. What
+  SHOULD be sent; `Rebate Amount` (plain currency, set by hand) records what WAS —
+  two fields on purpose, so a mistyped payout shows up as a difference instead of
+  silently overwriting the truth.
+- `Transactions."Rebate Eligible"` (`"N/A"` / `"50%"`) — set to `"50%"` on whichever
+  transaction IS a member's first (`Recurring Payment Key` equals their
+  `First Recurring Key`), regardless of that member's own `Rebate Status` below —
+  describes the transaction's own rebate tier, not a final payout decision.
+- `Members."Rebate Status"` (`New` → `Refund Eligible` → `Refund Method Email Sent` →
+  `Refund Requested` → `Refund Processed`, or `Not Eligible`) — the human-facing
+  pipeline. Automation only ever performs the first transition, from blank/`New` to
+  `Refund Eligible`, the instant a qualifying first payment lands; every stage after
+  that is moved by hand and is never touched by automation again — matches
+  `Rebate Owed`'s own "never retroactively changes what someone was owed" policy.
+
+`server/src/scripts/backfillRebateEligibility.ts` is the one-time (but safe to
+re-run) catch-up for members who already had a qualifying first payment before this
+automation existed — same logic, run once with `--apply` against the whole table
+instead of per-webhook-event.
+
 ## Tiers (`tblf5kiolgFrtQaIG`)
 
 `Tier` (name), `Min Monthly Price`, `Classes Per Day`, `Classes Per Week`, `Members`
