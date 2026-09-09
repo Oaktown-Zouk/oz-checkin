@@ -10,10 +10,11 @@ import {
   type StudentStatus,
 } from "../api.js";
 import { usePermissions } from "../permissions.js";
-import type { KioskScreen } from "../kioskProducts.js";
+import type { KioskFlowScreen, KioskScreen } from "../kioskProducts.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
 import { KioskPurchaseFlow } from "./KioskPurchaseFlow.js";
+import { studioLocalToUtc } from "../programSchedule.js";
 import { ErrorBanner, Portal } from "shared";
 
 const ERROR_DISPLAY_MS = 5000;
@@ -66,10 +67,16 @@ type DialogState = { kind: "loading" } | { kind: "student"; status: StudentStatu
 // *who*, never to decide *whether*.
 export function KioskPage({
   programs,
+  requestedScreen,
   onUnauthorized,
   onLogout,
 }: {
   programs: ProgramSchedule[];
+  // A one-shot jump to a specific flow screen, from a NavMenu quick-link (e.g.
+  // "Purchase QR Code") — see the effect below. undefined means no pending request;
+  // App.tsx passes a fresh object each time one of those links is clicked, even if
+  // this component is already mounted and already showing that same screen kind.
+  requestedScreen?: KioskFlowScreen;
   onUnauthorized: () => void;
   onLogout: () => void;
 }) {
@@ -77,8 +84,24 @@ export function KioskPage({
   const canBackdate = has("Backdate Kiosk");
 
   // Admin-only "simulate now" override, gated by Backdate Kiosk — see
-  // EffectiveDateControl. "" means live, same convention as the front desk's.
-  const [effectiveAt, setEffectiveAt] = useState("");
+  // EffectiveDateControl. "" means live, same convention as the front desk's. Seeded
+  // from the URL on mount (only when canBackdate — a non-admin session's URL is never
+  // trusted here, same as the server independently re-checking Backdate Kiosk on every
+  // request) so a shared/bookmarked test link actually lands on the simulated time
+  // instead of always silently opening live. Kept namespaced to this component (not
+  // App.tsx's own effectiveAt for the front desk) since the two need independent
+  // permission gates on the same query param name across different routes.
+  const [effectiveAt, setEffectiveAtState] = useState(() =>
+    canBackdate ? (new URLSearchParams(window.location.search).get("effectiveAt") ?? "") : ""
+  );
+  const setEffectiveAt = useCallback((value: string) => {
+    setEffectiveAtState(value);
+    const params = new URLSearchParams(window.location.search);
+    if (value) params.set("effectiveAt", value);
+    else params.delete("effectiveAt");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }, []);
   const effectiveDate = effectiveAt ? effectiveAt.slice(0, 10) : undefined;
 
   const [roster, setRoster] = useState<KioskRosterEntry[]>([]);
@@ -88,7 +111,45 @@ export function KioskPage({
   // `dialog` above, since it's a fully client-side, non-authenticated-student flow
   // (browsing/paying for a pass) rather than anything scoped to a resolved roster
   // entry. "home" means the ordinary search+check-in screen below is showing.
-  const [screen, setScreen] = useState<KioskScreen>({ kind: "home" });
+  // Initialized from requestedScreen so a fresh navigation via a NavMenu quick-link
+  // lands directly on the target screen with no flash of "home" first.
+  const [screen, setScreen] = useState<KioskScreen>(() => requestedScreen ?? { kind: "home" });
+  // Handles the case where this component is already mounted (already on /kiosk) when
+  // a quick-link is clicked again — App.tsx passes a new requestedScreen object each
+  // time, which re-triggers this even if its `kind` repeats one already visited.
+  useEffect(() => {
+    if (requestedScreen) setScreen(requestedScreen);
+  }, [requestedScreen]);
+  // Lets the browser/tablet's own back gesture return to the kiosk home screen from
+  // anywhere in the sign-up/purchase flow, instead of leaving the app or doing
+  // nothing — a real risk on a tablet where the in-app Back/Done buttons might be
+  // missed. Pushes one history entry on the way into the flow (leaving "home") and
+  // consumes it with history.back() on the way out through any in-app path
+  // (Back/Done/idle), so the stack never grows past one extra entry no matter how
+  // many screens deep the flow itself goes — those are tracked in `screen` above,
+  // not reflected into the URL individually.
+  const wasHomeRef = useRef(true);
+  useEffect(() => {
+    const isHome = screen.kind === "home";
+    if (wasHomeRef.current && !isHome) {
+      window.history.pushState(
+        { kioskFlow: true },
+        "",
+        `${window.location.pathname}${window.location.search}#buy`
+      );
+    } else if (!wasHomeRef.current && isHome && (window.history.state as { kioskFlow?: boolean } | null)?.kioskFlow) {
+      window.history.back();
+    }
+    wasHomeRef.current = isHome;
+  }, [screen.kind]);
+
+  useEffect(() => {
+    function handlePopState() {
+      setScreen({ kind: "home" });
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
   // Surfaces a failed check-in write after the fact — by the time a background write
   // could fail, the dialog that started it has already shown the welcome message and
   // closed (see KioskCheckInDialog's onSubmit), so this is the only place left to show
@@ -157,7 +218,7 @@ export function KioskPage({
   // then queues the roster refresh (the "read") once it settles, and surfaces a
   // failure via the banner since the dialog itself is gone by then.
   function handleCheckIn(studentId: string, selections: CheckInSelection[]) {
-    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    const effectiveIso = effectiveAt ? studioLocalToUtc(effectiveAt).toISOString() : undefined;
     api
       .checkIn(studentId, selections, effectiveIso, "Kiosk")
       .catch((err) => {
@@ -190,9 +251,11 @@ export function KioskPage({
 
       {screen.kind === "home" ? (
         <div className="kiosk-main">
+          <h1 className="kiosk-heading">Self Check-In</h1>
+
           <div className="kiosk-search-wrap">
             <input
-              className="search-bar"
+              className="search-bar kiosk-search-bar"
               type="search"
               placeholder="Type your name…"
               value={query}
@@ -210,6 +273,7 @@ export function KioskPage({
           </div>
 
           <div className="kiosk-action-buttons">
+            <p className="kiosk-action-buttons-label">Need to sign up?</p>
             <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "signupCount" })}>
               First time? Sign up for a free class!
             </button>

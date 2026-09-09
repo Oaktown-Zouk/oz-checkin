@@ -2,7 +2,7 @@ import { listRecords, getRecordOrNull, TABLES } from "../airtable/client.js";
 import type {
   RecurringPlanFields,
   TransactionFields,
-  CreditFields,
+  CompCreditFields,
   CheckinFields,
   NoteFields,
   MemberFields,
@@ -53,15 +53,15 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
   const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);
   if (!member) return null;
 
-  const [plans, transactions, credits, checkins, notes, programNameById] = await Promise.all([
+  const [plans, transactions, compCredits, checkins, notes, programNameById] = await Promise.all([
     listRecords<RecurringPlanFields>(TABLES.recurringPlans, {
       fields: ["Covers Member", "Status", "Start Date", "Frequency", "Canceled At"],
     }),
     listRecords<TransactionFields>(TABLES.transactions, {
-      fields: ["Member", "Amount", "Transacted At", "Is Recurring", "Plan ID", "Refunded"],
+      fields: ["Member", "Amount", "Transacted At", "Is Recurring", "Plan ID", "Refunded", "Credits Purchased"],
     }),
-    listRecords<CreditFields>(TABLES.credits, {
-      fields: ["Member", "Reason", "Granted At"],
+    listRecords<CompCreditFields>(TABLES.compCredits, {
+      fields: ["Member", "Amount", "Reason", "Granted"],
     }),
     listRecords<CheckinFields>(TABLES.checkins, {
       filterByFormula: "{Undone At} = BLANK()",
@@ -75,7 +75,7 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
 
   const myPlans = plans.filter((p) => p.fields["Covers Member"]?.includes(studentId));
   const myTransactions = transactions.filter((t) => t.fields.Member?.includes(studentId) && !t.fields.Refunded);
-  const myCredits = credits.filter((c) => c.fields.Member?.includes(studentId));
+  const myCompCredits = compCredits.filter((c) => c.fields.Member?.includes(studentId));
   const myCheckins = checkins.filter((c) => c.fields.Member?.includes(studentId));
   const myNotes = notes.filter((n) => n.fields.Member?.includes(studentId));
 
@@ -105,20 +105,27 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
 
   for (const t of myTransactions) {
     const isMembershipCharge = t.fields["Is Recurring"] || Boolean(t.fields["Plan ID"]);
+    const creditsPurchased = t.fields["Credits Purchased"] ?? 0;
+    const creditsSuffix = creditsPurchased > 0 ? `, ${creditsPurchased} credit${creditsPurchased === 1 ? "" : "s"}` : "";
     events.push({
       type: "payment",
       at: t.fields["Transacted At"] ?? "",
       label: isMembershipCharge
         ? `Membership payment (${formatDollars(t.fields.Amount ?? 0)})`
-        : `One-time pass purchased (${formatDollars(t.fields.Amount ?? 0)})`,
+        : `One-time pass purchased (${formatDollars(t.fields.Amount ?? 0)}${creditsSuffix})`,
     });
   }
 
-  for (const c of myCredits) {
+  // The only credit-grant events still shown discretely — purchased credits are
+  // folded into the payment event above instead, and the flat New Member Credit
+  // signup bonus has no existing event to fold into, so it isn't shown at all. Comp
+  // grants stay their own table (and their own timeline entries) specifically to
+  // remain individually auditable.
+  for (const c of myCompCredits) {
     events.push({
       type: "credit_granted",
-      at: c.fields["Granted At"] ?? "",
-      label: c.fields.Reason === "New Member" ? "Free drop-in credit granted" : `Credit granted (${c.fields.Reason ?? "unknown"})`,
+      at: c.fields["Granted"] ?? "",
+      label: c.fields.Reason ? `Comp credit granted (${c.fields.Reason})` : "Comp credit granted",
     });
   }
 

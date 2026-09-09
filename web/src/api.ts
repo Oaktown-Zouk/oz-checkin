@@ -119,6 +119,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ level }),
     }),
+  updatePreferredName: (studentId: string, preferredName: string) =>
+    request<StudentStatus>(`/api/students/${studentId}/preferred-name`, {
+      method: "PATCH",
+      body: JSON.stringify({ preferredName }),
+    }),
   heldMemberships: (studentId: string) =>
     request<HeldMembership[]>(`/api/students/${studentId}/memberships`),
   transferMembership: (studentId: string, planId: string, targetEmail: string) =>

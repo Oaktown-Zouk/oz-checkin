@@ -8,9 +8,16 @@ import { usePermissions } from "../permissions.js";
 export function NavMenu({
   onNavigateFrontDesk,
   onNavigateKiosk,
+  onNavigateKioskPurchaseQr,
+  onNavigateKioskSignup,
 }: {
   onNavigateFrontDesk: () => void;
   onNavigateKiosk: () => void;
+  // Quick links straight to a specific kiosk screen — e.g. pulling up the "Buy a
+  // pass" QR code or starting the new-member sign-up flow for a student standing at
+  // the front desk, without detouring through the kiosk's own home screen first.
+  onNavigateKioskPurchaseQr: () => void;
+  onNavigateKioskSignup: () => void;
 }) {
   const { has } = usePermissions();
   const [open, setOpen] = useState(false);
@@ -30,6 +37,8 @@ export function NavMenu({
   const items = [
     { label: "Front Desk", onClick: onNavigateFrontDesk },
     { label: "Kiosk", onClick: onNavigateKiosk },
+    { label: "Purchase QR Code", onClick: onNavigateKioskPurchaseQr },
+    { label: "New Member Signup", onClick: onNavigateKioskSignup },
   ];
 
   return (

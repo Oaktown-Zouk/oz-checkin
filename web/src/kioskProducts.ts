@@ -37,6 +37,7 @@ export type KioskFlowScreen =
   | { kind: "signupFreeClass" }
   | { kind: "signupSecondClass" }
   | { kind: "buyAPass" }
+  | { kind: "buyOnTablet" }
   | { kind: "dropInCount" }
   | { kind: "membershipCount" }
   | { kind: "widget"; product: GivebutterProduct };

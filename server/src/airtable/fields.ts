@@ -2,7 +2,15 @@
 // actually touches — see docs/airtable-schema.md for the full base schema.
 
 export interface MemberFields {
+  // Read-only in practice — Airtable computes this from First Name/Last Name (synced
+  // from Givebutter) plus Preferred Name below, as "First (Preferred) Last". The app
+  // only ever writes Preferred Name; Full Name always reflects it automatically.
   "Full Name"?: string;
+  // Front-desk-editable, via services/preferredName.ts — folded into the Full Name
+  // formula above by Airtable itself, so setting this is the only write needed for
+  // the preferred name to show up everywhere the app already displays a student's
+  // name. Blank omits the parenthetical entirely.
+  "Preferred Name"?: string;
   Email?: string;
   Phone?: string;
   "Lead Level"?: number;
@@ -13,6 +21,12 @@ export interface MemberFields {
   "Classes Allowed"?: number;
   "Remaining Today"?: number;
   "Available Credits"?: number;
+  // Flat signup bonus, defaulting to 1 in Airtable's own field config so every new
+  // Member row gets one with zero automation logic needed. Only ever read/written by
+  // services/merge.ts's fillMemberGaps (copy-if-missing, same as Phone/Lead Level) —
+  // everywhere else just reads the combined "Available Credits" formula, which folds
+  // this in along with Credits Purchased and Comp Credits.
+  "New Member Credit"?: number;
   // Set manually when Givebutter's own contact-merge tool doesn't actually remove the
   // merged-away contact — it keeps re-syncing as a separate record otherwise. Excluded
   // from the roster (see studentStatus.ts); not a schema-level dedupe, just a hide flag.
@@ -53,6 +67,18 @@ export interface MemberFields {
   "To (safe, from Levelups)"?: number[];
   "Issuer Name (from Levelups)"?: string[];
   "Created (from Levelups)"?: string[];
+  // Formula/rollup, read-only — MIN of the packed (date, amount) key across every
+  // recurring payment this member made; only used to compare against a
+  // Transaction's own "Recurring Payment Key" (see fields below) to find the one
+  // row that IS this member's first. Only ever read by
+  // scripts/backfillRebateEligibility.ts — the Airtable automations
+  // (server/airtable-automations/) do the same comparison on the live sync path.
+  "First Recurring Key"?: number;
+  // Written only by scripts/backfillRebateEligibility.ts (the Airtable automations
+  // handle it going forward) — see docs/airtable-schema.md's "Rebates" section for
+  // the full lifecycle. Only ever moved from blank/"New" to "Refund Eligible" here;
+  // anything further along the pipeline is left alone.
+  "Rebate Status"?: string;
 }
 
 export interface CheckinFields {
@@ -63,7 +89,12 @@ export interface CheckinFields {
   "Needs Review"?: boolean;
   "Review Reason"?: string;
   "Undone At"?: string;
-  Credits?: string[]; // link -> Credits, set once gateCheckIns consumes one (services/checkins.ts)
+  // 1 iff this check-in consumed a credit (set by services/checkins.ts's gateCheckIns,
+  // cleared by undoCheckIn), 0/blank otherwise. Members."Credits Consumed" rolls this
+  // up per member -- deleting a check-in directly in Airtable (not undoing it through
+  // the app) still self-heals that rollup, same self-healing property the old
+  // Credits-table design had.
+  "Credits Consumed"?: number;
   Method?: "Form" | "Staff" | "Kiosk";
 }
 
@@ -82,14 +113,20 @@ export interface ProgramFields {
   "Visible For"?: number;
 }
 
-export interface CreditFields {
+// A manually (or future-automation) granted comp credit -- kept as its own table
+// rather than a plain number specifically so comp grants stay individually
+// auditable, the same reasoning that originally made the old Credits table a table.
+// Members."Credits Comped" rolls up the sum of Amount per member (not
+// Members."Comp Credits" -- that name belongs to the plain reverse-link field
+// Airtable auto-created for the Member link below; the rollup is a separate field).
+// "Granted" is Airtable's own Created time field type -- auto-set on row creation,
+// never written by the app, so there's no separate "when was this granted" entry to
+// maintain.
+export interface CompCreditFields {
   Member?: string[];
-  "Purchased By"?: string[];
-  Reason?: "New Member" | "Drop-in Purchase" | "Comp";
-  "Source Transaction"?: string[];
-  "Granted At"?: string;
-  "Consumed By Check-in"?: string[];
-  Available?: number;
+  Amount?: number;
+  Reason?: string;
+  Granted?: string;
 }
 
 export interface RecurringPlanFields {
@@ -180,4 +217,16 @@ export interface TransactionFields {
   "Plan ID"?: string;
   "Is Recurring"?: boolean;
   Refunded?: boolean;
+  // How many drop-in credits this transaction bought (set by the
+  // grant-dropin-credits.js automation). Rolls up into Members."Credits Purchased";
+  // also shown directly on this transaction's own studentTimeline.ts "payment" entry.
+  "Credits Purchased"?: number;
+  // Formula, read-only — sortable (date, amount) encoding, non-blank only for a
+  // qualifying (Is Recurring + succeeded) transaction with an Amount and
+  // Transacted At. See MemberFields."First Recurring Key"'s comment — only ever
+  // read by scripts/backfillRebateEligibility.ts.
+  "Recurring Payment Key"?: number;
+  // Written only by scripts/backfillRebateEligibility.ts (the Airtable automations
+  // handle it going forward) — see docs/airtable-schema.md's "Rebates" section.
+  "Rebate Eligible"?: string;
 }

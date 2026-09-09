@@ -16,6 +16,10 @@ export interface CheckInSelection {
 export interface StudentStatus {
   id: string;
   name: string;
+  // The raw Preferred Name field, for prefilling an edit dialog — already folded
+  // into `name` above by Airtable's own Full Name formula, so this is never used for
+  // display on its own.
+  preferredName: string | null;
   email: string;
   contactId: string | null;
   leadLevel: number | null;

@@ -3,6 +3,7 @@ import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js
 import { usePermissions } from "../permissions.js";
 import { RowMenu } from "./RowMenu.js";
 import { TransferDialog } from "./TransferDialog.js";
+import { PreferredNameDialog } from "./PreferredNameDialog.js";
 import { MergeDialog } from "./MergeDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { CheckInDialog } from "./CheckInDialog.js";
@@ -21,6 +22,7 @@ export function StudentRow({
   onOpenStudent,
   onUpdateLeadLevel,
   onUpdateFollowLevel,
+  onUpdatePreferredName,
   onTransferMembership,
   onMerge,
 }: {
@@ -36,23 +38,29 @@ export function StudentRow({
   onOpenStudent: (studentId: string) => void;
   onUpdateLeadLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
+  onUpdatePreferredName: (studentId: string, preferredName: string) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
   onMerge: (survivorId: string, duplicateId: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [preferredNameOpen, setPreferredNameOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
   const { has } = usePermissions();
   const canCheckIn = has("Create Checkins");
   const canUndo = has("Undo Checkins");
+  const canEditStudentData = has("Write Student Data");
   const canTransfer = has("Write Memberships");
-  const menuItems = canTransfer
-    ? [
-        { label: "Transfer membership", onClick: () => setTransferOpen(true) },
-        { label: "Merge duplicate…", onClick: () => setMergeOpen(true) },
-      ]
-    : [];
+  const menuItems = [
+    ...(canEditStudentData ? [{ label: "Set preferred name…", onClick: () => setPreferredNameOpen(true) }] : []),
+    ...(canTransfer
+      ? [
+          { label: "Transfer membership", onClick: () => setTransferOpen(true) },
+          { label: "Merge duplicate…", onClick: () => setMergeOpen(true) },
+        ]
+      : []),
+  ];
 
   async function handleUndo(checkinId: string) {
     setBusy(true);
@@ -123,6 +131,14 @@ export function StudentRow({
           programs={programs}
           onSubmit={(selections) => onCheckIn(student.id, selections)}
           onClose={() => setCheckInOpen(false)}
+        />
+      )}
+
+      {preferredNameOpen && (
+        <PreferredNameDialog
+          student={student}
+          onSubmit={(preferredName) => onUpdatePreferredName(student.id, preferredName)}
+          onClose={() => setPreferredNameOpen(false)}
         />
       )}
 

@@ -1,13 +1,49 @@
 import type { ProgramSchedule, StudentStatus } from "./api.js";
 
 // Matches server/src/lib/date.ts's STUDIO_TIMEZONE — every date-sensitive comparison in
-// this app is Pacific-zoned, including this client-side one, so backdating against a
-// browser in a different timezone still resolves the same weekday the server would.
+// this app is Pacific-zoned, including this client-side one. Date-only comparisons here
+// (e.g. activeProgramsForDate) work off the plain "YYYY-MM-DD" string directly, so they're
+// timezone-safe regardless of the browser's own zone; anything needing an actual instant
+// from a datetime-local value must go through studioLocalToUtc below instead of a bare
+// `new Date(...)`, which parses in the browser's own zone, not Pacific.
 const STUDIO_TIMEZONE = "America/Los_Angeles";
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export function todayInStudioTz(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: STUDIO_TIMEZONE }).format(new Date());
+}
+
+// A <input type="datetime-local"> value (e.g. "2026-08-27T20:10") carries no timezone —
+// staff typing a backdate time mean it as studio-local (Pacific), but `new Date(...)`
+// parses it as the *browser's own* local timezone instead. On a browser not already set
+// to Pacific, that silently shifts the instant (e.g. read as Eastern, "8:10pm" becomes
+// 12:10am UTC instead of the correct 3:10am UTC) — wrong for both the actual Checked In
+// At timestamp sent to the server and any client-side time-of-day check (e.g.
+// withinVisibleWindow's visible-window math), which is how a real credit ended up
+// rendering as "0 available" on the kiosk dialog: the shifted instant fell outside
+// every class's visible window.
+//
+// Reinterprets the same wall-clock numbers as Pacific time regardless of the browser's
+// own zone, via the standard round-trip-through-Intl technique (correct across DST
+// since the offset is derived from the actual instant, not a fixed constant).
+export function studioLocalToUtc(dateTimeLocal: string): Date {
+  const naiveUtc = new Date(`${dateTimeLocal}Z`);
+  const partsInStudioTz = new Intl.DateTimeFormat("en-US", {
+    timeZone: STUDIO_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(naiveUtc);
+  const get = (type: string) => partsInStudioTz.find((p) => p.type === type)!.value;
+  const asIfUtcAgain = new Date(
+    `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`
+  );
+  const offsetMs = asIfUtcAgain.getTime() - naiveUtc.getTime();
+  return new Date(naiveUtc.getTime() - offsetMs);
 }
 
 function weekdayNameFor(dateStr: string): string {

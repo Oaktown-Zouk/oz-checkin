@@ -17,13 +17,19 @@ import { EffectiveDateControl } from "./components/EffectiveDateControl.js";
 import { StudentPage } from "./components/StudentPage.js";
 import { KioskPage } from "./components/KioskPage.js";
 import { NavMenu } from "./components/NavMenu.js";
+import { studioLocalToUtc } from "./programSchedule.js";
+import type { KioskFlowScreen } from "./kioskProducts.js";
 import { ErrorBanner, applyOptimisticCheckin } from "shared";
 
 function formatEffectiveBanner(datetimeLocal: string): string {
   return new Date(datetimeLocal).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 }
 
-type Route = { type: "list" } | { type: "student"; id: string } | { type: "kiosk" };
+// `screen` is only ever set by an explicit NavMenu quick-link (e.g. "Purchase QR
+// code") — never round-tripped through the URL like the rest of this route, since
+// it's a one-shot request for whichever KioskPage instance mounts/reacts next, not
+// something a refresh should restore. See KioskPage.tsx's requestedScreen prop.
+type Route = { type: "list" } | { type: "student"; id: string } | { type: "kiosk"; screen?: KioskFlowScreen };
 
 function parseRoute(pathname: string): Route {
   if (pathname === "/kiosk") return { type: "kiosk" };
@@ -105,10 +111,12 @@ export function App() {
   }, [effectiveAt]);
 
   // From the signed-out Google login screen — lets staff reach the kiosk password
-  // form without needing to know/type the /kiosk URL themselves.
-  const navigateToKiosk = useCallback(() => {
+  // form without needing to know/type the /kiosk URL themselves. `screen` (from a
+  // NavMenu quick-link) always sets a fresh route object, even when already on
+  // /kiosk, so KioskPage's requestedScreen effect fires again — see its own comment.
+  const navigateToKiosk = useCallback((screen?: KioskFlowScreen) => {
     window.history.pushState(null, "", "/kiosk");
-    setRoute({ type: "kiosk" });
+    setRoute({ type: "kiosk", screen });
   }, []);
 
   const handleEffectiveAtChange = useCallback(
@@ -209,7 +217,7 @@ export function App() {
     // whether or not the write actually succeeded.
     setStudents((prev) => prev.map((s) => (s.id === studentId ? applyOptimisticCheckin(s, selections, programNameById) : s)));
 
-    const effectiveIso = effectiveAt ? new Date(effectiveAt).toISOString() : undefined;
+    const effectiveIso = effectiveAt ? studioLocalToUtc(effectiveAt).toISOString() : undefined;
     api
       .checkIn(studentId, selections, effectiveIso, "Staff")
       .catch((err) => {
@@ -252,6 +260,16 @@ export function App() {
     }
   }
 
+  async function handleUpdatePreferredName(studentId: string, preferredName: string) {
+    try {
+      await api.updatePreferredName(studentId, preferredName);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   async function handleTransferMembership(studentId: string, planId: string, targetEmail: string) {
     try {
       await api.transferMembership(studentId, planId, targetEmail);
@@ -285,8 +303,18 @@ export function App() {
   if (kioskOnly || (route.type === "kiosk" && authenticated)) {
     return (
       <PermissionsProvider value={{ permissions, userRoleId }}>
-        <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
-        <KioskPage programs={programs} onUnauthorized={handleKioskUnauthorized} onLogout={handleLogout} />
+        <NavMenu
+          onNavigateFrontDesk={navigateToList}
+          onNavigateKiosk={navigateToKiosk}
+          onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
+          onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
+        />
+        <KioskPage
+          programs={programs}
+          requestedScreen={route.type === "kiosk" ? route.screen : undefined}
+          onUnauthorized={handleKioskUnauthorized}
+          onLogout={handleLogout}
+        />
       </PermissionsProvider>
     );
   }
@@ -304,7 +332,12 @@ export function App() {
   if (route.type === "student") {
     return (
       <PermissionsProvider value={{ permissions, userRoleId }}>
-        <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
+        <NavMenu
+          onNavigateFrontDesk={navigateToList}
+          onNavigateKiosk={navigateToKiosk}
+          onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
+          onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
+        />
         <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
       </PermissionsProvider>
     );
@@ -312,7 +345,12 @@ export function App() {
 
   return (
     <PermissionsProvider value={{ permissions, userRoleId }}>
-      <NavMenu onNavigateFrontDesk={navigateToList} onNavigateKiosk={navigateToKiosk} />
+      <NavMenu
+          onNavigateFrontDesk={navigateToList}
+          onNavigateKiosk={navigateToKiosk}
+          onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
+          onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
+        />
       {checkinError && <ErrorBanner message={checkinError} onDismiss={() => setCheckinError(null)} />}
       <div className="app">
         <header className="app-header">
@@ -360,6 +398,7 @@ export function App() {
           onOpenStudent={navigateToStudent}
           onUpdateLeadLevel={handleUpdateLeadLevel}
           onUpdateFollowLevel={handleUpdateFollowLevel}
+          onUpdatePreferredName={handleUpdatePreferredName}
           onTransferMembership={handleTransferMembership}
           onMerge={handleMerge}
         />

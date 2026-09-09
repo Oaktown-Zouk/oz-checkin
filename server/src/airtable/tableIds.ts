@@ -7,7 +7,7 @@ export const TABLES = {
   checkins: "tblUN06HQtcMIucxK",
   recurringPlans: "tblRJAL7UjNf9N0WB",
   transactions: "tbl97hoFODKY50QcH",
-  credits: "tblCFmQJntHiuMZNN",
+  compCredits: "tblmpal5LCUIMxMLi",
   programs: "tblB90zwd3OjKxxDs",
   userRoles: "tblBeLbVbHNZIPIvz",
   rolePermissions: "tblYo1awEOvqBGVpR",

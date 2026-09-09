@@ -4,12 +4,14 @@ import {
   activeProgramsForDate,
   isCheckedInToday,
   isProgramCheckedInToday,
+  studioLocalToUtc,
   timeslotGroup,
   todayInStudioTz,
   withinVisibleWindow,
 } from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
-import chimeUrl from "../../assets/bell_g5.opus";
+// mp3 for safari compatibility
+import chimeUrl from "../../assets/bell_g5.mp3";
 
 const ROLES = ["Lead", "Follow"] as const;
 const WELCOME_MS = 5000;
@@ -17,12 +19,6 @@ const CHIME_INTERVAL_MS = 700;
 
 // One chime per class checked in, 0.7s apart — deliberately shorter than the clip
 // itself, so consecutive chimes overlap rather than waiting for each other to finish.
-// A new Audio instance per play (rather than reusing one) is what makes that
-// possible: each instance has its own playback position, so they can ring
-// simultaneously instead of one cutting the other off. play() can reject (e.g. no
-// audio hardware, or the browser being unusually strict about it despite this always
-// being called from a direct tap) — a missed chime isn't worth surfacing an error
-// over, so this swallows that failure and just stops repeating.
 function playChime(timesRemaining: number) {
   if (timesRemaining <= 0) return;
   new Audio(chimeUrl).play().catch(() => {});
@@ -32,9 +28,11 @@ function playChime(timesRemaining: number) {
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
 
 // lastCheckinSelections is already bounded to the student's last 29 days (see
-// computeLastCheckinSelections) — used here purely as a visual nudge ("you did this
-// recently") rather than to preselect anything, since kiosk check-ins are always an
-// explicit pick.
+// computeLastCheckinSelections) — the same source the preselection below reads, but
+// this checks every {program, role} independently rather than one pick per timeslot
+// group, so it can still highlight a recent pick that preselection had to drop (e.g.
+// two roles from the same group in old Backfill data) as a visual nudge even though
+// it isn't the one actually selected.
 function isRecentSelection(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
   return student.lastCheckinSelections.some((s) => s.programId === programId && s.role === role);
 }
@@ -69,12 +67,37 @@ export function KioskCheckInDialog({
   onSubmit: (selections: CheckInSelection[]) => void;
   onClose: () => void;
 }) {
-  const [roles, setRoles] = useState<RoleByProgram>({});
   const [showWelcome, setShowWelcome] = useState(false);
 
-  const effectiveDate = effectiveAt ? new Date(effectiveAt) : undefined;
+  const effectiveDate = effectiveAt ? studioLocalToUtc(effectiveAt) : undefined;
   const effectiveDateStr = effectiveAt ? effectiveAt.slice(0, 10) : todayInStudioTz();
-  const visiblePrograms = activeProgramsForDate(programs, effectiveDateStr).filter((p) => withinVisibleWindow(p, effectiveDate));
+  // All of today's scheduled classes, same as the front desk would see (front desk
+  // never applies a visibility-window filter at all) — used below only for the
+  // "available" cap, a stable per-day fact. `visiblePrograms` (below) is the
+  // kiosk-only-visible subset actually rendered as pickable buttons; a class that's
+  // already ended stops being offered there, but shouldn't make a student's credit
+  // balance look smaller than it really is — that's a timing artifact of the moment
+  // you're looking, not a fact about their balance.
+  const activePrograms = activeProgramsForDate(programs, effectiveDateStr);
+  const visiblePrograms = activePrograms.filter((p) => withinVisibleWindow(p, effectiveDate));
+
+  // Preselects the student's most recent visit's picks, same as the front desk
+  // dialog (see CheckInDialog.tsx's identical comment) — but scoped to
+  // visiblePrograms, not activePrograms: a class that's already past its visible
+  // window isn't offered as a button here at all, so preselecting it would silently
+  // do nothing (or worse, get dropped without the student noticing a pick they'd
+  // expect was already there).
+  const [roles, setRoles] = useState<RoleByProgram>(() => {
+    const visibleIds = new Set(visiblePrograms.map((p) => p.id));
+    const initial: RoleByProgram = {};
+    for (const s of student.lastCheckinSelections) {
+      if (!visibleIds.has(s.programId) || isCheckedInToday(student, s.programId, s.role)) continue;
+      const group = timeslotGroup(visiblePrograms, s.programId);
+      if (group.some((g) => g.id in initial)) continue;
+      initial[s.programId] = s.role;
+    }
+    return initial;
+  });
 
   const selections: CheckInSelection[] = Object.entries(roles)
     .filter((entry): entry is [string, "Lead" | "Follow"] => Boolean(entry[1]))
@@ -83,13 +106,20 @@ export function KioskCheckInDialog({
   // student can act on directly: student.remaining already accounts for membership
   // allowance minus today's check-ins (see studentStatus.ts), so adding
   // availableCredits folds in a drop-in credit pool the same way. Capped by how many
-  // distinct class timeslots are still visible today — credits/allowance can't let a
-  // student check into more classes than actually exist to check into.
-  const timeslotsAvailableToday = new Set(visiblePrograms.map((p) => p.startTime)).size;
-  const localRemaining = Math.min(
-    student.remaining + student.availableCredits - selections.length,
-    timeslotsAvailableToday
-  );
+  // distinct class timeslots exist today (from activePrograms, not the
+  // visibility-filtered visiblePrograms below) — credits/allowance can't let a
+  // student check into more classes than actually exist today, but which of those
+  // are still visible right now is a separate, kiosk-only-relevant question.
+  //
+  // The cap only applies when there's at least one timeslot today. On a day with
+  // none at all (any non-class day — OZ only teaches Thursdays), min(...) would
+  // otherwise collapse this to 0 regardless of actual balance, showing "0 available"
+  // right next to a "1 drop-in credit" badge — confusing a real credit balance with
+  // having none, rather than just "nothing to spend it on today." The existing "No
+  // classes available right now" message already covers that case on its own.
+  const timeslotsToday = new Set(activePrograms.map((p) => p.startTime)).size;
+  const uncappedRemaining = student.remaining + student.availableCredits - selections.length;
+  const localRemaining = timeslotsToday > 0 ? Math.min(uncappedRemaining, timeslotsToday) : uncappedRemaining;
 
   // Only one {class, role} pick allowed per timeslot — a student can't be in two
   // classes at once, or dance one class as both Lead and Follow at once. Picking a
