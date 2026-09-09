@@ -10,7 +10,7 @@ import {
   type StudentStatus,
 } from "../api.js";
 import { usePermissions } from "../permissions.js";
-import type { KioskScreen } from "../kioskProducts.js";
+import type { KioskFlowScreen, KioskScreen } from "../kioskProducts.js";
 import { EffectiveDateControl } from "./EffectiveDateControl.js";
 import { KioskCheckInDialog } from "./KioskCheckInDialog.js";
 import { KioskPurchaseFlow } from "./KioskPurchaseFlow.js";
@@ -67,10 +67,16 @@ type DialogState = { kind: "loading" } | { kind: "student"; status: StudentStatu
 // *who*, never to decide *whether*.
 export function KioskPage({
   programs,
+  requestedScreen,
   onUnauthorized,
   onLogout,
 }: {
   programs: ProgramSchedule[];
+  // A one-shot jump to a specific flow screen, from a NavMenu quick-link (e.g.
+  // "Purchase QR Code") — see the effect below. undefined means no pending request;
+  // App.tsx passes a fresh object each time one of those links is clicked, even if
+  // this component is already mounted and already showing that same screen kind.
+  requestedScreen?: KioskFlowScreen;
   onUnauthorized: () => void;
   onLogout: () => void;
 }) {
@@ -105,7 +111,45 @@ export function KioskPage({
   // `dialog` above, since it's a fully client-side, non-authenticated-student flow
   // (browsing/paying for a pass) rather than anything scoped to a resolved roster
   // entry. "home" means the ordinary search+check-in screen below is showing.
-  const [screen, setScreen] = useState<KioskScreen>({ kind: "home" });
+  // Initialized from requestedScreen so a fresh navigation via a NavMenu quick-link
+  // lands directly on the target screen with no flash of "home" first.
+  const [screen, setScreen] = useState<KioskScreen>(() => requestedScreen ?? { kind: "home" });
+  // Handles the case where this component is already mounted (already on /kiosk) when
+  // a quick-link is clicked again — App.tsx passes a new requestedScreen object each
+  // time, which re-triggers this even if its `kind` repeats one already visited.
+  useEffect(() => {
+    if (requestedScreen) setScreen(requestedScreen);
+  }, [requestedScreen]);
+  // Lets the browser/tablet's own back gesture return to the kiosk home screen from
+  // anywhere in the sign-up/purchase flow, instead of leaving the app or doing
+  // nothing — a real risk on a tablet where the in-app Back/Done buttons might be
+  // missed. Pushes one history entry on the way into the flow (leaving "home") and
+  // consumes it with history.back() on the way out through any in-app path
+  // (Back/Done/idle), so the stack never grows past one extra entry no matter how
+  // many screens deep the flow itself goes — those are tracked in `screen` above,
+  // not reflected into the URL individually.
+  const wasHomeRef = useRef(true);
+  useEffect(() => {
+    const isHome = screen.kind === "home";
+    if (wasHomeRef.current && !isHome) {
+      window.history.pushState(
+        { kioskFlow: true },
+        "",
+        `${window.location.pathname}${window.location.search}#buy`
+      );
+    } else if (!wasHomeRef.current && isHome && (window.history.state as { kioskFlow?: boolean } | null)?.kioskFlow) {
+      window.history.back();
+    }
+    wasHomeRef.current = isHome;
+  }, [screen.kind]);
+
+  useEffect(() => {
+    function handlePopState() {
+      setScreen({ kind: "home" });
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
   // Surfaces a failed check-in write after the fact — by the time a background write
   // could fail, the dialog that started it has already shown the welcome message and
   // closed (see KioskCheckInDialog's onSubmit), so this is the only place left to show
@@ -207,9 +251,11 @@ export function KioskPage({
 
       {screen.kind === "home" ? (
         <div className="kiosk-main">
+          <h1 className="kiosk-heading">Self Check-In</h1>
+
           <div className="kiosk-search-wrap">
             <input
-              className="search-bar"
+              className="search-bar kiosk-search-bar"
               type="search"
               placeholder="Type your name…"
               value={query}
@@ -227,6 +273,7 @@ export function KioskPage({
           </div>
 
           <div className="kiosk-action-buttons">
+            <p className="kiosk-action-buttons-label">Need to sign up?</p>
             <button type="button" className="btn btn-secondary kiosk-action-btn" onClick={() => setScreen({ kind: "signupCount" })}>
               First time? Sign up for a free class!
             </button>

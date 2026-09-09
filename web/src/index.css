@@ -1118,20 +1118,47 @@ body {
 
 /* Wraps the search bar + sign-up/buy-a-pass buttons as one group. No margin-top of
    its own — .kiosk-page's flex gap is enough, so this sits right under the banner on
-   any screen size, not just a specific known kiosk tablet. */
+   any screen size, not just a specific known kiosk tablet. Stretches to fill the rest
+   of .kiosk-page's height (itself min-height: 100vh) so .kiosk-action-buttons' own
+   margin-top: auto below can actually push it down to the bottom of the screen,
+   rather than just trailing right after the search box on a tall/tablet viewport. */
 .kiosk-main {
   width: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
 }
 
+.kiosk-heading {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin: 0;
+  text-align: center;
+}
+
 .kiosk-search-wrap {
   position: relative;
   width: 100%;
   max-width: 640px;
-  margin-bottom: 100px;
+}
+
+/* Overrides .search-bar's default (unset) colors, which otherwise pick up the
+   browser's native dark-mode form styling from :root's color-scheme: light dark —
+   low-contrast enough on an actual kiosk tablet that people didn't notice the field
+   at all. Explicit light colors here regardless of system theme, plus a heavier
+   border and larger text to make it the obvious first thing to interact with. */
+.kiosk-search-bar {
+  background: white;
+  color: #111827;
+  border: 2px solid #111827;
+  font-size: 1.3rem;
+  padding: 16px 18px;
+}
+
+.kiosk-search-bar::placeholder {
+  color: var(--gray);
 }
 
 .kiosk-search-results {
@@ -1164,17 +1191,29 @@ body {
   background: var(--gray-bg);
 }
 
+/* margin-top: auto pushes this to the bottom of .kiosk-main (which stretches to fill
+   the page — see its own comment), keeping it well away from the search box people
+   should actually be using, small and low-key on purpose so it reads as a fallback
+   rather than an equally-weighted option. */
 .kiosk-action-buttons {
   width: 100%;
-  max-width: 640px;
+  max-width: 420px;
+  margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.kiosk-action-buttons-label {
+  margin: 0 0 2px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--gray);
 }
 
 .kiosk-action-btn {
-  padding: 18px 24px;
-  font-size: 1.1rem;
+  padding: 10px 16px;
+  font-size: 0.9rem;
 }
 
 /* One full-screen "page" of the sign-up/purchase flow (KioskPurchaseFlow.tsx) —
@@ -1207,8 +1246,20 @@ body {
   font-size: 1.3rem;
 }
 
-.kiosk-flow-back {
+.kiosk-flow-nav {
+  display: flex;
+  gap: 10px;
   margin-top: 4px;
+}
+
+.kiosk-flow-back {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.kiosk-buy-on-tablet-btn {
+  padding: 10px 16px;
+  font-size: 0.9rem;
 }
 
 .kiosk-widget-wrap {

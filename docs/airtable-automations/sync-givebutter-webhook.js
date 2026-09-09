@@ -378,6 +378,34 @@ function retryDelayMs(attempt) {
     return 1000 * (attempt + 1);
 }
 
+// rebateEligibility.ts
+// Decides what (if anything) to write once a Transactions record's own qualifying
+// fields (Is Recurring, Status, Amount, Transacted At) are already in place and its
+// own "Recurring Payment Key" formula has picked up the change. Reuses that field and
+// Members."First Recurring Key" (both pre-existing Airtable formula/rollup fields --
+// see docs/airtable-schema.md's "Rebates" section) rather than re-deriving "is this
+// the member's first recurring payment" from scratch: First Recurring Key is already
+// the MIN of every one of the member's qualifying transactions' keys, so this
+// transaction IS the first iff its own key equals it.
+//
+// currentRebateStatus gates the Member write specifically: only ever transitions
+// Rebate Status away from its untouched state (blank or "New") once -- a status
+// that's already progressed further (Refund Requested, Refund Processed, ...) is
+// left alone, matching Rebate Owed's own documented policy of never retroactively
+// changing what someone was owed. The Transaction write has no such guard -- the
+// same one row will always be the member's first, forever, so re-marking it "50%" on
+// a later run is a harmless no-op, not a drift risk.
+function decideRebateUpdate(transactionRecurringPaymentKey, memberFirstRecurringKey, currentRebateStatus) {
+    const isFirstPayment = transactionRecurringPaymentKey != null &&
+        memberFirstRecurringKey != null &&
+        transactionRecurringPaymentKey === memberFirstRecurringKey;
+    if (!isFirstPayment) {
+        return { markTransactionRebateEligible: false, markMemberRefundEligible: false };
+    }
+    const untouched = !currentRebateStatus || currentRebateStatus === "New";
+    return { markTransactionRebateEligible: true, markMemberRefundEligible: untouched };
+}
+
 // ── end of generated shared helpers — automation-specific logic below ───
 
 const { eventName, resourceId } = input.config();
@@ -459,7 +487,89 @@ async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, atte
   const record = body.records[0]; // { id, fields, createdTime }
   const wasCreated = (body.createdRecords ?? []).includes(record.id);
   if (wasCreated) recordsCreated++; else recordsUpdated++;
-  return { id: record.id, created: wasCreated };
+  // fields is the REST API's own post-write snapshot of the whole record — every
+  // field's current value, not just the ones this call sent, so a computed field
+  // (e.g. Recurring Payment Key) set by another field this same write touched is
+  // already readable here with no extra round trip.
+  return { id: record.id, created: wasCreated, fields: record.fields };
+}
+
+// Plain PATCH by record id — for a write where the record already exists and is
+// already known by id (see the rebate-eligibility check below), so there's no
+// find-or-create ambiguity performUpsert exists to resolve. Same toRestFields()
+// conversion and retry behavior as upsertAirtableRecord, just without the
+// fieldsToMergeOn/performUpsert wrapping.
+async function updateAirtableRecordById(tableId, recordId, recordFields, attempt = 0) {
+  const restFields = toRestFields(recordFields);
+  console.log(`Updating ${tableId}/${recordId} (attempt ${attempt}) with fields: ${JSON.stringify(restFields)}`);
+  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}/${recordId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_PAT}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ fields: restFields })
+  });
+
+  if (shouldRetryAfterStatus(response.status, attempt)) {
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
+    return updateAirtableRecordById(tableId, recordId, recordFields, attempt + 1);
+  }
+  if (!response.ok) {
+    const responseBody = await response.text();
+    console.error(`Airtable update ${response.status} on ${tableId}/${recordId} FAILED: ${responseBody}`);
+    throw new Error(`Airtable update ${response.status} on ${tableId}/${recordId}: ${responseBody}`);
+  }
+
+  recordsUpdated++;
+  const body = await response.json();
+  return { id: body.id, fields: body.fields };
+}
+
+// Read-only GET by record id — for the rebate-eligibility check below, which needs
+// a member's current First Recurring Key/Rebate Status fresh (i.e. reflecting the
+// transaction just upserted, which upsertMemberByContactId ran before that write).
+async function fetchAirtableRecordById(tableId, recordId, fields) {
+  const params = fields.map((f) => `fields[]=${encodeURIComponent(f)}`).join('&');
+  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}/${recordId}?${params}`, {
+    headers: { Authorization: `Bearer ${AIRTABLE_PAT}` }
+  });
+  if (!response.ok) {
+    const responseBody = await response.text();
+    console.error(`Airtable fetch ${response.status} on ${tableId}/${recordId} FAILED: ${responseBody}`);
+    throw new Error(`Airtable fetch ${response.status} on ${tableId}/${recordId}: ${responseBody}`);
+  }
+  const body = await response.json();
+  return { id: body.id, fields: body.fields };
+}
+
+// First-time-membership rebate: Recurring Payment Key (Transactions) and First
+// Recurring Key (Members) are pre-existing Airtable formula/rollup fields that
+// already compute themselves the instant the transaction's own qualifying fields
+// (Is Recurring, Status, Amount, Transacted At) are written above — see
+// decideRebateUpdate's own comment for why comparing the two keys is enough,
+// without re-deriving "is this the member's first recurring payment" here.
+async function applyRebateEligibility(upsertedTransaction, memberRecordId) {
+  if (!memberRecordId) return;
+  if (!upsertedTransaction.fields['Is Recurring']) return;
+  if (upsertedTransaction.fields['Status'] !== 'succeeded') return;
+
+  const recurringPaymentKey = upsertedTransaction.fields['Recurring Payment Key'] ?? null;
+  if (recurringPaymentKey == null) return;
+
+  const memberRecord = await fetchAirtableRecordById(membersTable.id, memberRecordId, ['First Recurring Key', 'Rebate Status']);
+  const decision = decideRebateUpdate(
+    recurringPaymentKey,
+    memberRecord.fields['First Recurring Key'] ?? null,
+    memberRecord.fields['Rebate Status'] ?? null
+  );
+
+  if (decision.markTransactionRebateEligible) {
+    await updateAirtableRecordById(transactionsTable.id, upsertedTransaction.id, { 'Rebate Eligible': '50%' });
+  }
+  if (decision.markMemberRefundEligible) {
+    await updateAirtableRecordById(membersTable.id, memberRecordId, { 'Rebate Status': 'Refund Eligible' });
+  }
 }
 
 async function upsertMemberByContactId(contactId, firstName, lastName, email, phone) {
@@ -562,8 +672,10 @@ if (eventType.startsWith('plan.')) {
     if (recurringPlanRecord) transactionFields['Recurring Plans'] = [{ id: recurringPlanRecord.id }];
   }
 
-  await upsertAirtableRecord(transactionsTable.id, ['Transaction ID'], transactionFields);
+  const upsertedTransaction = await upsertAirtableRecord(transactionsTable.id, ['Transaction ID'], transactionFields);
   console.log(`${eventType} → transaction ${transaction.id} ($${transaction.amount}, ${transaction.plan_id ? 'membership' : 'drop-in'}) synced`);
+
+  await applyRebateEligibility(upsertedTransaction, memberRecordId);
 
 } else if (eventType === 'contact.created') {
   const contact = await fetchFromGivebutter(`/contacts/${resourceId}`);

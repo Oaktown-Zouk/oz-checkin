@@ -33,10 +33,15 @@ script step by hand.
   from the Scripting extension for a manual full pull), upserts `Members` from
   `/contacts`.
 - `sync-givebutter-transactions.js` — nightly scheduled automation, upserts
-  `Transactions` and creates/fills `Members` from `/transactions`.
+  `Transactions` and creates/fills `Members` from `/transactions`. Also runs a
+  full-table first-time-membership rebate-eligibility pass every night (see
+  `docs/airtable-schema.md`'s "Rebates" section) — self-healing, not scoped to the
+  usual lookback window.
 - `sync-givebutter-webhook.js` — real-time automation triggered by a Givebutter
   webhook (`plan.*`, `transaction.*`, `refund.*`, `contact.created`), re-fetches the
-  changed record and upserts it immediately rather than waiting for the nightly batch.
+  changed record and upserts it immediately rather than waiting for the nightly
+  batch. Runs the same rebate-eligibility check as the nightly sync, but only for
+  the one transaction this event just touched.
 
 `grant-dropin-credits.js` is different from the four above (see `docs/airtable-
 schema.md`'s "Credits" section): it's triggered by every `Transactions` record
