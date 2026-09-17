@@ -107,6 +107,7 @@ export function KioskPage({
   const [roster, setRoster] = useState<KioskRosterEntry[]>([]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // The sign-up/purchase flow (KioskPurchaseFlow.tsx) — a separate screen stack from
   // `dialog` above, since it's a fully client-side, non-authenticated-student flow
   // (browsing/paying for a pass) rather than anything scoped to a resolved roster
@@ -209,6 +210,9 @@ export function KioskPage({
   function closeDialog() {
     setDialog(null);
     refreshRoster();
+    // Back on the home search screen (Cancel or a completed check-in both land here)
+    // — ready for the next student to just start typing, no tap needed first.
+    searchInputRef.current?.focus();
   }
 
   // Fire-and-forget, called from KioskCheckInDialog's Done button — the dialog has
@@ -255,6 +259,7 @@ export function KioskPage({
 
           <div className="kiosk-search-wrap">
             <input
+              ref={searchInputRef}
               className="search-bar kiosk-search-bar"
               type="search"
               placeholder="Type your name…"

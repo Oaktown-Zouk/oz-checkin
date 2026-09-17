@@ -10,6 +10,7 @@ export function NavMenu({
   onNavigateKiosk,
   onNavigateKioskPurchaseQr,
   onNavigateKioskSignup,
+  onLogout,
 }: {
   onNavigateFrontDesk: () => void;
   onNavigateKiosk: () => void;
@@ -18,6 +19,7 @@ export function NavMenu({
   // the front desk, without detouring through the kiosk's own home screen first.
   onNavigateKioskPurchaseQr: () => void;
   onNavigateKioskSignup: () => void;
+  onLogout: () => void;
 }) {
   const { has } = usePermissions();
   const [open, setOpen] = useState(false);
@@ -63,6 +65,16 @@ export function NavMenu({
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            className="nav-menu-item nav-menu-item-logout"
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+          >
+            Log out
+          </button>
         </div>
       )}
     </div>

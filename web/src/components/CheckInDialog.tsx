@@ -113,7 +113,7 @@ export function CheckInDialog({
   return (
     <Portal>
       <div className="dialog-overlay" onClick={onClose}>
-        <div className="dialog-card" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-card dialog-card-checkin" onClick={(e) => e.stopPropagation()}>
           <h2>Check in {student.name}</h2>
 
           {/* Shows remaining classes/credits while picking, so front desk can see at a

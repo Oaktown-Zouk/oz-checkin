@@ -164,7 +164,7 @@ export function KioskCheckInDialog({
   return (
     <Portal>
       <div className="dialog-overlay">
-        <div className="kiosk-dialog-card">
+        <div className="kiosk-dialog-card kiosk-dialog-card-checkin">
           <h1 className="kiosk-dialog-title">{student.name}</h1>
           <div className="badges">
             <MembershipBadge student={student} showBothWhenApplicable />
