@@ -38,10 +38,15 @@ script step by hand.
   `docs/airtable-schema.md`'s "Rebates" section) — self-healing, not scoped to the
   usual lookback window.
 - `sync-givebutter-webhook.js` — real-time automation triggered by a Givebutter
-  webhook (`plan.*`, `transaction.*`, `refund.*`, `contact.created`), re-fetches the
-  changed record and upserts it immediately rather than waiting for the nightly
-  batch. Runs the same rebate-eligibility check as the nightly sync, but only for
-  the one transaction this event just touched.
+  webhook (`plan.*`, `transaction.*`, `contact.created`), re-fetches the changed
+  record and upserts it immediately rather than waiting for the nightly batch. Runs
+  the same rebate-eligibility check as the nightly sync, but only for the one
+  transaction this event just touched. `refund.*` events are logged only, not
+  live-synced — a refund's own `data.transaction_id` is Givebutter's internal id,
+  which their API never exposes a way to resolve to the actual transaction (confirmed
+  directly against the live API — see the script's own file-header comment); the
+  nightly sync already re-pulls every transaction's real refunded state on its own,
+  so a refund just takes up to a day to land instead of being near-instant.
 
 `grant-dropin-credits.js` is different from the four above (see `docs/airtable-
 schema.md`'s "Credits" section): it's triggered by every `Transactions` record

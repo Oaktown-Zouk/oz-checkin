@@ -12,6 +12,14 @@
 // script previously wrote none of them, so every already-synced row is
 // missing them until a backfill run.)
 //
+// WINDOWED ON updatedAfter, NOT transactedAfter (confirmed against the live
+// API: transactedAfter is honored too, but only reflects a transaction's
+// original date). A refund can land on a transaction from well outside the
+// lookback window -- transactedAfter would never re-pull it, so its
+// Refunded/Refunded At would stay stale forever. updated_at starts equal to
+// created_at for an untouched transaction, so this still catches every new
+// transaction the old filter did -- it's a strict superset, not a tradeoff.
+//
 // REQUIRES a "Recurring Plans" field on Transactions — a Link to another
 // record field pointing at Recurring Plans — created by hand first;
 // automations can't add fields.
@@ -65,18 +73,18 @@ const startedAt = new Date().toISOString();
 const syncLogRecordId = await syncLogTable.createRecordAsync({ 'Script': { name: 'Transactions' }, 'Started At': startedAt });
 
 // 1 ── Pull transactions inside the window
-const transactedSince = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString();
+const updatedSince = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString();
 let transactions = [];
 for (let page = 1; page <= MAX_PAGES; page++) {
   const responseBody = await fetchFromGivebutter(
-    `/transactions?scope=all&transactedAfter=${encodeURIComponent(transactedSince)}&page=${page}&per_page=100`
+    `/transactions?scope=all&updatedAfter=${encodeURIComponent(updatedSince)}&page=${page}&per_page=100`
   );
   transactions.push(...(responseBody.data ?? []));
   const meta = responseBody.meta ?? {};
   if (!meta.last_page || page >= meta.last_page) break;
   if (page === MAX_PAGES) console.log('⚠ Hit MAX_PAGES — narrow LOOKBACK_DAYS and re-run.');
 }
-console.log(`Fetched ${transactions.length} transactions since ${transactedSince.slice(0, 10)}`);
+console.log(`Fetched ${transactions.length} transactions updated since ${updatedSince.slice(0, 10)}`);
 console.log('Statuses seen:', [...new Set(transactions.map(t => t.status))].map(v => JSON.stringify(v)).join(', '));
 
 // 2 ── Index what Airtable already has
