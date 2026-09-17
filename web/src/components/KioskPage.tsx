@@ -244,11 +244,17 @@ export function KioskPage({
             <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
           </div>
         )}
-        {/* The only sign-out affordance a kiosk-only session has — it doesn't hold the
-            other permissions NavMenu requires to show its own logout-adjacent nav. */}
-        <button type="button" className="btn btn-secondary kiosk-logout-btn" onClick={onLogout}>
-          Log out
-        </button>
+        {/* Only for a kiosk-only session, which doesn't hold the other permissions
+            NavMenu requires to show at all — so its hamburger-nested Log out (see
+            NavMenu.tsx) isn't reachable, and this is the only sign-out affordance left.
+            A Staff/Volunteer/Admin session visiting /kiosk directly does see NavMenu
+            here, so it already has Log out folded into the hamburger — showing this
+            standalone button too would just be a redundant second one. */}
+        {!(has("View Student Data") && has("Create Checkins")) && (
+          <button type="button" className="btn btn-secondary kiosk-logout-btn" onClick={onLogout}>
+            Log out
+          </button>
+        )}
       </div>
 
       <img src={banner} alt="Oaktown Zouk" className="kiosk-banner" />
