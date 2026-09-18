@@ -3,6 +3,18 @@
 Verioned by ISO week number `{year}w{WW}`, with a `.N` suffix for a same-week bugfix
 release shipped after that week's main deploy already went out.
 
+## 2026w38 (2026-09-17)
+### New features
+ - **Created NOTAFLOF and Staff membership tiers.** NOTAFLOF looks just like a regular member for privacy.
+
+
+### Improvements
+ - **Improved layout on mobile**
+ - **Kiosk automatically returns to home screen after 60s**
+
+### Bugfixes
+ - Fixed sync error caused by checking if transactions were rebate-eligible.
+ 
 ## 2026w37 (2026-09-08)
 
 ### New features
