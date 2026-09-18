@@ -69,7 +69,6 @@ export function KioskPage({
   programs,
   requestedScreen,
   onUnauthorized,
-  onLogout,
 }: {
   programs: ProgramSchedule[];
   // A one-shot jump to a specific flow screen, from a NavMenu quick-link (e.g.
@@ -78,7 +77,6 @@ export function KioskPage({
   // this component is already mounted and already showing that same screen kind.
   requestedScreen?: KioskFlowScreen;
   onUnauthorized: () => void;
-  onLogout: () => void;
 }) {
   const { has } = usePermissions();
   const canBackdate = has("Backdate Kiosk");
@@ -243,17 +241,6 @@ export function KioskPage({
           <div className="kiosk-backdate-control">
             <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
           </div>
-        )}
-        {/* Only for a kiosk-only session, which doesn't hold the other permissions
-            NavMenu requires to show at all — so its hamburger-nested Log out (see
-            NavMenu.tsx) isn't reachable, and this is the only sign-out affordance left.
-            A Staff/Volunteer/Admin session visiting /kiosk directly does see NavMenu
-            here, so it already has Log out folded into the hamburger — showing this
-            standalone button too would just be a redundant second one. */}
-        {!(has("View Student Data") && has("Create Checkins")) && (
-          <button type="button" className="btn btn-secondary kiosk-logout-btn" onClick={onLogout}>
-            Log out
-          </button>
         )}
       </div>
 

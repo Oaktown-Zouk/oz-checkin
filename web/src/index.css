@@ -1198,8 +1198,9 @@ body {
   gap: 16px;
 }
 
-/* Top-right corner controls, stacked so an admin's backdate control and the
-   always-present Log out button share one spot instead of competing for the corner. */
+/* Top-right corner controls — just the admin backdate control now that Log out
+   lives in NavMenu's hamburger (see NavMenu.tsx) for every session, kiosk-only
+   included. */
 .kiosk-header-controls {
   position: fixed;
   top: 12px;
@@ -1214,14 +1215,6 @@ body {
 .kiosk-backdate-control {
   font-size: 1rem;
   opacity: 0.7;
-}
-
-.kiosk-logout-btn {
-  opacity: 0.7;
-}
-
-.kiosk-logout-btn:hover {
-  opacity: 1;
 }
 
 /* Negative margin-bottom pulls .kiosk-main up into the watercolor's fading tail (the

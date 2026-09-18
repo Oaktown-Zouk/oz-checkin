@@ -320,7 +320,6 @@ export function App() {
           programs={programs}
           requestedScreen={route.type === "kiosk" ? route.screen : undefined}
           onUnauthorized={handleKioskUnauthorized}
-          onLogout={handleLogout}
         />
       </PermissionsProvider>
     );
