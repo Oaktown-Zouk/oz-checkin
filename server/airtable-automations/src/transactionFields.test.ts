@@ -25,14 +25,32 @@ describe("buildTransactionFields", () => {
     assert.equal(fields["Is Recurring"], true);
     assert.equal(fields["Plan ID"], "12345");
   });
-  it("treats a refunded_at timestamp as refunded even without an explicit refunded flag", () => {
-    const fields = buildTransactionFields({ ...basePayload, refunded_at: "2026-09-03T00:00:00.000Z" }, "now");
+  it("reads refunded/refunded_at off the nested transactions[0] entry, not the top level", () => {
+    const fields = buildTransactionFields(
+      { ...basePayload, transactions: [{ refunded: true, refunded_at: "2026-09-03T00:00:00.000Z" }] },
+      "now"
+    );
     assert.equal(fields["Refunded"], true);
     assert.equal(fields["Refunded At"], "2026-09-03");
   });
-  it("defaults refunded amount to 0 when absent", () => {
+  it("treats a nested refunded_at timestamp as refunded even without an explicit refunded flag", () => {
+    const fields = buildTransactionFields(
+      { ...basePayload, transactions: [{ refunded_at: "2026-09-03T00:00:00.000Z" }] },
+      "now"
+    );
+    assert.equal(fields["Refunded"], true);
+  });
+  it("ignores a top-level refunded/refunded_at -- Givebutter never actually puts them there", () => {
+    const fields = buildTransactionFields(
+      { ...basePayload, refunded: true, refunded_at: "2026-09-03T00:00:00.000Z" } as Record<string, unknown>,
+      "now"
+    );
+    assert.equal(fields["Refunded"], false);
+    assert.equal(fields["Refunded At"], null);
+  });
+  it("never writes Refunded Amount -- Givebutter doesn't report it, and a staffer's manual entry shouldn't get stomped to 0", () => {
     const fields = buildTransactionFields(basePayload, "now");
-    assert.equal(fields["Refunded Amount"], 0);
+    assert.equal("Refunded Amount" in fields, false);
   });
   it("is not recurring or refunded for a plain drop-in payload", () => {
     const fields = buildTransactionFields(basePayload, "now");

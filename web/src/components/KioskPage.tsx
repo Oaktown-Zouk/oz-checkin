@@ -69,7 +69,6 @@ export function KioskPage({
   programs,
   requestedScreen,
   onUnauthorized,
-  onLogout,
 }: {
   programs: ProgramSchedule[];
   // A one-shot jump to a specific flow screen, from a NavMenu quick-link (e.g.
@@ -78,7 +77,6 @@ export function KioskPage({
   // this component is already mounted and already showing that same screen kind.
   requestedScreen?: KioskFlowScreen;
   onUnauthorized: () => void;
-  onLogout: () => void;
 }) {
   const { has } = usePermissions();
   const canBackdate = has("Backdate Kiosk");
@@ -107,6 +105,7 @@ export function KioskPage({
   const [roster, setRoster] = useState<KioskRosterEntry[]>([]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // The sign-up/purchase flow (KioskPurchaseFlow.tsx) — a separate screen stack from
   // `dialog` above, since it's a fully client-side, non-authenticated-student flow
   // (browsing/paying for a pass) rather than anything scoped to a resolved roster
@@ -209,6 +208,9 @@ export function KioskPage({
   function closeDialog() {
     setDialog(null);
     refreshRoster();
+    // Back on the home search screen (Cancel or a completed check-in both land here)
+    // — ready for the next student to just start typing, no tap needed first.
+    searchInputRef.current?.focus();
   }
 
   // Fire-and-forget, called from KioskCheckInDialog's Done button — the dialog has
@@ -240,11 +242,6 @@ export function KioskPage({
             <EffectiveDateControl value={effectiveAt} onChange={setEffectiveAt} />
           </div>
         )}
-        {/* The only sign-out affordance a kiosk-only session has — it doesn't hold the
-            other permissions NavMenu requires to show its own logout-adjacent nav. */}
-        <button type="button" className="btn btn-secondary kiosk-logout-btn" onClick={onLogout}>
-          Log out
-        </button>
       </div>
 
       <img src={banner} alt="Oaktown Zouk" className="kiosk-banner" />
@@ -255,6 +252,7 @@ export function KioskPage({
 
           <div className="kiosk-search-wrap">
             <input
+              ref={searchInputRef}
               className="search-bar kiosk-search-bar"
               type="search"
               placeholder="Type your name…"

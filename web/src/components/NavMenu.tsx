@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { usePermissions } from "../permissions.js";
 
-// Fixed top-left hamburger, present on every page — but only actually renders
-// anything for a session that holds more than one destination's permission (i.e.
-// both View Student Data and Create Checkins). A session confined to just one of
-// those (e.g. a Kiosk-role account) has nowhere else this menu could send it.
+// Fixed top-left hamburger, present on every page, for every session — including a
+// Kiosk-role account, which holds neither View Student Data nor Create Checkins
+// together and so has nowhere the navigation links could send it. That session still
+// gets the menu itself (with just Log out inside) rather than a standalone button
+// sitting directly in the header: requiring a tap to open the menu before Log out is
+// even visible makes it much harder to hit by accident on a public, unattended tablet.
 export function NavMenu({
   onNavigateFrontDesk,
   onNavigateKiosk,
   onNavigateKioskPurchaseQr,
   onNavigateKioskSignup,
+  onLogout,
 }: {
   onNavigateFrontDesk: () => void;
   onNavigateKiosk: () => void;
@@ -18,6 +21,7 @@ export function NavMenu({
   // the front desk, without detouring through the kiosk's own home screen first.
   onNavigateKioskPurchaseQr: () => void;
   onNavigateKioskSignup: () => void;
+  onLogout: () => void;
 }) {
   const { has } = usePermissions();
   const [open, setOpen] = useState(false);
@@ -32,14 +36,16 @@ export function NavMenu({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  if (!has("View Student Data") || !has("Create Checkins")) return null;
-
-  const items = [
-    { label: "Front Desk", onClick: onNavigateFrontDesk },
-    { label: "Kiosk", onClick: onNavigateKiosk },
-    { label: "Purchase QR Code", onClick: onNavigateKioskPurchaseQr },
-    { label: "New Member Signup", onClick: onNavigateKioskSignup },
-  ];
+  // See the file-level comment above for why a Kiosk-only session gets an empty list.
+  const canNavigate = has("View Student Data") && has("Create Checkins");
+  const items = canNavigate
+    ? [
+        { label: "Front Desk", onClick: onNavigateFrontDesk },
+        { label: "Kiosk", onClick: onNavigateKiosk },
+        { label: "Purchase QR Code", onClick: onNavigateKioskPurchaseQr },
+        { label: "New Member Signup", onClick: onNavigateKioskSignup },
+      ]
+    : [];
 
   return (
     <div className="nav-menu" ref={ref}>
@@ -63,6 +69,16 @@ export function NavMenu({
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            className={`nav-menu-item${items.length > 0 ? " nav-menu-item-logout" : ""}`}
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+          >
+            Log out
+          </button>
         </div>
       )}
     </div>

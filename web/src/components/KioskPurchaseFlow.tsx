@@ -31,6 +31,17 @@ const WIDGET_IDLE_MS = 120_000;
 
 const QR_PIXELS = 320;
 
+// The "Home" button's own countdown — separate from useIdleTimer's activity-based
+// resets (see FLOW_IDLE_MS/WIDGET_IDLE_MS above): this one runs down regardless of
+// interaction, so a student who's actively engaged with a screen still eventually
+// gets sent home if they never actually move on. Always exactly HOME_COUNTDOWN_S,
+// with no dependency on which screen this is -- KioskFlowShell is remounted fresh by
+// every navigation (each case in KioskPurchaseFlow's switch is a different component
+// type, so React tears down and rebuilds this subtree on every screen change), which
+// is what "refreshed whenever navigating" falls out of for free, with no explicit
+// reset plumbing needed.
+const HOME_COUNTDOWN_S = 60;
+
 // Used by KioskBuyAPassScreen's QR code (the flow's only one now — see
 // KIOSK_SIGNUP_PAGE_URL) — null while generating and if `url` is falsy/generation
 // fails, so the caller can render a loading state either way without distinguishing
@@ -70,10 +81,26 @@ function KioskFlowShell({
   onBack: () => void;
   // Returns all the way to the kiosk home screen, regardless of how deep into the
   // flow this screen is — for a student who's done (or given up) mid-flow, rather
-  // than stepping back through every screen they came through via Back alone.
+  // than stepping back through every screen they came through via Back alone. Also
+  // fires on its own once the countdown below reaches zero.
   onDone: () => void;
   children: React.ReactNode;
 }) {
+  const [secondsLeft, setSecondsLeft] = useState(HOME_COUNTDOWN_S);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          onDone();
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [onDone]);
+
   return (
     <div className="kiosk-flow-screen">
       <h1 className="kiosk-flow-title">{title}</h1>
@@ -83,7 +110,7 @@ function KioskFlowShell({
           ← Back
         </button>
         <button type="button" className="btn btn-secondary kiosk-flow-back" onClick={onDone}>
-          Done
+          {`Home (${secondsLeft})`}
         </button>
       </div>
     </div>

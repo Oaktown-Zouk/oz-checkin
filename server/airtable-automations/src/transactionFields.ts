@@ -14,9 +14,12 @@ export interface GivebutterTransactionPayload {
   created_at?: unknown;
   plan_id?: unknown;
   is_recurring?: unknown;
-  refunded?: unknown;
-  refunded_at?: unknown;
-  refunded_amount?: unknown;
+  // Refunded/refunded_at live one level down in Givebutter's real API response,
+  // on this nested sub-transaction -- never at the top level (confirmed against
+  // live data: every transaction has exactly one entry here). refunded_amount
+  // isn't reported anywhere in this object either way -- Givebutter only ever
+  // exposes a refunded boolean + timestamp, never a dollar figure.
+  transactions?: Array<{ refunded?: unknown; refunded_at?: unknown }>;
 }
 
 // One field set for both the nightly sync and the webhook -- the nightly sync used
@@ -27,6 +30,12 @@ export interface GivebutterTransactionPayload {
 // a disambiguation that silently didn't work for most rows). Full parity closes that
 // gap regardless of which sync path a given transaction happened to go through.
 export function buildTransactionFields(transaction: GivebutterTransactionPayload, syncedAt: string): Record<string, unknown> {
+  // Real API responses always carry exactly one entry here (confirmed against
+  // live data) -- a transaction with no nested entry at all would mean
+  // Givebutter changed this shape, not a genuine zero-payment transaction, so
+  // falling back to an empty object (refunded/refunded_at both undefined,
+  // same as "not refunded") is the safe default rather than throwing.
+  const subTransaction = transaction.transactions?.[0] ?? {};
   return {
     "Transaction ID": String(transaction.id),
     "Amount": Number(transaction.amount) || 0,
@@ -38,9 +47,16 @@ export function buildTransactionFields(transaction: GivebutterTransactionPayload
     "Transacted At": transaction.transacted_at ?? transaction.created_at ?? null,
     "Plan ID": toText(transaction.plan_id),
     "Is Recurring": Boolean(transaction.plan_id) || toBoolean(transaction.is_recurring),
-    "Refunded": toBoolean(transaction.refunded) || Boolean(transaction.refunded_at),
-    "Refunded At": toDateOnly(transaction.refunded_at),
-    "Refunded Amount": Number(transaction.refunded_amount ?? 0) || 0,
+    "Refunded": toBoolean(subTransaction.refunded) || Boolean(subTransaction.refunded_at),
+    "Refunded At": toDateOnly(subTransaction.refunded_at),
+    // Refunded Amount is deliberately NOT written here. Givebutter never reports a
+    // refunded dollar amount anywhere on this object (only the boolean + timestamp
+    // above), and this field's own description in Airtable says it "falls back to
+    // the modelled 50%" when absent -- a fallback a staffer fills in by hand once a
+    // refund is processed. Every write here is a partial update (both the REST PATCH
+    // and the Scripting SDK leave an omitted field untouched), so leaving this key
+    // out entirely lets that value stick instead of being forced back to 0 on every
+    // sync run, which is what writing 0 here used to do.
     "Last Synced": syncedAt,
   };
 }

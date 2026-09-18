@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   UnauthorizedError,
@@ -128,6 +128,7 @@ export function App() {
   );
 
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [students, setStudents] = useState<StudentStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [programs, setPrograms] = useState<ProgramSchedule[]>([]);
@@ -216,6 +217,11 @@ export function App() {
     // queued after it, reconcile this with the server's real numbers once they land,
     // whether or not the write actually succeeded.
     setStudents((prev) => prev.map((s) => (s.id === studentId ? applyOptimisticCheckin(s, selections, programNameById) : s)));
+
+    // Ready for the next student immediately — clears whatever found this one, and
+    // refocuses so front desk can just start typing the next name.
+    setQuery("");
+    searchInputRef.current?.focus();
 
     const effectiveIso = effectiveAt ? studioLocalToUtc(effectiveAt).toISOString() : undefined;
     api
@@ -308,12 +314,12 @@ export function App() {
           onNavigateKiosk={navigateToKiosk}
           onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
           onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
+          onLogout={handleLogout}
         />
         <KioskPage
           programs={programs}
           requestedScreen={route.type === "kiosk" ? route.screen : undefined}
           onUnauthorized={handleKioskUnauthorized}
-          onLogout={handleLogout}
         />
       </PermissionsProvider>
     );
@@ -337,6 +343,7 @@ export function App() {
           onNavigateKiosk={navigateToKiosk}
           onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
           onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
+          onLogout={handleLogout}
         />
         <StudentPage studentId={route.id} onBack={navigateToList} onUnauthorized={() => setAuthenticated(false)} />
       </PermissionsProvider>
@@ -346,11 +353,12 @@ export function App() {
   return (
     <PermissionsProvider value={{ permissions, userRoleId }}>
       <NavMenu
-          onNavigateFrontDesk={navigateToList}
-          onNavigateKiosk={navigateToKiosk}
-          onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
-          onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
-        />
+        onNavigateFrontDesk={navigateToList}
+        onNavigateKiosk={navigateToKiosk}
+        onNavigateKioskPurchaseQr={() => navigateToKiosk({ kind: "buyAPass" })}
+        onNavigateKioskSignup={() => navigateToKiosk({ kind: "signupCount" })}
+        onLogout={handleLogout}
+      />
       {checkinError && <ErrorBanner message={checkinError} onDismiss={() => setCheckinError(null)} />}
       <div className="app">
         <header className="app-header">
@@ -368,9 +376,6 @@ export function App() {
             </button>
             <EffectiveDateControl value={effectiveAt} onChange={handleEffectiveAtChange} />
             {userEmail && <span className="signed-in-as">{userEmail}</span>}
-            <button type="button" className="btn btn-secondary" onClick={handleLogout}>
-              Log out
-            </button>
           </div>
         </header>
 
@@ -385,7 +390,7 @@ export function App() {
           </div>
         )}
 
-        <SearchBar value={query} onChange={setQuery} />
+        <SearchBar ref={searchInputRef} value={query} onChange={setQuery} />
 
         <StudentList
           students={visibleStudents}
