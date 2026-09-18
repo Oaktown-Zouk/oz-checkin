@@ -414,15 +414,16 @@ one thing, their own data, and nothing else.
   missing-redirect bug here either way — it proxies to Vite's own dev server, which
   already does SPA-friendly fallback on its own; the failure mode only shows up
   against the real static-hosted build.
-- **Navigation:** a top-left hamburger (`NavMenu.tsx`) linking "Front Desk", "Kiosk",
-  and two quick links straight into a specific kiosk screen — "Purchase QR Code" (the
-  "Buy a pass" screen) and "New Member Signup" (the sign-up class-count screen) — for
-  jumping a student there without detouring through the kiosk's own home screen first.
-  Present on all three pages but only rendered for a session holding both
-  `View Student Data` and `Create Checkins` — i.e. only when there's actually more
-  than one destination it could send that session to. A `Kiosk`-only session (just
-  `Create Checkins`) never sees it, since `/kiosk` is the only page it can reach
-  anyway. The quick links work by giving `Route`'s `"kiosk"` variant an optional
+- **Navigation:** a top-left hamburger (`NavMenu.tsx`), present unconditionally on all
+  three pages, for every session. A session holding both `View Student Data` and
+  `Create Checkins` sees the full list — "Front Desk", "Kiosk", and two quick links
+  straight into a specific kiosk screen ("Purchase QR Code", the "Buy a pass" screen,
+  and "New Member Signup", the sign-up class-count screen) — for jumping a student
+  there without detouring through the kiosk's own home screen first. A session lacking
+  either permission (i.e. a `Kiosk`-only account, which only has `Create Checkins`) has
+  nowhere those links could send it, so the menu just shows "Log out" — see "Kiosk
+  mode" below for why that's nested in the menu at all rather than its own standalone
+  button. The quick links work by giving `Route`'s `"kiosk"` variant an optional
   `screen` field (`App.tsx`'s `navigateToKiosk(screen?)`) that `KioskPage` seeds its
   screen state from and re-applies via a `useEffect` keyed on that prop — covering
   both a fresh mount and an already-mounted kiosk page.
@@ -837,10 +838,12 @@ front-desk involvement.
   form both included — see "Auth" below. A successful password login redirects to
   `/`, and the session-derived routing there sends a `Kiosk`-role account straight
   back to `/kiosk`.
-- **Log out**: a top-right button, always present regardless of permissions — the
-  only sign-out affordance a `Kiosk`-only session has, since `NavMenu` (see
-  "Architecture") requires permissions that session doesn't hold. Shares the corner
-  with the admin-only backdate control below when both are present.
+- **Log out**: lives in `NavMenu`'s hamburger (see "Architecture") for every session,
+  including a `Kiosk`-only one — that session just sees "Log out" with nothing above
+  it, since it holds neither permission the menu's other links need. Nested in the
+  menu rather than a standalone button specifically so it takes a tap to open the menu
+  before Log out is even visible, making it much harder to hit by accident on a
+  public, unattended tablet.
 - **Visible window (kiosk-only)**: a class stops appearing in the kiosk's picker once
   `Programs.Start Time + Programs.Visible For` (a duration field, read over the API as
   a plain number of seconds) has passed — `withinVisibleWindow`,

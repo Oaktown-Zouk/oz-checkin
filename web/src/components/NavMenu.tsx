@@ -36,8 +36,7 @@ export function NavMenu({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  // A Kiosk-only session (neither permission) sees just Log out below — every other
-  // link goes somewhere that session can't reach anyway.
+  // See the file-level comment above for why a Kiosk-only session gets an empty list.
   const canNavigate = has("View Student Data") && has("Create Checkins");
   const items = canNavigate
     ? [
