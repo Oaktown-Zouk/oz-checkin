@@ -25,6 +25,17 @@
 // The last point matters because Airtable's webhook trigger has NO signature
 // verification — anyone with the URL can call it.
 //
+// REFUND.* EVENTS ARE LOGGED, NOT LIVE-SYNCED. A refund webhook's own
+// data.transaction_id is Givebutter's *internal* transaction id — confirmed
+// against the real API that it matches neither the transaction's public id
+// (what /transactions/{id} needs) nor its "number" nor any other exposed
+// field, and Givebutter has no endpoint that resolves it to either. The only
+// way to find the matching transaction is to fuzzy-match on amount + refund
+// timestamp against the whole transactions list, which isn't worth doing
+// live — the nightly sync already re-pulls every transaction's real
+// refunded/refunded_at state directly from Givebutter on its own, so a
+// refund just takes up to a day to land instead of being near-instant.
+//
 // This runs in an AUTOMATION: fetch() works (no browser, no CORS), but
 // updateOptionsAsync does not, so new select values must already exist.
 //
@@ -269,6 +280,12 @@ function tierRuleLinkFields(desiredTierRule, currentTierRuleId) {
 // a disambiguation that silently didn't work for most rows). Full parity closes that
 // gap regardless of which sync path a given transaction happened to go through.
 function buildTransactionFields(transaction, syncedAt) {
+    // Real API responses always carry exactly one entry here (confirmed against
+    // live data) -- a transaction with no nested entry at all would mean
+    // Givebutter changed this shape, not a genuine zero-payment transaction, so
+    // falling back to an empty object (refunded/refunded_at both undefined,
+    // same as "not refunded") is the safe default rather than throwing.
+    const subTransaction = transaction.transactions?.[0] ?? {};
     return {
         "Transaction ID": String(transaction.id),
         "Amount": Number(transaction.amount) || 0,
@@ -280,9 +297,16 @@ function buildTransactionFields(transaction, syncedAt) {
         "Transacted At": transaction.transacted_at ?? transaction.created_at ?? null,
         "Plan ID": toText(transaction.plan_id),
         "Is Recurring": Boolean(transaction.plan_id) || toBoolean(transaction.is_recurring),
-        "Refunded": toBoolean(transaction.refunded) || Boolean(transaction.refunded_at),
-        "Refunded At": toDateOnly(transaction.refunded_at),
-        "Refunded Amount": Number(transaction.refunded_amount ?? 0) || 0,
+        "Refunded": toBoolean(subTransaction.refunded) || Boolean(subTransaction.refunded_at),
+        "Refunded At": toDateOnly(subTransaction.refunded_at),
+        // Refunded Amount is deliberately NOT written here. Givebutter never reports a
+        // refunded dollar amount anywhere on this object (only the boolean + timestamp
+        // above), and this field's own description in Airtable says it "falls back to
+        // the modelled 50%" when absent -- a fallback a staffer fills in by hand once a
+        // refund is processed. Every write here is a partial update (both the REST PATCH
+        // and the Scripting SDK leave an omitted field untouched), so leaving this key
+        // out entirely lets that value stick instead of being forced back to 0 on every
+        // sync run, which is what writing 0 here used to do.
         "Last Synced": syncedAt,
     };
 }
@@ -529,9 +553,13 @@ async function updateAirtableRecordById(tableId, recordId, recordFields, attempt
 // Read-only GET by record id — for the rebate-eligibility check below, which needs
 // a member's current First Recurring Key/Rebate Status fresh (i.e. reflecting the
 // transaction just upserted, which upsertMemberByContactId ran before that write).
-async function fetchAirtableRecordById(tableId, recordId, fields) {
-  const params = fields.map((f) => `fields[]=${encodeURIComponent(f)}`).join('&');
-  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}/${recordId}?${params}`, {
+//
+// No `fields` query param: unlike the list endpoint, Airtable's single-record GET
+// doesn't accept one at all -- passing fields[]=... 422s with INVALID_REQUEST_UNKNOWN
+// (confirmed directly against the base). The response already carries every field on
+// the record regardless, so the caller just reads the couple it needs off it.
+async function fetchAirtableRecordById(tableId, recordId) {
+  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}/${recordId}`, {
     headers: { Authorization: `Bearer ${AIRTABLE_PAT}` }
   });
   if (!response.ok) {
@@ -557,7 +585,7 @@ async function applyRebateEligibility(upsertedTransaction, memberRecordId) {
   const recurringPaymentKey = upsertedTransaction.fields['Recurring Payment Key'] ?? null;
   if (recurringPaymentKey == null) return;
 
-  const memberRecord = await fetchAirtableRecordById(membersTable.id, memberRecordId, ['First Recurring Key', 'Rebate Status']);
+  const memberRecord = await fetchAirtableRecordById(membersTable.id, memberRecordId);
   const decision = decideRebateUpdate(
     recurringPaymentKey,
     memberRecord.fields['First Recurring Key'] ?? null,
@@ -650,7 +678,14 @@ if (eventType.startsWith('plan.')) {
   await upsertAirtableRecord(recurringPlansTable.id, ['Plan ID'], planFields);
   console.log(`${eventType} → plan ${plan.id} (${plan.status}) synced`);
 
-} else if (eventType.startsWith('transaction.') || eventType.startsWith('refund.')) {
+} else if (eventType.startsWith('refund.')) {
+  // See the top-of-file comment: there's no way to resolve a refund event's own
+  // data.transaction_id to a fetchable transaction, so this is intentionally a
+  // no-op -- the nightly sync picks up the real Refunded/Refunded At state on
+  // its own next run regardless.
+  console.log(`${eventType} → refund ${resourceId} logged, deferring to nightly sync (see file header)`);
+
+} else if (eventType.startsWith('transaction.')) {
   const transaction = await fetchFromGivebutter(`/transactions/${resourceId}`);
   const memberRecordId = await upsertMemberByContactId(
     transaction.contact_id, transaction.first_name, transaction.last_name,
