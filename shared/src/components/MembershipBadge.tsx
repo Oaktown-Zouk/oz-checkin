@@ -15,20 +15,14 @@ export function MembershipBadge({
   student: StudentStatus;
   showBothWhenApplicable?: boolean;
 }) {
-  // "Active" — a live membership covers check-in, nothing gets spent. Every other
-  // Access Status is represented purely through the credit badge below (see
+  // A membership tier that allows classes covers check-in, nothing gets spent. Every
+  // other case is represented purely through the credit badge below (see
   // combinedLabel/showCredits) — that's the actionable info front desk needs there.
   // Check-in still works either way (front desk override), and flags for review once
-  // credits run out too. See docs/airtable-schema.md, Members.Access Status.
-  //
-  // Also requires a resolved tierName, not just Access Status = Active — Airtable's
-  // Tier Rule link is maintained by an automation that runs when Membership Amount is
-  // updated (see docs/airtable-schema.md, "Tier Rule gaps"), which can miss a member
-  // (e.g. the amount was only ever set, never changed after) or have no Tier to match
-  // at all. Rather than show a bare, informationless "Member" badge in that gap, treat
-  // them as a non-member for display purposes and fall through to credits — that's
-  // the actionable info front desk actually needs.
-  const isMember = student.accessStatus === "Active" && !!student.tierName;
+  // credits run out too. See docs/airtable-schema.md, Members.Classes Allowed — this
+  // is the same rollup checkins.ts gates credit consumption against, so the badge and
+  // the actual check-in behavior always agree.
+  const isMember = student.classesAllowed > 0 && !!student.tierName;
 
   // Shown alone for a non-member who still nominally has a tier from a lapsed
   // membership. Active members get "N Class Membership" (capitalized, count first,

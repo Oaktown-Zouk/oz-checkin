@@ -65,9 +65,9 @@ Computed fields to read directly, never recompute:
   duplicates — see `SPEC.md`'s "Merging duplicate students"). The roster query
   excludes it server-side (`NOT({Duplicate})`), so it's never fetched at all;
   direct-by-id lookups (timeline, level edits) are not filtered.
-- `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation that runs when
-  `Membership Amount` is updated, not this app; see "Tier Rule gaps" below for when
-  it's empty.
+- `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation, not this app,
+  based on the member's actual payments in the last 30 days (rather than a pledged
+  `Membership Amount`); see "Tier Rule gaps" below for when it's empty.
 
 Unused, safe to ignore or delete: `Unused Drop-ins` and `Credits Available` (the app
 reads `Available Credits` instead — see "Credits" below), `Checked In Today` /
@@ -76,15 +76,15 @@ reads `Available Credits` instead — see "Credits" below), `Checked In Today` /
 ### Tier Rule gaps
 
 A member can show `Access Status = Active` with no resolved `Tier Name`/
-`Classes Allowed` — the automation that maintains `Tier Rule` triggers off
-`Membership Amount` being updated, so it can miss a member (e.g. if the amount was
-only ever set, never changed after), or no `Tiers` row may match the member's actual
-plan amount at all. Two things handle this:
+`Classes Allowed` — the automation that maintains `Tier Rule` runs off the member's
+recent payment activity, so it can miss a member, or no `Tiers` row may match their
+actual payment amount at all. Two things handle this:
 
-- **UX fallback** (`web/src/components/MembershipBadge.tsx`) — a member only gets the
-  "N Class Membership" badge when `Access Status = Active` **and** `Tier Name` is
-  resolved. Otherwise they're treated as a non-member for display purposes: no badge,
-  credits shown instead.
+- **UX fallback** (`shared/src/components/MembershipBadge.tsx`) — a member only gets
+  the "N Class Membership" badge when `Classes Allowed > 0` **and** `Tier Name` is
+  resolved — the same rollup `gateCheckIns` gates credit consumption against, so the
+  badge always agrees with actual check-in behavior. Otherwise they're treated as a
+  non-member for display purposes: no badge, credits shown instead.
 - **`npm run audit:credits`** (`server/src/scripts/auditCreditConsumption.ts`) — since
   a tier-less member's `Classes Allowed` rolls up to `0`, every one of their check-ins
   should have `Check-ins."Credits Consumed" = 1`. This script finds any that don't and

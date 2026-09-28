@@ -21,6 +21,13 @@ const POLICY_NOTES: Record<string, string> = {
   "new-member-membership": NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
 };
 
+// Givebutter's checkout defaults to a 15% tip to Givebutter itself, separate from
+// (and not covered by) anything on this page's own sliding-scale notes above — worth
+// calling out on every step that actually charges a card, since it's easy to miss
+// inside the embedded widget and just as easy to change once you know it's there.
+const TIP_NOTE =
+  "Our payment processor, Givebutter, sets a default 15% tip that goes to them. You can set this to any other amount, including 0.";
+
 // Which site embedded this page, passed as ?theme= on the iframe's own src — see
 // signup.css's :root[data-theme=...] blocks for the actual palette each one maps to.
 // Unknown/missing values fall through to the default (oaktownzouk.com's own look)
@@ -50,6 +57,10 @@ container.querySelectorAll<HTMLElement>("[data-policy-note]").forEach((el) => {
   if (!text) return;
   el.textContent = `${text} ${PRICING_CONTACT_CLAUSE} `;
   el.appendChild(emailLink());
+});
+
+container.querySelectorAll<HTMLElement>("[data-tip-note]").forEach((el) => {
+  el.textContent = TIP_NOTE;
 });
 
 const waiverEl = container.querySelector<HTMLElement>("[data-waiver]");
