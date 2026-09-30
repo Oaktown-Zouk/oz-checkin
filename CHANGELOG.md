@@ -4,6 +4,12 @@ Verioned by ISO week number `{year}w{WW}`, with a `.N` suffix for a same-week bu
 release shipped after that week's main deploy already went out.
 
 ## 2026w40 (2026-09-30)
+### New features
+ - **NOTAFLOF purchase links** accessible from the purchase page in the widget.
+
+### Improvements
+ - **Condensed Purchase Flows** by combining 1/2 class versions of the widgets.
+ 
 ### Bugfixes
  - **Member Badge rendering** - Students who are in the paid period of a paused/cancelled
   membership will now get the Member badge correctly shown.
