@@ -54,7 +54,7 @@ test("first-timer, two classes: skips the waiver and goes straight to the paid s
   ).toBeVisible();
 });
 
-test("drop-in flow: buy a pass -> drop-in -> one class -> widget", async ({ page }) => {
+test("drop-in flow: buy a pass -> drop-in -> widget", async ({ page }) => {
   await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
   await expect(page).toHaveURL("/kiosk");
 
@@ -62,26 +62,20 @@ test("drop-in flow: buy a pass -> drop-in -> one class -> widget", async ({ page
   await expect(page.getByRole("heading", { name: "Buy a pass" })).toBeVisible();
 
   await page.getByRole("button", { name: "Buy a drop-in" }).click();
-  await expect(page.getByRole("heading", { name: "How many classes would you like to take today?" })).toBeVisible();
-
-  await page.getByRole("button", { name: "One" }).click();
   await expect(page.getByRole("heading", { name: "Complete your purchase" })).toBeVisible();
   await expect(page.locator('givebutter-widget[id="LqbDvk"]')).toBeAttached();
 
-  // Back from the widget returns to the class-count screen for the same flow, not home.
+  // Back from the widget returns to the "buy on tablet" choice screen, not home.
   await page.getByRole("button", { name: "← Back" }).click();
-  await expect(page.getByRole("heading", { name: "How many classes would you like to take today?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Buy on this tablet" })).toBeVisible();
 });
 
-test("membership flow: buy a pass -> membership -> two classes/week -> widget", async ({ page }) => {
+test("membership flow: buy a pass -> membership -> widget", async ({ page }) => {
   await page.goto("/api/auth/dev-login?email=claude-kiosk@test.com");
   await expect(page).toHaveURL("/kiosk");
 
   await page.getByRole("button", { name: "Buy a pass" }).click();
   await page.getByRole("button", { name: "Start a Membership" }).click();
-  await expect(page.getByRole("heading", { name: "How many classes would you like to take per week?" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Two" }).click();
   await expect(page.getByRole("heading", { name: "Complete your purchase" })).toBeVisible();
-  await expect(page.locator('givebutter-widget[id="pnVx7r"]')).toBeAttached();
+  await expect(page.locator('givebutter-widget[id="p71z32"]')).toBeAttached();
 });

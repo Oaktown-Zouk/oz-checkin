@@ -1,5 +1,5 @@
 export interface GivebutterProduct {
-  key: "signup" | "dropin-1" | "dropin-2" | "membership-1" | "membership-2";
+  key: "signup" | "dropin" | "membership";
   widgetId: string;
 }
 
@@ -15,14 +15,11 @@ export const SIGNUP_PRODUCT: GivebutterProduct = { key: "signup", widgetId: "gOK
 // (Squarespace) iframe embeds — no reason to route the kiosk's own QR code through
 // either wrapper.
 export const KIOSK_SIGNUP_PAGE_URL = "https://my.oaktownzouk.com/signup";
-export const DROPIN_PRODUCTS: Record<1 | 2, GivebutterProduct> = {
-  1: { key: "dropin-1", widgetId: "LqbDvk" },
-  2: { key: "dropin-2", widgetId: "jNKM3W" },
-};
-export const MEMBERSHIP_PRODUCTS: Record<1 | 2, GivebutterProduct> = {
-  1: { key: "membership-1", widgetId: "p71z32" },
-  2: { key: "membership-2", widgetId: "pnVx7r" },
-};
+// Givebutter's own widget handles picking one class vs. two internally, so there's
+// a single drop-in and a single membership product/widget now rather than a
+// per-count pair for each.
+export const DROPIN_PRODUCT: GivebutterProduct = { key: "dropin", widgetId: "LqbDvk" };
+export const MEMBERSHIP_PRODUCT: GivebutterProduct = { key: "membership", widgetId: "p71z32" };
 
 // The kiosk's sign-up/purchase flow, layered on top of the ordinary "home" screen
 // (search bar + check-in) — see KioskPage.tsx/KioskPurchaseFlow.tsx. The first-timer
@@ -38,8 +35,6 @@ export type KioskFlowScreen =
   | { kind: "signupSecondClass" }
   | { kind: "buyAPass" }
   | { kind: "buyOnTablet" }
-  | { kind: "dropInCount" }
-  | { kind: "membershipCount" }
   | { kind: "widget"; product: GivebutterProduct };
 
 export type KioskScreen = { kind: "home" } | KioskFlowScreen;

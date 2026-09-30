@@ -1,10 +1,9 @@
 import {
   DROPIN_SLIDING_SCALE_POLICY_NOTE,
+  FINANCIAL_NEED_LINKS,
   FIRST_DAY_SECOND_CLASS_NOTE,
   MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
   NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
-  PRICING_CONTACT_CLAUSE,
-  PRICING_CONTACT_EMAIL,
   WAIVER_NOTICE,
 } from "shared";
 import "./signup.css";
@@ -19,6 +18,15 @@ const POLICY_NOTES: Record<string, string> = {
   dropin: DROPIN_SLIDING_SCALE_POLICY_NOTE,
   membership: MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
   "new-member-membership": NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
+};
+
+// Which FINANCIAL_NEED_LINKS campaign goes with each policy note above —
+// "new-member-membership" shares the general membership campaign, since there's
+// only the one Givebutter page for financial-need memberships.
+const FINANCIAL_NEED_CATEGORY: Record<string, keyof typeof FINANCIAL_NEED_LINKS> = {
+  dropin: "dropin",
+  membership: "membership",
+  "new-member-membership": "membership",
 };
 
 // Givebutter's checkout defaults to a 15% tip to Givebutter itself, separate from
@@ -39,10 +47,13 @@ if (requestedTheme && KNOWN_THEMES.has(requestedTheme)) {
   document.documentElement.dataset.theme = requestedTheme;
 }
 
-function emailLink(): HTMLAnchorElement {
+function financialNeedLink(category: keyof typeof FINANCIAL_NEED_LINKS): HTMLAnchorElement {
+  const { url } = FINANCIAL_NEED_LINKS[category];
   const link = document.createElement("a");
-  link.href = `mailto:${PRICING_CONTACT_EMAIL}`;
-  link.textContent = PRICING_CONTACT_EMAIL;
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = "here";
   return link;
 }
 
@@ -53,10 +64,13 @@ const steps = container.querySelectorAll<HTMLElement>(".gfw-step");
 // change — it's all static per placeholder, so there's nothing to update after this.
 
 container.querySelectorAll<HTMLElement>("[data-policy-note]").forEach((el) => {
-  const text = POLICY_NOTES[el.dataset.policyNote!];
+  const key = el.dataset.policyNote!;
+  const text = POLICY_NOTES[key];
   if (!text) return;
-  el.textContent = `${text} ${PRICING_CONTACT_CLAUSE} `;
-  el.appendChild(emailLink());
+  const category = FINANCIAL_NEED_CATEGORY[key];
+  el.textContent = `${text} Click `;
+  el.appendChild(financialNeedLink(category));
+  el.append(` for ${FINANCIAL_NEED_LINKS[category].label}.`);
 });
 
 container.querySelectorAll<HTMLElement>("[data-tip-note]").forEach((el) => {

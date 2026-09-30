@@ -2,18 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
   DROPIN_SLIDING_SCALE_POLICY_NOTE,
+  FINANCIAL_NEED_LINKS,
   FIRST_DAY_SECOND_CLASS_NOTE,
-  KIOSK_PRICING_CONTACT_CLAUSE,
   MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
-  PRICING_CONTACT_EMAIL,
   WAIVER_NOTICE,
 } from "shared";
 import { useGivebutterWidgetScript } from "../useGivebutterWidgetScript.js";
 import { useIdleTimer } from "../useIdleTimer.js";
 import {
-  DROPIN_PRODUCTS,
+  DROPIN_PRODUCT,
   KIOSK_SIGNUP_PAGE_URL,
-  MEMBERSHIP_PRODUCTS,
+  MEMBERSHIP_PRODUCT,
   SIGNUP_PRODUCT,
   type GivebutterProduct,
   type KioskFlowScreen,
@@ -175,9 +174,9 @@ function KioskFreeClassScreen({
 // A first-timer who wants a second class on their first day: the first is free, the
 // second is one ordinary drop-in — see FIRST_DAY_SECOND_CLASS_NOTE, which this reuses
 // as the title exactly like the public widget uses it as that step's own heading, and
-// DROPIN_PRODUCTS[1], the same product/price a returning student's single drop-in
-// uses. No sliding-scale policy note here, matching the public widget's own version
-// of this step — this note already covers the pricing context that step needs.
+// DROPIN_PRODUCT, the same product/price a returning student's drop-in purchase uses.
+// No sliding-scale policy note here, matching the public widget's own version of this
+// step — this note already covers the pricing context that step needs.
 function KioskSecondClassScreen({
   onBack,
   onIdle,
@@ -194,7 +193,7 @@ function KioskSecondClassScreen({
   return (
     <KioskFlowShell title={FIRST_DAY_SECOND_CLASS_NOTE} onBack={onBack} onDone={onDone}>
       <div className="kiosk-widget-wrap" ref={containerRef}>
-        <givebutter-widget id={DROPIN_PRODUCTS[1].widgetId} />
+        <givebutter-widget id={DROPIN_PRODUCT.widgetId} />
       </div>
     </KioskFlowShell>
   );
@@ -288,10 +287,25 @@ function KioskClassCountScreen({
 // Same sliding-scale wording the public sign-up widget shows above its own embeds
 // (see shared/src/purchaseCopy.ts) — this screen previously showed no pricing
 // context at all before the embed. Signup has no policy note (it's free), matching
-// the public widget's own free-first-class step.
-function policyNoteFor(product: GivebutterProduct): string | null {
-  if (product.key.startsWith("dropin")) return DROPIN_SLIDING_SCALE_POLICY_NOTE;
-  if (product.key.startsWith("membership")) return MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE;
+// the public widget's own free-first-class step. Paired with the matching financial-
+// need campaign link, since the two always appear together.
+function purchasePolicyFor(
+  product: GivebutterProduct
+): { note: string; financialNeedUrl: string; financialNeedLabel: string } | null {
+  if (product.key === "dropin") {
+    return {
+      note: DROPIN_SLIDING_SCALE_POLICY_NOTE,
+      financialNeedUrl: FINANCIAL_NEED_LINKS.dropin.url,
+      financialNeedLabel: FINANCIAL_NEED_LINKS.dropin.label,
+    };
+  }
+  if (product.key === "membership") {
+    return {
+      note: MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE,
+      financialNeedUrl: FINANCIAL_NEED_LINKS.membership.url,
+      financialNeedLabel: FINANCIAL_NEED_LINKS.membership.label,
+    };
+  }
   return null;
 }
 
@@ -309,14 +323,17 @@ function KioskWidgetScreen({
   useGivebutterWidgetScript();
   const containerRef = useRef<HTMLDivElement>(null);
   useIdleTimer(WIDGET_IDLE_MS, onIdle, containerRef);
-  const policyNote = policyNoteFor(product);
+  const policy = purchasePolicyFor(product);
 
   return (
     <KioskFlowShell title="Complete your purchase" onBack={onBack} onDone={onDone}>
-      {policyNote && (
+      {policy && (
         <p className="kiosk-flow-policy-note">
-          {policyNote} {KIOSK_PRICING_CONTACT_CLAUSE}{" "}
-          <a href={`mailto:${PRICING_CONTACT_EMAIL}`}>{PRICING_CONTACT_EMAIL}</a>
+          {policy.note} Click{" "}
+          <a href={policy.financialNeedUrl} target="_blank" rel="noopener">
+            here
+          </a>{" "}
+          for {policy.financialNeedLabel}.
         </p>
       )}
       <div className="kiosk-widget-wrap" ref={containerRef}>
@@ -385,28 +402,8 @@ export function KioskPurchaseFlow({
       return (
         <KioskBuyOnTabletScreen
           onBack={() => onNavigate({ kind: "buyAPass" })}
-          onSelectDropIn={() => onNavigate({ kind: "dropInCount" })}
-          onSelectMembership={() => onNavigate({ kind: "membershipCount" })}
-          onDone={onExit}
-        />
-      );
-
-    case "dropInCount":
-      return (
-        <KioskClassCountScreen
-          title="How many classes would you like to take today?"
-          onBack={() => onNavigate({ kind: "buyOnTablet" })}
-          onSelect={(count) => onNavigate({ kind: "widget", product: DROPIN_PRODUCTS[count] })}
-          onDone={onExit}
-        />
-      );
-
-    case "membershipCount":
-      return (
-        <KioskClassCountScreen
-          title="How many classes would you like to take per week?"
-          onBack={() => onNavigate({ kind: "buyOnTablet" })}
-          onSelect={(count) => onNavigate({ kind: "widget", product: MEMBERSHIP_PRODUCTS[count] })}
+          onSelectDropIn={() => onNavigate({ kind: "widget", product: DROPIN_PRODUCT })}
+          onSelectMembership={() => onNavigate({ kind: "widget", product: MEMBERSHIP_PRODUCT })}
           onDone={onExit}
         />
       );
@@ -415,9 +412,7 @@ export function KioskPurchaseFlow({
       return (
         <KioskWidgetScreen
           product={screen.product}
-          onBack={() =>
-            onNavigate(screen.product.key.startsWith("dropin") ? { kind: "dropInCount" } : { kind: "membershipCount" })
-          }
+          onBack={() => onNavigate({ kind: "buyOnTablet" })}
           onIdle={onExit}
           onDone={onExit}
         />

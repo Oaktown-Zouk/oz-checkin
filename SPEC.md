@@ -792,8 +792,8 @@ front-desk involvement.
       links, `shared`'s `WAIVER_NOTICE`) with a Continue button, then the free-class
       contact-info embed (no payment).
     - **Two** skips the waiver and goes straight to the embedded widget for
-      `DROPIN_PRODUCTS[1]` — the same product/price a returning student's single
-      drop-in uses, since the first class is free and only the second is actually
+      `DROPIN_PRODUCT` — the same product/price a returning student's drop-in
+      purchase uses, since the first class is free and only the second is actually
       charged — with a fixed heading explaining that instead of the usual pricing
       policy note (`shared`'s `FIRST_DAY_SECOND_CLASS_NOTE`).
   - **Buy a pass** shows just a QR code — pointing at the public sign-up widget
@@ -803,22 +803,21 @@ front-desk involvement.
     prominent so a student defaults to their own phone. That button goes to its own
     screen holding the drop-in/membership choice, which used to sit directly on the
     QR screen.
-  - **Drop-in** ("How many classes would you like to take today?") or **membership**
-    ("...per week?"), each offering One or Two classes. Every one of those four
-    combinations maps to its own Givebutter product/widget id (`kioskProducts.ts`'s
-    `DROPIN_PRODUCTS`/`MEMBERSHIP_PRODUCTS`). Picking a count goes straight to that
-    product's embedded widget — the one QR code on the "Buy a pass" screen already
-    covers every product, since the public widget it points at offers the same
-    drop-in/membership/count choice on its own.
+  - **Buy a drop-in** goes straight to the embedded widget for `DROPIN_PRODUCT`, and
+    **Start a Membership** goes straight to the embedded widget for
+    `MEMBERSHIP_PRODUCT` — each Givebutter widget handles picking one class vs. two
+    internally, so there's no separate count question on this side for either. The
+    one QR code on the "Buy a pass" screen already covers every product, since the
+    public widget it points at offers the same drop-in/membership choice on its own.
   - **Pricing policy notes**: the drop-in and membership widget screens show the same
     sliding-scale wording the public widget shows above its own embeds (`shared/src/
     purchaseCopy.ts`'s `DROPIN_SLIDING_SCALE_POLICY_NOTE`/
-    `MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE`) — except the "need a lower price?" line
-    ends differently on each surface: the public widget (used remotely) can only
-    suggest emailing, while the kiosk (used in person, at the studio) suggests asking
-    the front desk directly too (`KIOSK_PRICING_CONTACT_CLAUSE` vs.
-    `PRICING_CONTACT_CLAUSE`). The free-class and first-day-second-class screens have
-    their own fixed copy instead (see above) and show no separate policy note.
+    `MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE`), each followed by a "click here for
+    financial need [drop-in/membership] pricing" link to that product's own
+    Givebutter financial-need campaign page (`FINANCIAL_NEED_LINKS`) — the same link
+    on both surfaces, replacing the "contact us"/"ask the front desk" email clause
+    these used to show. The free-class and first-day-second-class screens have their
+    own fixed copy instead (see above) and show no separate policy note.
   - **Givebutter's widget script** (`useGivebutterWidgetScript.ts`) is injected once
     into the document and defines the `<givebutter-widget>` custom element every
     widget screen renders; `GIVEBUTTER_WIDGET_SCRIPT_SRC` (`shared/src/givebutter.ts`,

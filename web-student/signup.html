@@ -66,14 +66,14 @@
         </div>
         <!-- Escape hatch for someone who's already used their free class and landed
              back on this step (e.g. via a bookmark or browser back) — goes straight
-             to buying one drop-in. Its own back button lands on "returning-dropin"
+             to buying a drop-in. Its own back button lands on "returning-dropin"
              (the returning-student flow), not back here — an acceptable inaccuracy
              rather than threading a real "came from the free-class step" state
              through the rest of the returning-student flow just for this. -->
         <div class="gfw-perk-box">
           <p> Already taken your free class?</p>
         </div>
-        <button class="gfw-back" data-goto="returning-dropin-one">
+        <button class="gfw-back" data-goto="returning-dropin">
             Click to buy a drop-in pass
         </button>
         <button class="gfw-back" data-goto="first-dropin-one">&larr; Back</button>
@@ -90,32 +90,13 @@
 
       <!-- New Membership Purchases (same as returning; 50% off is handled manually) -->
       <div class="gfw-step" data-step="first-membership" hidden>
-        <h3 class="gfw-question">How many classes would you like to take each week?</h3>
-        <div class="gfw-options gfw-options-vertical">
-          <button class="gfw-btn" data-goto="first-membership-one">One</button>
-          <button class="gfw-btn" data-goto="first-membership-two">Two</button>
-        </div>
-        <button class="gfw-back" data-goto="start">&larr; Back</button>
-      </div>
-
-      <div class="gfw-step" data-step="first-membership-one" hidden>
-        <h3 class="gfw-question">Sign up for your 1 class/week membership.</h3>
+        <h3 class="gfw-question">Sign up for a membership</h3>
         <p class="gfw-policy-note" data-policy-note="new-member-membership"></p>
         <p class="gfw-policy-note" data-tip-note></p>
         <div class="gfw-embed">
           <givebutter-widget id="p71z32" account="K2zE8rPXlwbTczim"></givebutter-widget>
         </div>
-        <button class="gfw-back" data-goto="first-membership">&larr; Back</button>
-      </div>
-
-      <div class="gfw-step" data-step="first-membership-two" hidden>
-        <h3 class="gfw-question">Sign up for your 2 classes/week membership</h3>
-        <p class="gfw-policy-note" data-policy-note="new-member-membership"></p>
-        <p class="gfw-policy-note" data-tip-note></p>
-        <div class="gfw-embed">
-          <givebutter-widget id="pnVx7r" account="K2zE8rPXlwbTczim"></givebutter-widget>
-        </div>
-        <button class="gfw-back" data-goto="first-membership">&larr; Back</button>
+        <button class="gfw-back" data-goto="start">&larr; Back</button>
       </div>
 
       <!-- Returning Student Purchase Flow -->
@@ -130,62 +111,24 @@
 
       <!-- Dropin Purchases -->
       <div class="gfw-step" data-step="returning-dropin" hidden>
-        <h3 class="gfw-question">How many classes would you like to take today?</h3>
-        <div class="gfw-options gfw-options-vertical">
-          <button class="gfw-btn" data-goto="returning-dropin-one">One</button>
-          <button class="gfw-btn" data-goto="returning-dropin-two">Two</button>
-        </div>
-        <button class="gfw-back" data-goto="returning">&larr; Back</button>
-      </div>
-
-      <div class="gfw-step" data-step="returning-dropin-one" hidden>
-        <h3 class="gfw-question">Pay for one drop-in class</h3>
+        <h3 class="gfw-question">Pay for a drop-in class</h3>
         <p class="gfw-policy-note" data-policy-note="dropin"></p>
         <p class="gfw-policy-note" data-tip-note></p>
         <div class="gfw-embed">
           <givebutter-widget id="LqbDvk" account="K2zE8rPXlwbTczim"></givebutter-widget>
         </div>
-        <button class="gfw-back" data-goto="returning-dropin">&larr; Back</button>
-      </div>
-
-      <div class="gfw-step" data-step="returning-dropin-two" hidden>
-        <h3 class="gfw-question">Pay for two drop-in classes</h3>
-        <p class="gfw-policy-note" data-policy-note="dropin"></p>
-        <p class="gfw-policy-note" data-tip-note></p>
-        <div class="gfw-embed">
-          <givebutter-widget id="jNKM3W" account="K2zE8rPXlwbTczim"></givebutter-widget>
-        </div>
-        <button class="gfw-back" data-goto="returning-dropin">&larr; Back</button>
+        <button class="gfw-back" data-goto="returning">&larr; Back</button>
       </div>
 
       <!-- Returning Membership Purchases -->
       <div class="gfw-step" data-step="returning-membership" hidden>
-        <h3 class="gfw-question">How many classes would you like to take each week?</h3>
-        <div class="gfw-options gfw-options-vertical">
-          <button class="gfw-btn" data-goto="returning-membership-one">One</button>
-          <button class="gfw-btn" data-goto="returning-membership-two">Two</button>
-        </div>
-        <button class="gfw-back" data-goto="returning">&larr; Back</button>
-      </div>
-
-      <div class="gfw-step" data-step="returning-membership-one" hidden>
-        <h3 class="gfw-question">Sign up for your 1 class/week membership.</h3>
+        <h3 class="gfw-question">Sign up for a membership</h3>
         <p class="gfw-policy-note" data-policy-note="membership"></p>
         <p class="gfw-policy-note" data-tip-note></p>
         <div class="gfw-embed">
           <givebutter-widget id="p71z32" account="K2zE8rPXlwbTczim"></givebutter-widget>
         </div>
-        <button class="gfw-back" data-goto="returning-membership">&larr; Back</button>
-      </div>
-
-      <div class="gfw-step" data-step="returning-membership-two" hidden>
-        <h3 class="gfw-question">Sign up for your 2 classes/week membership</h3>
-        <p class="gfw-policy-note" data-policy-note="membership"></p>
-        <p class="gfw-policy-note" data-tip-note></p>
-        <div class="gfw-embed">
-          <givebutter-widget id="pnVx7r" account="K2zE8rPXlwbTczim"></givebutter-widget>
-        </div>
-        <button class="gfw-back" data-goto="returning-membership">&larr; Back</button>
+        <button class="gfw-back" data-goto="returning">&larr; Back</button>
       </div>
     </div>
 

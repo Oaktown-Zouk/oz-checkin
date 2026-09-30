@@ -4,17 +4,20 @@
 // way it used to (the kiosk didn't show any of this at all until it started importing
 // from here).
 
-// Surfaced next to every policy note below so no one is turned away by an
-// unaffordable price without knowing they can ask for a lower one.
-export const PRICING_CONTACT_EMAIL = "oz@oaktownzouk.com";
-
-// The trailing "ask about a lower price" clause, right before the email address.
-// Split out from the policy notes below because it's the one piece that legitimately
-// differs by surface: the public widget is used remotely (a phone, the studio's own
-// site), where emailing is the only option; the kiosk is used in person at the
-// studio, where asking the front desk directly is faster and more natural.
-export const PRICING_CONTACT_CLAUSE = "Contact us at";
-export const KIOSK_PRICING_CONTACT_CLAUSE = "Ask the front desk or email us at";
+// Givebutter campaign pages offering financial-need pricing, surfaced next to every
+// policy note below so no one is turned away by an unaffordable price without
+// knowing there's a lower-priced option. Replaces the old "contact us"/"ask the
+// front desk" email clause now that these self-serve campaigns exist. Keyed by
+// product type since each campaign is its own Givebutter page; "membership" covers
+// both the general and first-time-member membership policy notes below, which share
+// the one campaign.
+export const FINANCIAL_NEED_LINKS: Record<"dropin" | "membership", { url: string; label: string }> = {
+  dropin: { url: "https://givebutter.com/oaktown-zouk-notaflof-dropins", label: "financial need drop-in pricing" },
+  membership: {
+    url: "https://givebutter.com/oaktown-zouk-financial-need-7f4mlw",
+    label: "financial need membership pricing",
+  },
+};
 
 export const DROPIN_SLIDING_SCALE_POLICY_NOTE =
   "Oaktown Zouk classes are priced on a sliding scale. No one turned away for lack of funds; need a lower priced ticket?";
@@ -34,8 +37,8 @@ export const NEW_MEMBER_MEMBERSHIP_SLIDING_SCALE_POLICY_NOTE =
 
 // A first-timer's "second class" step: their first class is free, and the second is
 // charged as one ordinary drop-in — both surfaces use this exact note together with
-// that same drop-in product (DROPIN_PRODUCTS[1] in web/src/kioskProducts.ts), so the
-// two must stay in sync.
+// that same drop-in product (DROPIN_PRODUCT in web/src/kioskProducts.ts), so the two
+// must stay in sync.
 export const FIRST_DAY_SECOND_CLASS_NOTE = "Your first class is free, your second class is $30-$40 sliding scale.";
 
 // Shown once, before a first-timer's free class is booked — both surfaces render
