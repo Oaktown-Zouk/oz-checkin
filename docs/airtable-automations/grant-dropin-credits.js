@@ -7,9 +7,17 @@
 // don't qualify.
 //
 // Input variables (mapped from the triggering Transaction record):
-//   transactionId — the Transaction's own Airtable record id
-//   planId        — Plan ID text field, blank for a one-time payment
-//   dollarAmount  — Amount paid
+//   transactionId             — the Transaction's own Airtable record id
+//   planId                    — Plan ID text field, blank for a one-time payment
+//   dollarAmount              — Amount paid
+//   campaign                  — Campaign text field (Givebutter's campaign_code in
+//                                practice for this base, not a display title)
+//   notaflofCreditsRequested  — NOTAFLOF Credits Requeested number field, only ever
+//                                set on the NOTAFLOF drop-in campaign's own
+//                                transactions (see transactionFields.ts's
+//                                notaflofCreditsRequested) — blank/null for every
+//                                other transaction, including a NOTAFLOF membership
+//                                one (a separate campaign that doesn't ask this).
 //
 // No Member lookup: this only ever sets "Credits Purchased" on the triggering
 // Transaction itself, and Members."Credits Purchased" (a rollup) picks it up
@@ -17,7 +25,12 @@
 // resolve wrong. See docs/airtable-automations/CHANGELOG.md for the design history.
 // ═══════════════════════════════════════════════════════════════════════
 
-const { transactionId, planId, dollarAmount } = input.config();
+const { transactionId, planId, dollarAmount, campaign, notaflofCreditsRequested } = input.config();
+
+// The NOTAFLOF ("none turned away for lack of funds") drop-in campaign -- pay
+// whatever you can, so its dollar amount can't be used to infer a class count the
+// way a regular drop-in's fixed sliding-scale price can.
+const NOTAFLOF_DROPINS_CAMPAIGN = 'ZROVNN';
 
 const transactionsTable = base.getTable('Transactions');
 const tiersTable = base.getTable('Tiers');
@@ -37,9 +50,19 @@ if (!!planId && dollarAmount >= minMembershipAmount) {
 
 console.log(`Processing payment of ${dollarAmount} for transaction ${transactionId}`);
 
-let numberOfCredits = Math.floor(dollarAmount / dropinPrice);
-if (numberOfCredits < 1 && dollarAmount >= minDropinPrice) {
-  numberOfCredits = 1;
+let numberOfCredits;
+if (campaign === NOTAFLOF_DROPINS_CAMPAIGN) {
+  if (notaflofCreditsRequested > 0) {
+    numberOfCredits = notaflofCreditsRequested;
+  } else {
+    console.warn('NOTAFLOF transaction with no NOTAFLOF Credits Requeested value -- defaulting to 1 credit');
+    numberOfCredits = 1;
+  }
+} else {
+  numberOfCredits = Math.floor(dollarAmount / dropinPrice);
+  if (numberOfCredits < 1 && dollarAmount >= minDropinPrice) {
+    numberOfCredits = 1;
+  }
 }
 
 if (numberOfCredits < 1) {

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildTransactionFields, recurringPlanLinkField } from "./transactionFields.js";
+import { buildTransactionFields, notaflofCreditsRequested, recurringPlanLinkField } from "./transactionFields.js";
 
 const basePayload = {
   id: 999,
@@ -56,6 +56,60 @@ describe("buildTransactionFields", () => {
     const fields = buildTransactionFields(basePayload, "now");
     assert.equal(fields["Is Recurring"], false);
     assert.equal(fields["Refunded"], false);
+  });
+  it("fills in NOTAFLOF Credits Requeested from the matching custom field on a NOTAFLOF drop-in transaction", () => {
+    const fields = buildTransactionFields(
+      {
+        ...basePayload,
+        campaign: undefined,
+        campaign_code: "ZROVNN",
+        custom_fields: [{ title: "How many classes are you paying for?", value: "2" }],
+      },
+      "now"
+    );
+    assert.equal(fields["Campaign"], "ZROVNN");
+    assert.equal(fields["NOTAFLOF Credits Requeested"], 2);
+  });
+  it("leaves NOTAFLOF Credits Requeested null for a non-NOTAFLOF transaction, even with a matching custom field", () => {
+    const fields = buildTransactionFields(
+      { ...basePayload, custom_fields: [{ title: "How many classes are you paying for?", value: "2" }] },
+      "now"
+    );
+    assert.equal(fields["NOTAFLOF Credits Requeested"], null);
+  });
+});
+
+describe("notaflofCreditsRequested", () => {
+  it("returns null for any campaign other than the NOTAFLOF drop-ins one, regardless of custom fields", () => {
+    const transaction = { custom_fields: [{ title: "How many classes are you paying for?", value: "2" }] };
+    assert.equal(notaflofCreditsRequested(transaction, "Drop-in"), null);
+    // The separate NOTAFLOF membership campaign doesn't ask this question either.
+    assert.equal(notaflofCreditsRequested(transaction, "NOTAFLOF Membership"), null);
+  });
+  it("matches the question case-insensitively and ignores surrounding whitespace", () => {
+    const transaction = { custom_fields: [{ title: "  HOW MANY CLASSES ARE YOU PAYING FOR?  ", value: "1" }] };
+    assert.equal(notaflofCreditsRequested(transaction, "ZROVNN"), 1);
+  });
+  it("pulls digits out of a non-numeric answer like '2 classes'", () => {
+    const transaction = { custom_fields: [{ title: "How many classes are you paying for?", value: "2 classes" }] };
+    assert.equal(notaflofCreditsRequested(transaction, "ZROVNN"), 2);
+  });
+  it("returns null when no custom field matches the question", () => {
+    const transaction = { custom_fields: [{ title: "Shirt size", value: "M" }] };
+    assert.equal(notaflofCreditsRequested(transaction, "ZROVNN"), null);
+  });
+  it("returns null for an unparseable or zero answer", () => {
+    assert.equal(
+      notaflofCreditsRequested({ custom_fields: [{ title: "How many classes are you paying for?", value: "none" }] }, "ZROVNN"),
+      null
+    );
+    assert.equal(
+      notaflofCreditsRequested({ custom_fields: [{ title: "How many classes are you paying for?", value: "0" }] }, "ZROVNN"),
+      null
+    );
+  });
+  it("returns null for a missing or non-array custom_fields list", () => {
+    assert.equal(notaflofCreditsRequested({}, "ZROVNN"), null);
   });
 });
 

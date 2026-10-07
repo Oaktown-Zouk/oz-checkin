@@ -65,9 +65,18 @@ Computed fields to read directly, never recompute:
   duplicates — see `SPEC.md`'s "Merging duplicate students"). The roster query
   excludes it server-side (`NOT({Duplicate})`), so it's never fetched at all;
   direct-by-id lookups (timeline, level edits) are not filtered.
-- `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation, not this app,
-  based on the member's actual payments in the last 30 days (rather than a pledged
-  `Membership Amount`); see "Tier Rule gaps" below for when it's empty.
+- `Tier Rule` (link → `Tiers`) — maintained by `assign-member-tier.js`
+  (`docs/airtable-automations/assign-member-tier.js`), not this app: the highest
+  `Tiers` row whose `Min Monthly Price` the member's `Current Membership Payment`
+  clears (a formula/rollup over actual payments in the last 30 days, not a pledged
+  plan amount — see the script's own header), with `isNotaflof`/`isStaff` override
+  checkboxes taking priority over the price match. Deliberately does NOT key off
+  `Recurring Plans.Status` at all, so pausing or canceling a membership doesn't
+  clear a tier the member already paid for and still has time left on — only an
+  actual payment (or that payment aging out past 30 days) changes it. Wired up both
+  immediately (a `Members` "when record updated" automation watching
+  `Current Membership Payment`) and as a nightly/manual backstop sweep; see "Tier
+  Rule gaps" below for when it's empty.
 
 Unused, safe to ignore or delete: `Unused Drop-ins` and `Credits Available` (the app
 reads `Available Credits` instead — see "Credits" below), `Checked In Today` /
@@ -143,6 +152,20 @@ the app reads:
 - `Transactions."Credits Purchased"` (number) — how many drop-in credits a
   transaction bought. Set by `grant-dropin-credits.js` (below).
   `Members."Credits Purchased"` rolls this up per member.
+- `Transactions."NOTAFLOF Credits Requeested"` (number, nullable) — the NOTAFLOF
+  ("none turned away for lack of funds") drop-in campaign's own "How many classes
+  are you paying for?" checkout question, parsed out of the transaction's
+  `custom_fields` by `transactionFields.ts`'s `notaflofCreditsRequested` (the digits
+  in the answer, not an exact "1"/"2" match, so "2 classes" still parses). Exists
+  because a NOTAFLOF (pay-what-you-can) transaction's amount doesn't map to a class
+  count at all, unlike a regular drop-in's fixed sliding-scale price. Deliberately
+  left blank for every other transaction — including the *separate* NOTAFLOF
+  membership campaign, which doesn't ask this — both because no other campaign's
+  checkout form asks this question, and so a human scanning the table only sees a
+  value where it's actually meaningful. `grant-dropin-credits.js` (below) matches
+  the NOTAFLOF drop-in campaign via `Campaign = "ZROVNN"`, and uses this field
+  instead of its own dollar-amount math whenever it's present on that campaign's
+  transactions.
 - `Members."New Member Credit"` (number) — flat signup bonus, **defaults to 1** in
   Airtable's own field config, so every new `Members` row gets one automatically
   regardless of how it's created (API, automation, or by hand) — no automation logic
@@ -173,8 +196,12 @@ Granting is Airtable automations/config, not application code:
 - **`grant-dropin-credits.js`** (`docs/airtable-automations/grant-dropin-credits.js`)
   — runs on every `Transactions` record created; it does its own qualifying check
   internally (not a filtered trigger view) and sets that same transaction's own
-  `"Credits Purchased"` when the payment is a drop-in (not a membership charge, and
-  at least `minDropinPrice`), otherwise a no-op.
+  `"Credits Purchased"` when the payment is a drop-in (not a membership charge). For
+  the NOTAFLOF drop-in campaign (`"Campaign" = "ZROVNN"`), uses
+  `"NOTAFLOF Credits Requeested"` directly when it's set, or a flat 1 credit when
+  it's missing — NOTAFLOF's pay-what-you-can amount can't be measured against a
+  dollar threshold at all. Every other transaction keeps the original
+  `dollarAmount / dropinPrice` math (at least `minDropinPrice`), unchanged.
 
 Consuming and freeing a credit are both application code (see `SPEC.md`'s "Credits
 system" for why): `services/checkins.ts`'s `gateCheckIns` (run for every check-in it
