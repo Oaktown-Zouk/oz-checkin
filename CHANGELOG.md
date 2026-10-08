@@ -3,6 +3,17 @@
 Verioned by ISO week number `{year}w{WW}`, with a `.N` suffix for a same-week bugfix
 release shipped after that week's main deploy already went out.
 
+## 2026W41 (2026-10-7)
+### New features
+ - **Feedback** Is now in airtable, using airtable forms. Automatically links Class Feedback to Sessions
+   so that Feedback can be linked to the Instructors for the class.
+
+### Improvements
+ - **Picks up Merged Contacts from Givebutter** by looking for Members whose Contact ID is no longer in
+   Givebutter. Attempts to find the new Canonical member and relink Checkins, Transactions, etc.
+   - Merge feature in the Front Desk page has been reduced in scope - can only merge Members that are
+     already marked as Deleted from Givebutter to prevent erroneous merges.
+
 ## 2026w40 (2026-09-30)
 ### New features
  - **NOTAFLOF purchase links** accessible from the purchase page in the widget.
