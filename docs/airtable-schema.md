@@ -58,13 +58,20 @@ Computed fields to read directly, never recompute:
   `Last Transaction At` (both rollups), via an `IF` comparison rather than `MAX()` —
   Airtable's `MAX()` on two date fields coerces the result to a plain number, losing
   the date type.
-- `Duplicate` (checkbox) — set by hand when Givebutter's contact-merge tool leaves a
-  stray record behind (it doesn't actually delete the merged-away contact, so the sync
-  keeps recreating it as a separate Member), or automatically by `services/merge.ts`'s
-  `mergeMembers` on whichever side of a merge didn't survive (case-variant email
-  duplicates — see `SPEC.md`'s "Merging duplicate students"). The roster query
-  excludes it server-side (`NOT({Duplicate})`), so it's never fetched at all;
-  direct-by-id lookups (timeline, level edits) are not filtered.
+- `Duplicate` (checkbox) — ticked by `merge-duplicate-member.js`
+  (`docs/airtable-automations/`) once this Member's links have moved onto its
+  `Duplicate Of`. See `SPEC.md`'s "Merging duplicate students". The roster query
+  excludes it server-side (`AND(NOT({Duplicate}), {Duplicate Of} = BLANK())`), so it's
+  never fetched at all; direct-by-id lookups (timeline, level edits) are not filtered.
+- `Removed From Givebutter` (checkbox) — ticked nightly by
+  `detect-givebutter-merges.js` when this Member's Givebutter contact no longer exists
+  (merged away in Givebutter's UI, confirmed by a 404), and cleared again if the
+  contact reappears before `Duplicate Of` is set. Gates the webapp's "Mark as
+  duplicate…".
+- `Duplicate Of` (link → `Members`; inverse `Duplicates`) — the surviving Member this
+  one was merged into. Filled by `detect-givebutter-merges.js` (unique email match),
+  the webapp, or by hand; filling it triggers `merge-duplicate-member.js`. Review queue:
+  `Removed From Givebutter` checked and `Duplicate Of` empty.
 - `Tier Rule` (link → `Tiers`) — maintained by `assign-member-tier.js`
   (`docs/airtable-automations/assign-member-tier.js`), not this app: the highest
   `Tiers` row whose `Min Monthly Price` the member's `Current Membership Payment`

@@ -256,6 +256,13 @@ body {
   color: var(--gray);
 }
 
+.student-flag {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+
 .badges {
   display: flex;
   align-items: center;

@@ -14,11 +14,11 @@ export function StudentList({
   onUpdateFollowLevel,
   onUpdatePreferredName,
   onTransferMembership,
-  onMerge,
+  onMarkDuplicate,
 }: {
   students: StudentStatus[];
   // The full (unfiltered) roster — see StudentRow.tsx's comment; passed straight
-  // through to MergeDialog regardless of what's currently typed into the search box.
+  // through to DuplicateOfDialog regardless of what's currently typed into the search box.
   allStudents: StudentStatus[];
   loading: boolean;
   effectiveDate?: string;
@@ -30,7 +30,7 @@ export function StudentList({
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdatePreferredName: (studentId: string, preferredName: string) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
-  onMerge: (survivorId: string, duplicateId: string) => Promise<void>;
+  onMarkDuplicate: (duplicateId: string, survivorId: string) => Promise<void>;
 }) {
   if (loading && students.length === 0) {
     return <p className="empty-state">Loading…</p>;
@@ -55,7 +55,7 @@ export function StudentList({
           onUpdateFollowLevel={onUpdateFollowLevel}
           onUpdatePreferredName={onUpdatePreferredName}
           onTransferMembership={onTransferMembership}
-          onMerge={onMerge}
+          onMarkDuplicate={onMarkDuplicate}
         />
       ))}
     </div>

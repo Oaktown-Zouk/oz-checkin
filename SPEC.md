@@ -273,54 +273,49 @@ a source) are deferred — not built yet.
 
 ## Merging duplicate students
 
-Whatever syncs Givebutter into `Members` doesn't match emails case-insensitively, so
-the same real person can end up with two rows (e.g. `cindy@gmail.com` and
-`Cindy@gmail.com`) — a recurring problem, not a one-off. **Merge duplicate…**, next to
-Transfer membership in the roster row's 3-dot menu
-(`server/src/services/merge.ts`'s `mergeMembers`, `POST /api/students/merge`, same
-`Write Memberships` permission), fixes one pair at a time.
+The same real person regularly ends up as two Givebutter contacts, and so two
+`Members` rows. The fix starts in Givebutter: merge the two contacts in Givebutter's
+own contact UI. Givebutter deletes the losing contact outright (it drops out of
+`/contacts` and `GET /contacts/{id}` 404s) without saying which contact it was merged
+into. Everything after that is split into three independent pieces, all keyed on
+`Members."Duplicate Of"`:
 
-- **Finding the other record** (`web/src/components/MergeDialog.tsx`): a local name
-  search against the roster already loaded in `App.tsx` — no extra fetch — since both
-  halves of a duplicate pair are, by definition, both still showing up on the roster
-  today (that's the visible symptom). The row the dialog was opened from is excluded
-  from its own search results.
-- **Picking the survivor**: the user always makes the final call, but the dialog
-  pre-selects whichever side has an active membership (`accessStatus === "Active"`,
-  Airtable's own formula — not re-derived here) once `heldMemberships` loads for both
-  candidates, so the common case needs no extra click. Only overrides the default (the
-  row the dialog was opened from) when exactly one side has one.
-- **What moves**: every link from the loser to the survivor — `Check-ins.Member`,
-  `Recurring Plans.Member` and `.Covers Member` (independently — see "Membership
-  transfers" above for why they can diverge), `Transactions.Member`,
-  `Comp Credits.Member`, `Levelups.Member`, `Notes.Member`. Most of a Member's stats
-  (`Classes Allowed`, `Tier Name`, `Available Credits`, `Remaining Today`,
-  `Recently Active`) are Airtable rollups/formulas over these same linked tables, so
-  once the links move, those numbers recompute themselves — merging is repointing
-  links, not recomputing counts by hand. This is also why credits need no
-  merge-specific handling any more (see "Credits system" above): `Credits Consumed`/
-  `Credits Purchased`/`Credits Comped` are all rollups over tables already in this same
-  reassignment pass.
-- **The one-per-student exception**: `Members."New Member Credit"` defaults to `1`
-  on every row, so a duplicate pair can genuinely end up with two (each row got its
-  own default). It isn't a rollup, so `fillMemberGaps` (below) just copy-if-missing's
-  it like `Phone`/`Lead Level`: the common case (survivor already has its own `1`) is
-  a no-op, and the duplicate's is simply dropped, never summed, once the duplicate is
-  hidden.
-- **The loser**: flagged `Duplicate = true`, not deleted — hidden from the roster
-  (`NOT({Duplicate})`, same as an existing manually-flagged Givebutter merge leftover)
-  but still there to audit. Flagged last, only once every reassignment has actually
-  landed, so a failure partway through leaves it visible and the merge safely
-  retryable — Airtable has no cross-table transaction, but every reassignment is
-  independently idempotent.
-- **Gap-filling**: `Phone`, `Lead Level`, `Follow Level`, `Contact ID`, and
-  `New Member Credit` copy from the loser onto the survivor only when the survivor
-  doesn't already have a value — never overwrites something the survivor already has.
+- **Detection** (`docs/airtable-automations/detect-givebutter-merges.js`, nightly
+  after the contacts sync): a full `/contacts` pull; any Member whose `Contact ID` is
+  missing, confirmed by its own 404, gets `Removed From Givebutter`. When the Member's
+  email belongs to exactly one live contact, `Duplicate Of` is set to that contact's
+  Member. Email is the matching signal on purpose: a duplicate usually exists *because*
+  the name was typed differently, so names rarely match. Anything unmatched stays
+  `Removed From Givebutter` with an empty `Duplicate Of`, for a person to resolve.
+- **Resolving by hand**: either fill `Duplicate Of` in Airtable, or use **Mark as
+  duplicate…** in the roster row's ⋮ menu (`web/src/components/DuplicateOfDialog.tsx`,
+  `POST /api/students/:id/duplicate-of`, `Write Memberships` permission). The menu item
+  and a "Removed from Givebutter" badge appear only on `Removed From Givebutter` rows,
+  so the webapp can't merge two records Givebutter still treats as separate people.
+  The dialog searches the already-loaded roster for the kept record (other removed
+  rows are left out) and shows its membership for confirmation.
+  `services/merge.ts`'s `markDuplicateOf` validates and sets `Duplicate Of`; that's all
+  the server does.
+- **The merge itself** (`docs/airtable-automations/merge-duplicate-member.js`, an
+  Airtable automation on `Duplicate Of` becoming non-empty, however it got filled):
+  - Every link field on the duplicate moves to the survivor: check-ins, transactions,
+    recurring/covered plans, comp credits, levelups, teacher notes, refund requests,
+    user roles, and any link field added to `Members` later. `Tier Rule` and the
+    `Duplicate Of`/`Duplicates` pair stay put. Most of a Member's stats (`Classes
+    Allowed`, `Available Credits`, `Remaining Today`, `Recently Active`, ...) are
+    rollups/formulas over these links, so they recompute on their own.
+  - `Phone`, `Lead Level`, `Follow Level` and `New Member Credit` copy onto the survivor
+    only where the survivor's is blank — the survivor's values always win, and
+    `New Member Credit` (defaults to `1` on every row) is never summed.
+  - `Duplicate` is ticked last, so a run that fails partway leaves the duplicate
+    visible; every step is idempotent, so re-running is safe.
+  - A `Duplicate Of` chain (A → B → C) resolves to its end.
+- **Hiding**: the roster and student login exclude rows that are `Duplicate` *or*
+  have `Duplicate Of` filled, so a marked row disappears immediately rather than after
+  the automation runs. The row stays in Airtable to audit; it's never deleted.
 - **Not automated on purpose**: if both sides have their own active Recurring Plan,
   that's the studio actually double-billing someone — merging the `Members` rows
-  doesn't fix that, only canceling one subscription in Givebutter does. The dialog
-  shows both plans plainly (so it's hard to miss) rather than guessing which to
-  keep.
+  doesn't fix that, only canceling one subscription in Givebutter does.
 
 ## Permissions
 

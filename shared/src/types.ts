@@ -22,6 +22,9 @@ export interface StudentStatus {
   preferredName: string | null;
   email: string;
   contactId: string | null;
+  // Givebutter merged this student's contact away; the roster offers "Mark as
+  // duplicate…" only for these.
+  removedFromGivebutter: boolean;
   leadLevel: number | null;
   followLevel: number | null;
   accessStatus: string;

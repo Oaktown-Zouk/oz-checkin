@@ -22,15 +22,22 @@ export interface MemberFields {
   "Remaining Today"?: number;
   "Available Credits"?: number;
   // Flat signup bonus, defaulting to 1 in Airtable's own field config so every new
-  // Member row gets one with zero automation logic needed. Only ever read/written by
-  // services/merge.ts's fillMemberGaps (copy-if-missing, same as Phone/Lead Level) —
-  // everywhere else just reads the combined "Available Credits" formula, which folds
-  // this in along with Credits Purchased and Comp Credits.
+  // Member row gets one with zero automation logic needed. Only ever written by
+  // docs/airtable-automations/merge-duplicate-member.js (copy-if-missing, same as
+  // Phone/Lead Level) — this app just reads the combined "Available Credits" formula,
+  // which folds this in along with Credits Purchased and Comp Credits.
   "New Member Credit"?: number;
-  // Set manually when Givebutter's own contact-merge tool doesn't actually remove the
-  // merged-away contact — it keeps re-syncing as a separate record otherwise. Excluded
-  // from the roster (see studentStatus.ts); not a schema-level dedupe, just a hide flag.
+  // Ticked by docs/airtable-automations/merge-duplicate-member.js once this Member's
+  // links have moved onto its Duplicate Of. Excluded from the roster (see
+  // studentStatus.ts) along with any row whose Duplicate Of is already filled.
   Duplicate?: boolean;
+  // Ticked by docs/airtable-automations/detect-givebutter-merges.js when this Member's
+  // Givebutter contact no longer exists (merged away in Givebutter's UI). Gates the
+  // roster's "Mark as duplicate…" action (see services/merge.ts).
+  "Removed From Givebutter"?: boolean;
+  // The surviving Member this one was merged into. Filling it is the whole merge as
+  // far as this app is concerned — merge-duplicate-member.js does the data move.
+  "Duplicate Of"?: string[];
   // 1 iff Last Activity (max of last check-in / last transaction, both computed in
   // Airtable) is within the last 30 days — that threshold lives in the Airtable
   // formula, not here, so it's tunable without a code deploy. Drives roster sort order

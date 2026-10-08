@@ -9,52 +9,37 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════
-// Givebutter webhook → Airtable, near-instant
+// Givebutter → Airtable :: MERGE DETECTION
 //
-//   Trigger: "When webhook received"
-//   Action:  "Run a script"
-//   Input variables (map after capturing a test payload — see setup below):
-//       eventName   → the payload's event name, e.g. "transaction.succeeded"
-//       resourceId  → the payload's data.id
+// Merging two contacts in Givebutter's UI deletes the losing contact: it
+// drops out of /contacts and GET /contacts/{id} 404s, with no pointer to the
+// contact it was merged into. This script finds Members in that state and:
 //
-// THIN WEBHOOK BY DESIGN. The payload is used only to learn *which* record
-// changed; the record itself is then re-fetched from Givebutter. That means:
-//   - we never depend on Givebutter's exact payload shape
-//   - a replayed or out-of-order webhook can't write stale data
-//   - a forged POST can at worst make us re-sync a record we already sync
-// The last point matters because Airtable's webhook trigger has NO signature
-// verification — anyone with the URL can call it.
+//   - ticks "Removed From Givebutter" (only after its own GET confirms 404)
+//   - sets "Duplicate Of" when the Member's email belongs to exactly one live
+//     contact, and that contact has a Member. Anything else is left for
+//     manual review: filter Members on Removed From Givebutter + empty
+//     Duplicate Of.
 //
-// REFUND.* EVENTS ARE LOGGED, NOT LIVE-SYNCED. A refund webhook's own
-// data.transaction_id is Givebutter's *internal* transaction id — confirmed
-// against the real API that it matches neither the transaction's public id
-// (what /transactions/{id} needs) nor its "number" nor any other exposed
-// field, and Givebutter has no endpoint that resolves it to either. The only
-// way to find the matching transaction is to fuzzy-match on amount + refund
-// timestamp against the whole transactions list, which isn't worth doing
-// live — the nightly sync already re-pulls every transaction's real
-// refunded/refunded_at state directly from Givebutter on its own, so a
-// refund just takes up to a day to land instead of being near-instant.
+// Setting Duplicate Of is all this does. Moving check-ins, levels, etc. onto
+// the surviving Member is merge-duplicate-member.js's job, triggered by
+// Duplicate Of being filled -- by this script or by hand.
 //
-// This runs in an AUTOMATION: fetch() works (no browser, no CORS), but
-// updateOptionsAsync does not, so new select values must already exist.
+// A Member flagged earlier whose contact shows up again (and has no
+// Duplicate Of yet) gets the flag cleared.
 //
-// WHY THIS TALKS TO THE REST API INSTEAD OF base.getTable(): concurrent
-// webhook firings for the same signup can each find no existing Member and
-// both create one, so every find-or-create here uses Airtable's atomic REST
-// `performUpsert` instead of selectRecordsAsync()+createRecordAsync().
+// Runs in EITHER context:
+//   - Scheduled automation, nightly at 3:45 (after contacts at 3:30)
+//   - Scripting extension, ad hoc right after merging contacts in Givebutter
 // ═══════════════════════════════════════════════════════════════════════
 
 const GIVEBUTTER_API_KEY  = 'REPLACE_WITH_GIVEBUTTER_API_KEY'; // ← Settings → Integrations → API Keys — fill in only inside Airtable's own script editor, never commit the real value here
 const GIVEBUTTER_API_BASE = 'https://api.givebutter.com/v1';
+const MAX_PAGES = 40;                  // 40 × 100 = 4,000 contacts per run
 
-// Dedicated PAT, scoped to data.records:read + data.records:write on THIS
-// base only — deliberately separate from the app server's own AIRTABLE_PAT
-// (server/.env) so this script's blast radius is limited to what it actually
-// needs, and so it's not a second copy of a credential something else already
-// depends on.
-const AIRTABLE_PAT = 'REPLACE_WITH_DEDICATED_PAT';
-const AIRTABLE_BASE_ID = base.id;
+// A real night's merges are a handful. More than this vanishing at once
+// points at a bad pull (wrong key, API hiccup), so the run stops untouched.
+const MAX_VANISHED_PER_RUN = 15;
 
 // ── shared helpers (generated — edit server/airtable-automations/src/) ──
 
@@ -511,342 +496,111 @@ function survivorMemberId(vanished, contactIdsByEmail, memberIdByContactId) {
 
 // ── end of generated shared helpers — automation-specific logic below ───
 
-const { eventName, resourceId } = input.config();
+const membersTable = base.getTable('Members');
+const syncLogTable = base.getTable('Sync Log');
 
-const membersTable        = base.getTable('Members');
-const recurringPlansTable = base.getTable('Recurring Plans');
-const transactionsTable   = base.getTable('Transactions');
-const syncLogTable        = base.getTable('Sync Log');
+// Extension runs in a browser (CORS); automations don't. Pick what exists.
+const httpGet = (typeof remoteFetchAsync === 'function') ? remoteFetchAsync : fetch;
 
-async function fetchFromGivebutter(path) {
-  const response = await fetch(`${GIVEBUTTER_API_BASE}${path}`, {
+function givebutterRequest(path) {
+  return httpGet(`${GIVEBUTTER_API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${GIVEBUTTER_API_KEY}`, Accept: 'application/json' }
   });
+}
+
+async function fetchFromGivebutter(path) {
+  const response = await givebutterRequest(path);
   if (!response.ok) throw new Error(`Givebutter ${response.status} on ${path}: ${await response.text()}`);
-  const body = await response.json();
-  return body.data ?? body;
+  return response.json();
 }
 
-// Running totals for the Sync Log row — every upsert reports whether it
-// created or updated so the log reflects real REST-API outcomes rather than
-// a guess.
-let recordsCreated = 0;
-let recordsUpdated = 0;
-
-// Atomic find-or-create/update, keyed on fieldsToMergeOn — this is what
-// closes the race that selectRecordsAsync()+createRecordAsync() can't.
-// Airtable does the existence check and the write as one server-side
-// operation; if more than one existing record already matches the key it
-// errors instead of guessing, which is exactly what should happen rather
-// than silently picking one.
-//
-// toRestFields() matters here: buildRecurringPlanFields/buildTransactionFields
-// build a select field as {name: "..."} — correct for the Scripting SDK the
-// nightly scripts use, but the REST API this function actually talks to wants
-// a plain string and rejects the object with "Cannot parse value" even for a
-// real, existing choice (confirmed against the base's own field metadata —
-// see docs/airtable-automations/CHANGELOG.md).
-//
-// No `typecast: true` here on purpose: that would also auto-add a choice
-// Airtable has never seen at all, silently growing the option list from
-// whatever Givebutter happens to send. A genuinely new value should fail
-// loudly (same as the nightly scripts' ensureSelectChoices, which only ever
-// widens a choice list from a real Scripting-extension run, never an
-// automation) rather than get added unreviewed.
-async function upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt = 0) {
-  const restFields = toRestFields(recordFields);
-  // Logged before every attempt, success or failure -- restFields (what's
-  // actually sent over the wire, post-conversion), not recordFields, so a
-  // format bug is visible directly instead of needing to be re-derived. Every
-  // upsert call site funnels through here, so this covers all of them without
-  // needing its own logging at each one, and a retry (below) logs its own
-  // line too since this runs again on each recursive attempt.
-  console.log(`Upserting ${tableId} (attempt ${attempt}) keyed on ${JSON.stringify(fieldsToMergeOn)} with fields: ${JSON.stringify(restFields)}`);
-  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_PAT}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      performUpsert: { fieldsToMergeOn },
-      records: [{ fields: restFields }]
-    })
-  });
-
-  if (shouldRetryAfterStatus(response.status, attempt)) {
-    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
-    return upsertAirtableRecord(tableId, fieldsToMergeOn, recordFields, attempt + 1);
-  }
-  if (!response.ok) {
-    const responseBody = await response.text();
-    // The fields are already in the log line above; this just marks the
-    // outcome and carries Airtable's actual error detail.
-    console.error(`Airtable upsert ${response.status} on ${tableId} FAILED: ${responseBody}`);
-    throw new Error(`Airtable upsert ${response.status} on ${tableId}: ${responseBody}`);
-  }
-
-  const body = await response.json();
-  const record = body.records[0]; // { id, fields, createdTime }
-  const wasCreated = (body.createdRecords ?? []).includes(record.id);
-  if (wasCreated) recordsCreated++; else recordsUpdated++;
-  // fields is the REST API's own post-write snapshot of the whole record — every
-  // field's current value, not just the ones this call sent, so a computed field
-  // (e.g. Recurring Payment Key) set by another field this same write touched is
-  // already readable here with no extra round trip.
-  return { id: record.id, created: wasCreated, fields: record.fields };
-}
-
-// Plain PATCH by record id — for a write where the record already exists and is
-// already known by id (see the rebate-eligibility check below), so there's no
-// find-or-create ambiguity performUpsert exists to resolve. Same toRestFields()
-// conversion and retry behavior as upsertAirtableRecord, just without the
-// fieldsToMergeOn/performUpsert wrapping.
-async function updateAirtableRecordById(tableId, recordId, recordFields, attempt = 0) {
-  const restFields = toRestFields(recordFields);
-  console.log(`Updating ${tableId}/${recordId} (attempt ${attempt}) with fields: ${JSON.stringify(restFields)}`);
-  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}/${recordId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_PAT}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ fields: restFields })
-  });
-
-  if (shouldRetryAfterStatus(response.status, attempt)) {
-    await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
-    return updateAirtableRecordById(tableId, recordId, recordFields, attempt + 1);
-  }
-  if (!response.ok) {
-    const responseBody = await response.text();
-    console.error(`Airtable update ${response.status} on ${tableId}/${recordId} FAILED: ${responseBody}`);
-    throw new Error(`Airtable update ${response.status} on ${tableId}/${recordId}: ${responseBody}`);
-  }
-
-  recordsUpdated++;
-  const body = await response.json();
-  return { id: body.id, fields: body.fields };
-}
-
-// Read-only GET by record id — for the rebate-eligibility check below, which needs
-// a member's current First Recurring Key/Rebate Status fresh (i.e. reflecting the
-// transaction just upserted, which upsertMemberByContactId ran before that write).
-//
-// No `fields` query param: unlike the list endpoint, Airtable's single-record GET
-// doesn't accept one at all -- passing fields[]=... 422s with INVALID_REQUEST_UNKNOWN
-// (confirmed directly against the base). The response already carries every field on
-// the record regardless, so the caller just reads the couple it needs off it.
-async function fetchAirtableRecordById(tableId, recordId) {
-  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableId}/${recordId}`, {
-    headers: { Authorization: `Bearer ${AIRTABLE_PAT}` }
-  });
-  if (!response.ok) {
-    const responseBody = await response.text();
-    console.error(`Airtable fetch ${response.status} on ${tableId}/${recordId} FAILED: ${responseBody}`);
-    throw new Error(`Airtable fetch ${response.status} on ${tableId}/${recordId}: ${responseBody}`);
-  }
-  const body = await response.json();
-  return { id: body.id, fields: body.fields };
-}
-
-// First-time-membership rebate: Recurring Payment Key (Transactions) and First
-// Recurring Key (Members) are pre-existing Airtable formula/rollup fields that
-// already compute themselves the instant the transaction's own qualifying fields
-// (Is Recurring, Status, Amount, Transacted At) are written above — see
-// decideRebateUpdate's own comment for why comparing the two keys is enough,
-// without re-deriving "is this the member's first recurring payment" here.
-async function applyRebateEligibility(upsertedTransaction, memberRecordId) {
-  if (!memberRecordId) return;
-  if (!upsertedTransaction.fields['Is Recurring']) return;
-  if (upsertedTransaction.fields['Status'] !== 'succeeded') return;
-
-  const recurringPaymentKey = upsertedTransaction.fields['Recurring Payment Key'] ?? null;
-  if (recurringPaymentKey == null) return;
-
-  const memberRecord = await fetchAirtableRecordById(membersTable.id, memberRecordId);
-  const decision = decideRebateUpdate(
-    recurringPaymentKey,
-    memberRecord.fields['First Recurring Key'] ?? null,
-    memberRecord.fields['Rebate Status'] ?? null
-  );
-
-  if (decision.markTransactionRebateEligible) {
-    await updateAirtableRecordById(transactionsTable.id, upsertedTransaction.id, { 'Rebate Eligible': '50%' });
-  }
-  if (decision.markMemberRefundEligible) {
-    await updateAirtableRecordById(membersTable.id, memberRecordId, { 'Rebate Status': 'Refund Eligible' });
-  }
-}
-
-async function upsertMemberByContactId(contactId, firstName, lastName, email, phone) {
-  const contactIdText = toText(contactId);
-  if (!contactIdText) return null;
-
-  // Read only to decide WHICH FIELD VALUES to send — never to decide
-  // whether a row exists. A stale read here can at worst redundantly fill
-  // an already-filled gap, or (if this read raced another execution's
-  // create) send create-shaped fields into what turns out to be an update.
-  // Either outcome just rewrites a field to what is, in practice, the same
-  // Givebutter value the other execution already wrote — never a second
-  // row, because upsertAirtableRecord is what decides existence, atomically.
-  const memberQuery = await membersTable.selectRecordsAsync({ fields: ['Contact ID', 'First Name', 'Last Name'] });
-  const existingMemberRecord = memberQuery.records.find((record) => record.getCellValueAsString('Contact ID') === contactIdText);
-
-  const memberFields = { 'Contact ID': contactIdText };
-  if (existingMemberRecord) {
-    Object.assign(
-      memberFields,
-      fillMemberFieldGaps(
-        { first: toText(firstName), last: toText(lastName) },
-        { first: existingMemberRecord.getCellValueAsString('First Name'), last: existingMemberRecord.getCellValueAsString('Last Name') }
-      )
-    );
-  } else {
-    Object.assign(memberFields, buildNewMemberFieldsWithLowercaseEmail(firstName, lastName, email, phone));
-  }
-
-  const upserted = await upsertAirtableRecord(membersTable.id, ['Contact ID'], memberFields);
-  return upserted.id;
+// true = confirmed gone (404), false = still there. Anything else throws.
+async function contactIsGone(contactId) {
+  const path = `/contacts/${encodeURIComponent(contactId)}`;
+  const response = await givebutterRequest(path);
+  if (response.status === 404) return true;
+  if (response.ok) return false;
+  throw new Error(`Givebutter ${response.status} on ${path}: ${await response.text()}`);
 }
 
 // ── run ────────────────────────────────────────────────────────────────
-//
-// Same convention as the three nightly scripts: the Sync Log row is created
-// UP FRONT, before any real work, and filled in at the end. A log row left
-// with blank counts means this run died partway — check the automation's
-// run history for the actual error. (An earlier version of this script never
-// logged at all, which is part of what made the 2026-09-02 incident hard to
-// diagnose — there was no record it had even run.)
 const startedAt = new Date().toISOString();
-const syncLogRecordId = await syncLogTable.createRecordAsync({ 'Script': { name: 'Webhook' }, 'Started At': startedAt });
+const syncLogRecordId = await syncLogTable.createRecordAsync({ 'Script': { name: 'Merges' }, 'Started At': startedAt });
 
-const eventType = toText(eventName);
-const syncedAt = new Date().toISOString();
+// 1 ── Full pull of live contacts (no updatedAfter: absence is the signal)
+const contacts = [];
+let pulledEveryPage = false;
+for (let page = 1; page <= MAX_PAGES; page++) {
+  const responseBody = await fetchFromGivebutter(`/contacts?per_page=100&page=${page}`);
+  contacts.push(...(responseBody.data ?? []));
+  const meta = responseBody.meta ?? {};
+  if (!meta.last_page || page >= meta.last_page) { pulledEveryPage = true; break; }
+}
+if (!pulledEveryPage) throw new Error('Hit MAX_PAGES before the last page — raise it; a partial pull would flag live contacts.');
+console.log(`Fetched ${contacts.length} live contacts`);
 
-console.log(`Webhook received for ${eventType}`);
+const liveContactIds = new Set(contacts.map(c => toText(c.id)).filter(Boolean));
+const contactIdsByEmail = indexContactIdsByEmail(contacts);
 
-if (!resourceId) {
-  throw new Error(`No resourceId in payload for event "${eventType}" — re-check the input variable mapping.`);
+// 2 ── Members
+// The primary field is what fills record.name for the log lines below.
+const memberQuery = await membersTable.selectRecordsAsync({
+  fields: ['Member', 'Contact ID', 'Email', 'Removed From Givebutter', 'Duplicate Of']
+});
+const members = memberQuery.records.map(record => ({
+  id: record.id,
+  name: record.name,
+  contactId: record.getCellValueAsString('Contact ID'),
+  email: record.getCellValueAsString('Email'),
+  removedFromGivebutter: !!record.getCellValue('Removed From Givebutter'),
+  hasDuplicateOf: (record.getCellValue('Duplicate Of') ?? []).length > 0,
+}));
+const memberIdByContactId = new Map(members.filter(m => m.contactId).map(m => [m.contactId, m.id]));
+
+const { newlyVanished, reappeared } = splitVanishedMembers(members, liveContactIds);
+if (newlyVanished.length > MAX_VANISHED_PER_RUN) {
+  throw new Error(`${newlyVanished.length} Members vanished at once (limit ${MAX_VANISHED_PER_RUN}) — check the pull before trusting it.`);
 }
 
-if (eventType.startsWith('plan.')) {
-  const plan = await fetchFromGivebutter(`/plans/${resourceId}`);
-  const memberRecordId = await upsertMemberByContactId(plan.contact_id, plan.first_name, plan.last_name, plan.email, plan.phone);
-
-  const planFields = buildRecurringPlanFields(plan, syncedAt);
-  if (memberRecordId) planFields['Member'] = [{ id: memberRecordId }];
-
-  // Default the beneficiary to the payer, but never overwrite a gift
-  // assignment someone made by hand. This read can still race a concurrent
-  // webhook for the same plan — but memberRecordId is now the same
-  // atomically-resolved Member row for both racers (see
-  // upsertMemberByContactId above), so both sides of the race write the
-  // same Covers Member value instead of two different ones. The plan row
-  // itself can't split into two rows either, since the upsert below is
-  // keyed on Plan ID the same way.
-  const existingPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID', 'Covers Member'] });
-  const existingPlanRecord = existingPlanQuery.records.find((record) => record.getCellValueAsString('Plan ID') === String(plan.id));
-  const coversMemberAlreadyAssigned = Boolean(existingPlanRecord && (existingPlanRecord.getCellValue('Covers Member') ?? []).length > 0);
-  if (shouldAssignCoversMember(Boolean(memberRecordId), coversMemberAlreadyAssigned)) {
-    planFields['Covers Member'] = [{ id: memberRecordId }];
+// 3 ── Confirm each vanished contact is really gone, then match by email
+const updates = [];
+let matched = 0;
+for (const member of newlyVanished) {
+  if (!(await contactIsGone(member.contactId))) {
+    console.log(`${member.name}: contact ${member.contactId} missing from the list but still fetchable; skipped`);
+    continue;
   }
-
-  // upsertAirtableRecord itself logs the attempted fields on failure before
-  // rethrowing (see its own comment) -- no need to duplicate that here.
-  await upsertAirtableRecord(recurringPlansTable.id, ['Plan ID'], planFields);
-  console.log(`${eventType} → plan ${plan.id} (${plan.status}) synced`);
-
-} else if (eventType.startsWith('refund.')) {
-  // See the top-of-file comment: there's no way to resolve a refund event's own
-  // data.transaction_id to a fetchable transaction, so this is intentionally a
-  // no-op -- the nightly sync picks up the real Refunded/Refunded At state on
-  // its own next run regardless.
-  console.log(`${eventType} → refund ${resourceId} logged, deferring to nightly sync (see file header)`);
-
-} else if (eventType.startsWith('transaction.')) {
-  const transaction = await fetchFromGivebutter(`/transactions/${resourceId}`);
-  const memberRecordId = await upsertMemberByContactId(
-    transaction.contact_id, transaction.first_name, transaction.last_name,
-    transaction.email ?? transaction.contact?.email, transaction.phone ?? transaction.contact?.phone
-  );
-
-  const transactionFields = buildTransactionFields(transaction, syncedAt);
-  if (memberRecordId) transactionFields['Member'] = [{ id: memberRecordId }];
-
-  // Same idea as the Covers Member lookup above: a transaction can arrive before
-  // its plan has ever been synced (event ordering isn't guaranteed), in which case
-  // there's nothing to link yet -- recurringPlanLinkField returns null rather than
-  // an empty link, and the nightly Transactions sync fills it in once the plan
-  // exists.
-  const planIdText = toText(transaction.plan_id);
-  if (planIdText) {
-    const recurringPlanQuery = await recurringPlansTable.selectRecordsAsync({ fields: ['Plan ID'] });
-    const recurringPlanRecord = recurringPlanQuery.records.find((record) => record.getCellValueAsString('Plan ID') === planIdText);
-    if (recurringPlanRecord) transactionFields['Recurring Plans'] = [{ id: recurringPlanRecord.id }];
+  const fields = { 'Removed From Givebutter': true };
+  const survivorId = member.hasDuplicateOf ? null : survivorMemberId(member, contactIdsByEmail, memberIdByContactId);
+  if (survivorId) {
+    fields['Duplicate Of'] = [{ id: survivorId }];
+    matched++;
+    console.log(`${member.name}: contact ${member.contactId} gone → Duplicate Of ${memberQuery.getRecord(survivorId).name}`);
+  } else {
+    console.log(`${member.name}: contact ${member.contactId} gone → needs manual review`);
   }
-
-  const upsertedTransaction = await upsertAirtableRecord(transactionsTable.id, ['Transaction ID'], transactionFields);
-  console.log(`${eventType} → transaction ${transaction.id} ($${transaction.amount}, ${transaction.plan_id ? 'membership' : 'drop-in'}) synced`);
-
-  await applyRebateEligibility(upsertedTransaction, memberRecordId);
-
-} else if (eventType === 'contact.created') {
-  const contact = await fetchFromGivebutter(`/contacts/${resourceId}`);
-  await upsertMemberByContactId(contact.id, contact.first_name, contact.last_name, contact.primary_email ?? contact.email, contact.primary_phone ?? contact.phone);
-  console.log(`contact ${contact.id} synced`);
-
-} else {
-  console.log(`Ignoring event: ${eventType}`);
+  updates.push({ id: member.id, fields });
+}
+for (const member of reappeared) {
+  console.log(`${member.name}: contact ${member.contactId} is live again → flag cleared`);
+  updates.push({ id: member.id, fields: { 'Removed From Givebutter': false } });
 }
 
-// Closed out last, only reached if everything above succeeded — same
-// contract as the three nightly scripts (see their own comment on this).
+for (let i = 0; i < updates.length; i += 50) await membersTable.updateRecordsAsync(updates.slice(i, i + 50));
+
+console.log(`Merges — flagged ${updates.length - reappeared.length} (${matched} matched), cleared ${reappeared.length}`);
+
 await syncLogTable.updateRecordAsync(syncLogRecordId, {
-  'Records Created': recordsCreated,
-  'Records Updated': recordsUpdated
+  'Records Created': 0,
+  'Records Updated': updates.length
 });
 
 // ═══════════════════════════════════════════════════════════════════════
 // SETUP
 //
-// 1. Add "Webhook" as a choice on Sync Log ▸ Script — automations can't add
+// 1. Add "Merges" as a choice on Sync Log ▸ Script — automations can't add
 //    select options, so do this by hand first or the log write fails.
 //
-// 2. Airtable → account → Personal access tokens → new token, named for
-//    this automation. Scopes: data.records:read, data.records:write.
-//    Access: this base only. Paste the value into AIRTABLE_PAT above.
-//
-// 3. Automations → new automation → trigger "When webhook received".
-//    Copy the generated URL. Leave the automation OFF for now.
-//
-// 4. Register it with Givebutter (webhooks are API-only there). From a
-//    terminal, once:
-//
-//    curl -X POST https://api.givebutter.com/v1/webhooks \
-//      -H "Authorization: Bearer YOUR_GIVEBUTTER_API_KEY" \
-//      -H "Content-Type: application/json" \
-//      -d '{
-//        "name": "Airtable live sync",
-//        "url": "YOUR_AIRTABLE_WEBHOOK_URL",
-//        "events": ["transaction.succeeded","refund.created",
-//                   "plan.created","plan.updated","plan.canceled",
-//                   "plan.paused","plan.resumed","plan.failed",
-//                   "contact.created"],
-//        "enabled": true
-//      }'
-//
-// 5. Back in the trigger config, click Test and make a real $1 transaction
-//    (or resume/pause a plan). Airtable captures the live payload and shows
-//    you its field paths.
-//
-// 6. Add the two input variables to the script action, mapping them to
-//    whatever the captured payload actually calls them — most likely
-//    `event` and `data.id`.
-//
-// 7. Turn the automation ON.
-//
-// KEEP THE NIGHTLY SYNCS. Webhooks get missed — a deploy, an outage, a
-// dropped delivery. The 3am runs are the reconciliation pass that makes
-// missed events self-healing. This just means you don't wait until 3am.
+// 2. Schedule nightly at 3:45, after contacts (3:30), so a contact created
+//    and merged on the same day already has its Member.
 // ═══════════════════════════════════════════════════════════════════════

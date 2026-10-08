@@ -7,7 +7,7 @@ README for what each automation does and the schedule it runs on.
 
 This is a separate folder from `src/` (the deployed server) on purpose: nothing here
 runs as part of the Hono server or its build. It's only used at dev time to produce
-the four generated scripts.
+the generated scripts.
 
 ## Layout
 

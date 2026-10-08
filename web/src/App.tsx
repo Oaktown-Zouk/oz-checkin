@@ -286,9 +286,9 @@ export function App() {
     }
   }
 
-  async function handleMerge(survivorId: string, duplicateId: string) {
+  async function handleMarkDuplicate(duplicateId: string, survivorId: string) {
     try {
-      await api.mergeStudents(survivorId, duplicateId);
+      await api.markDuplicateOf(duplicateId, survivorId);
       await refreshStudents(effectiveDate);
     } catch (err) {
       if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
@@ -405,7 +405,7 @@ export function App() {
           onUpdateFollowLevel={handleUpdateFollowLevel}
           onUpdatePreferredName={handleUpdatePreferredName}
           onTransferMembership={handleTransferMembership}
-          onMerge={handleMerge}
+          onMarkDuplicate={handleMarkDuplicate}
         />
       </div>
     </PermissionsProvider>

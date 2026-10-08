@@ -440,6 +440,58 @@ function decideRebateUpdate(transactionRecurringPaymentKey, memberFirstRecurring
     return { markTransactionRebateEligible: true, markMemberRefundEligible: untouched };
 }
 
+// mergeDetection.ts
+// Every address a contact is reachable at, lowercased and de-duplicated.
+function contactEmails(contact) {
+    const all = [contact.primary_email, ...(contact.emails ?? []).map((e) => e?.value)]
+        .map((e) => toText(e).toLowerCase())
+        .filter(Boolean);
+    return [...new Set(all)];
+}
+// email → ids of every live contact carrying that email.
+function indexContactIdsByEmail(contacts) {
+    const index = new Map();
+    for (const contact of contacts) {
+        const contactId = toText(contact.id);
+        if (!contactId)
+            continue;
+        for (const email of contactEmails(contact)) {
+            index.set(email, [...(index.get(email) ?? []), contactId]);
+        }
+    }
+    return index;
+}
+function splitVanishedMembers(members, liveContactIds) {
+    const newlyVanished = [];
+    const reappeared = [];
+    for (const member of members) {
+        if (!member.contactId)
+            continue;
+        const live = liveContactIds.has(member.contactId);
+        if (!live && !member.removedFromGivebutter)
+            newlyVanished.push(member);
+        if (live && member.removedFromGivebutter && !member.hasDuplicateOf)
+            reappeared.push(member);
+    }
+    return { newlyVanished, reappeared };
+}
+// The Member a vanished Member was most likely merged into: the one whose
+// contact is the ONLY live contact carrying the vanished Member's email.
+// Returns null when there's no email, no match, several matches, or the match
+// is the vanished Member itself -- all of which are left for manual review.
+function survivorMemberId(vanished, contactIdsByEmail, memberIdByContactId) {
+    const email = toText(vanished.email).toLowerCase();
+    if (!email)
+        return null;
+    const contactIds = contactIdsByEmail.get(email) ?? [];
+    if (contactIds.length !== 1)
+        return null;
+    const memberId = memberIdByContactId.get(contactIds[0]);
+    if (!memberId || memberId === vanished.id)
+        return null;
+    return memberId;
+}
+
 // ── end of generated shared helpers — automation-specific logic below ───
 
 const membersTable = base.getTable('Members');

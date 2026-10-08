@@ -40,6 +40,13 @@ script step by hand.
   full-table first-time-membership rebate-eligibility pass every night (see
   `docs/airtable-schema.md`'s "Rebates" section) — self-healing, not scoped to the
   usual lookback window.
+- `detect-givebutter-merges.js` — nightly scheduled automation (3:45, after
+  contacts), also runnable ad hoc from the Scripting extension. Full `/contacts` pull;
+  a Member whose contact is gone (confirmed by its own `GET /contacts/{id}` 404 —
+  Givebutter deletes the losing side of a merge and never says where it went) gets
+  `Removed From Givebutter`, plus `Duplicate Of` when its email belongs to exactly one
+  live contact. Stops without writing if more than `MAX_VANISHED_PER_RUN` Members
+  vanish at once, which points at a bad pull rather than real merges.
 - `sync-givebutter-webhook.js` — real-time automation triggered by a Givebutter
   webhook (`plan.*`, `transaction.*`, `contact.created`), re-fetches the changed
   record and upserts it immediately rather than waiting for the nightly batch. Runs
@@ -51,8 +58,8 @@ script step by hand.
   nightly sync already re-pulls every transaction's real refunded state on its own,
   so a refund just takes up to a day to land instead of being near-instant.
 
-`grant-dropin-credits.js`, `assign-member-tier.js` and `link-class-feedback-session.js`
-are different from the four
+`grant-dropin-credits.js`, `assign-member-tier.js`, `link-class-feedback-session.js` and
+`merge-duplicate-member.js` are different from the five
 above: none is triggered by anything Givebutter-shaped, and all are plain
 hand-maintained files — not generated, no `src`/`bodies` split, since each is small
 enough not to warrant one. Edit them directly and paste the result into Airtable.
@@ -76,6 +83,11 @@ enough not to warrant one. Edit them directly and paste the result into Airtable
   `Instructors` lookup follows that link. Wired up via a `Class Feedback` "when
   record created" automation (`RUN_MODE = 'single'`), with `RUN_MODE = 'all'` from
   the Scripting extension as a re-sweep after adding missing Sessions.
+- `merge-duplicate-member.js` (see `SPEC.md`'s "Merging duplicate students") —
+  triggered by a `Members` "when record matches conditions: Duplicate Of is not
+  empty" automation. Moves every link field on the duplicate onto the survivor
+  (except `Tier Rule` and the `Duplicate Of`/`Duplicates` pair), gap-fills `Phone`,
+  `Lead Level`, `Follow Level` and `New Member Credit`, then ticks `Duplicate`.
 
 See `docs/airtable-schema.md` for what each Airtable table/field means to this app.
 
