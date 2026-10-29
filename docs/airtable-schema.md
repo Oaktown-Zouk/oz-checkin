@@ -58,16 +58,38 @@ Computed fields to read directly, never recompute:
   `Last Transaction At` (both rollups), via an `IF` comparison rather than `MAX()` —
   Airtable's `MAX()` on two date fields coerces the result to a plain number, losing
   the date type.
-- `Duplicate` (checkbox) — set by hand when Givebutter's contact-merge tool leaves a
-  stray record behind (it doesn't actually delete the merged-away contact, so the sync
-  keeps recreating it as a separate Member), or automatically by `services/merge.ts`'s
-  `mergeMembers` on whichever side of a merge didn't survive (case-variant email
-  duplicates — see `SPEC.md`'s "Merging duplicate students"). The roster query
-  excludes it server-side (`NOT({Duplicate})`), so it's never fetched at all;
-  direct-by-id lookups (timeline, level edits) are not filtered.
-- `Tier Rule` (link → `Tiers`) — maintained by an Airtable automation, not this app,
-  based on the member's actual payments in the last 30 days (rather than a pledged
-  `Membership Amount`); see "Tier Rule gaps" below for when it's empty.
+- `Duplicate` (checkbox) — ticked by `merge-duplicate-member.js`
+  (`docs/airtable-automations/`) once this Member's links have moved onto its
+  `Duplicate Of`. See `SPEC.md`'s "Merging duplicate students". The roster query
+  excludes it server-side (`AND(NOT({Duplicate}), {Duplicate Of} = BLANK())`), so it's
+  never fetched at all; direct-by-id lookups (timeline, level edits) are not filtered.
+- `Removed From Givebutter` (checkbox) — ticked nightly by
+  `detect-givebutter-merges.js` when this Member's Givebutter contact no longer exists
+  (merged away in Givebutter's UI, confirmed by a 404), and cleared again if the
+  contact reappears before `Duplicate Of` is set. Gates the webapp's "Mark as
+  duplicate…".
+- `Suspensions` (link → `Suspensions`, inverse of its `Member`) and `Is Suspended`
+  (rollup over `Suspensions`, counting linked rows with `Lifted On` blank — added by
+  hand, since the API can't create rollups). A non-zero `Is Suspended` marks the
+  member suspended: they're left off the kiosk (roster and by-id lookup both), the
+  front desk's Check In shows a suspension notice instead of the check-in dialog,
+  and `createCheckIns` refuses them server-side (409). See "Suspensions" below.
+- `Duplicate Of` (link → `Members`; inverse `Duplicates`) — the surviving Member this
+  one was merged into. Filled by `detect-givebutter-merges.js` (unique email match),
+  the webapp, or by hand; filling it triggers `merge-duplicate-member.js`. Review queue:
+  `Removed From Givebutter` checked and `Duplicate Of` empty.
+- `Tier Rule` (link → `Tiers`) — maintained by `assign-member-tier.js`
+  (`docs/airtable-automations/assign-member-tier.js`), not this app: the highest
+  `Tiers` row whose `Min Monthly Price` the member's `Current Membership Payment`
+  clears (a formula/rollup over actual payments in the last 30 days, not a pledged
+  plan amount — see the script's own header), with `isNotaflof`/`isStaff` override
+  checkboxes taking priority over the price match. Deliberately does NOT key off
+  `Recurring Plans.Status` at all, so pausing or canceling a membership doesn't
+  clear a tier the member already paid for and still has time left on — only an
+  actual payment (or that payment aging out past 30 days) changes it. Wired up both
+  immediately (a `Members` "when record updated" automation watching
+  `Current Membership Payment`) and as a nightly/manual backstop sweep; see "Tier
+  Rule gaps" below for when it's empty.
 
 Unused, safe to ignore or delete: `Unused Drop-ins` and `Credits Available` (the app
 reads `Available Credits` instead — see "Credits" below), `Checked In Today` /
@@ -143,6 +165,20 @@ the app reads:
 - `Transactions."Credits Purchased"` (number) — how many drop-in credits a
   transaction bought. Set by `grant-dropin-credits.js` (below).
   `Members."Credits Purchased"` rolls this up per member.
+- `Transactions."NOTAFLOF Credits Requeested"` (number, nullable) — the NOTAFLOF
+  ("none turned away for lack of funds") drop-in campaign's own "How many classes
+  are you paying for?" checkout question, parsed out of the transaction's
+  `custom_fields` by `transactionFields.ts`'s `notaflofCreditsRequested` (the digits
+  in the answer, not an exact "1"/"2" match, so "2 classes" still parses). Exists
+  because a NOTAFLOF (pay-what-you-can) transaction's amount doesn't map to a class
+  count at all, unlike a regular drop-in's fixed sliding-scale price. Deliberately
+  left blank for every other transaction — including the *separate* NOTAFLOF
+  membership campaign, which doesn't ask this — both because no other campaign's
+  checkout form asks this question, and so a human scanning the table only sees a
+  value where it's actually meaningful. `grant-dropin-credits.js` (below) matches
+  the NOTAFLOF drop-in campaign via `Campaign = "ZROVNN"`, and uses this field
+  instead of its own dollar-amount math whenever it's present on that campaign's
+  transactions.
 - `Members."New Member Credit"` (number) — flat signup bonus, **defaults to 1** in
   Airtable's own field config, so every new `Members` row gets one automatically
   regardless of how it's created (API, automation, or by hand) — no automation logic
@@ -173,8 +209,12 @@ Granting is Airtable automations/config, not application code:
 - **`grant-dropin-credits.js`** (`docs/airtable-automations/grant-dropin-credits.js`)
   — runs on every `Transactions` record created; it does its own qualifying check
   internally (not a filtered trigger view) and sets that same transaction's own
-  `"Credits Purchased"` when the payment is a drop-in (not a membership charge, and
-  at least `minDropinPrice`), otherwise a no-op.
+  `"Credits Purchased"` when the payment is a drop-in (not a membership charge). For
+  the NOTAFLOF drop-in campaign (`"Campaign" = "ZROVNN"`), uses
+  `"NOTAFLOF Credits Requeested"` directly when it's set, or a flat 1 credit when
+  it's missing — NOTAFLOF's pay-what-you-can amount can't be measured against a
+  dollar threshold at all. Every other transaction keeps the original
+  `dollarAmount / dropinPrice` math (at least `minDropinPrice`), unchanged.
 
 Consuming and freeing a credit are both application code (see `SPEC.md`'s "Credits
 system" for why): `services/checkins.ts`'s `gateCheckIns` (run for every check-in it
@@ -299,7 +339,7 @@ Permissions` row.
 - **`Role Permissions`** — one row per role (`Staff` / `Volunteer` / `Kiosk` / `Admin`,
   `Role` plain text primary), with a checkbox per permission: `View Student Data`,
   `Write Student Data`, `Create Checkins`, `Undo Checkins`, `Write Memberships`,
-  `Backdate Kiosk`. Every route in the app requires exactly one of these — see
+  `Backdate Kiosk`, `Suspend Students`. Every route in the app requires exactly one of these — see
   `SPEC.md`'s "Permissions" section for the full route → permission map. Check the
   table directly for the live grants. `Kiosk` is deliberately `Create Checkins` +
   `Undo Checkins` only — no `View Student Data` — so a kiosk session is routed straight
@@ -397,6 +437,30 @@ UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
   Name`, read by `services/studentTimeline.ts` to attribute the note in the student
   timeline without a second lookup), and `Created` (Airtable's own auto-set creation
   timestamp) — none of these are ever written by the app.
+
+## Suspensions (`tblQY32VQ6XTn8t5T`)
+
+One row per suspension of one person, who may never have had a Member record (staff
+often know only a name). Lifting fills `Lifted By`/`Lifted On`; rows are never
+deleted, so the history stays and shows on the student timeline ("Suspended by X",
+red; "Suspension lifted by Y").
+
+- `First Name` (primary), `Last Name`, `Other Names` (long text, one "First Last"
+  per line — nicknames/aliases) — what the person is matched on.
+- `Member` (link → `Members`, any number) — filled by
+  `docs/airtable-automations/match-suspensions.js`, by the webapp's Suspend action
+  (which creates the row already linked and prefilled from the Member), or by hand.
+  Unlinking a wrongly-matched Member is the fix for a false match; the script never
+  removes a link.
+- `Suspended By` / `Lifted By` (link → `User Roles`), `Suspended On` / `Lifted On`
+  (date, studio timezone).
+- `Needs Review` (checkbox) — ticked by `match-suspensions.js` whenever it links a
+  Member (still blocked meanwhile); staff confirm and untick.
+- `Reason` (long text) — staff-only, not read by the app.
+
+Matching: first + last name (or an `Other Names` line), ignoring case, accents,
+punctuation and spacing. Name only — a different email can't get a suspended person
+in. Preferred Name is not matched (it's staff-entered, never student-supplied).
 
 ## Sessions / Events
 

@@ -226,4 +226,35 @@ describe("getStudentTimeline", () => {
     assert.equal(timeline?.mostRecentCheckInAt, null);
     assert.deepEqual(timeline?.events, []);
   });
+
+  it("shows each suspension and its lifting, attributed to staff first names", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: STUDENT, fields: { "Full Name": "Test Student" } }],
+      [TABLES.suspensions]: [
+        {
+          id: "recSusp1",
+          fields: {
+            Member: [STUDENT],
+            "Suspended By": ["recStaff1"],
+            "Suspended On": "2026-09-01",
+            "Lifted By": ["recStaff2"],
+            "Lifted On": "2026-09-15",
+          },
+        },
+        { id: "recSusp2", fields: { Member: [STUDENT], "Suspended By": ["recStaff1"], "Suspended On": "2026-10-01" } },
+      ],
+      [TABLES.userRoles]: [
+        { id: "recStaff1", fields: { "First Name": "Sam" } },
+        { id: "recStaff2", fields: { "First Name": "Kai" } },
+      ],
+    });
+
+    const timeline = await getStudentTimeline(STUDENT);
+    assert.equal(timeline?.status.suspended, true);
+    assert.deepEqual(timeline?.events, [
+      { type: "suspended", at: "2026-10-01", label: "Suspended by Sam" },
+      { type: "suspension_lifted", at: "2026-09-15", label: "Suspension lifted by Kai" },
+      { type: "suspended", at: "2026-09-01", label: "Suspended by Sam" },
+    ]);
+  });
 });

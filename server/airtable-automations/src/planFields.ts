@@ -39,28 +39,11 @@ export function shouldAssignCoversMember(hasMemberRecordId: boolean, alreadyAssi
   return hasMemberRecordId && !alreadyAssigned;
 }
 
-export interface TierRule {
-  id: string;
-  name: string | null;
-  min: number;
-}
-
-// Tiers must already be sorted richest-first by the caller; picks the first
-// (highest) tier whose minimum price the amount still clears. Matches on
-// AMOUNT, not tier name, since Tier Rule is itself derived from this match --
-// matching by name would be circular.
-export function tierRuleForAmount(tierRules: TierRule[], amount: number): TierRule | null {
-  if (!amount || amount <= 0) return null;
-  return tierRules.find((rule) => amount >= rule.min) ?? null;
-}
-
-// null means no write is needed -- the link already points at the right
-// place, including "correctly still empty" when no tier matches.
-export function tierRuleLinkFields(
-  desiredTierRule: TierRule | null,
-  currentTierRuleId: string | null
-): { "Tier Rule": Array<{ id: string }> } | null {
-  const desiredId = desiredTierRule?.id ?? null;
-  if (desiredId === currentTierRuleId) return null;
-  return { "Tier Rule": desiredTierRule ? [{ id: desiredTierRule.id }] : [] };
-}
+// Tier Rule used to be maintained here (off a member's pledged Membership Amount),
+// but that clobbered a paused/canceled member's tier early -- Membership Amount
+// goes blank with no active plan to read it from, even though they may have paid
+// within the last 30 days and have plenty of time left on what they paused. Tier
+// assignment now lives entirely in its own Airtable automation, keyed off actual
+// payments in the last 30 days via formula/rollup fields -- see
+// docs/airtable-automations/assign-member-tier.js and docs/airtable-schema.md's
+// "Tier Rule" section. This sync no longer touches Tier Rule at all.

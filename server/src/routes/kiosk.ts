@@ -29,13 +29,14 @@ kioskRoutes.get("/roster", async (c) => {
 // has already been positively identified (tapped from a name search), so there's no
 // "who is this" privacy question left to guard. The frontend needs the full status
 // regardless of eligibility, so it can build a specific decline message (e.g.
-// "you've already checked in for X today").
+// "you've already checked in for X today"). A suspended student resolves as not
+// found, matching their absence from the kiosk roster.
 kioskRoutes.get("/students/:id", async (c) => {
   const parsed = checkDateParam(c);
   if (parsed.error) return c.json({ error: "Forbidden" }, 403);
 
   const id = c.req.param("id") ?? "";
   const status = await getStudentStatusById(id, parsed.date);
-  if (!status) return c.json({ error: "Not found" }, 404);
+  if (!status || status.suspended) return c.json({ error: "Not found" }, 404);
   return c.json(status);
 });

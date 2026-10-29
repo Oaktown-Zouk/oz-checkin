@@ -3,6 +3,35 @@
 Verioned by ISO week number `{year}w{WW}`, with a `.N` suffix for a same-week bugfix
 release shipped after that week's main deploy already went out.
 
+## 2026w44 (2026-10-28)
+### New features
+ - **Suspensions** - Staff can suspend or unsuspend a
+   student from the front desk. A suspended student is hidden from the kiosk, and Check In at the
+   front desk shows a notice instead of the check-in dialog.
+   - Suspensions live in their own Airtable table, by name, so people who have never attended can
+     be suspended too. An Airtable automation links a suspension to any Member with a matching name,
+     flagging each link for staff review.
+   - The student timeline shows each suspension (in red) and when it was lifted.
+
+### Improvements
+ - **Actions menu** on the student page replaces the "Transfer membership" button, holding Transfer
+   membership and Suspend/Unsuspend.
+
+### Bugfixes
+ - **Timeline dates** - Date-only events (e.g. Membership started) no longer show as the evening
+   before.
+
+## 2026W41 (2026-10-7)
+### New features
+ - **Feedback** Is now in airtable, using airtable forms. Automatically links Class Feedback to Sessions
+   so that Feedback can be linked to the Instructors for the class.
+
+### Improvements
+ - **Picks up Merged Contacts from Givebutter** by looking for Members whose Contact ID is no longer in
+   Givebutter. Attempts to find the new Canonical member and relink Checkins, Transactions, etc.
+   - Merge feature in the Front Desk page has been reduced in scope - can only merge Members that are
+     already marked as Deleted from Givebutter to prevent erroneous merges.
+
 ## 2026w40 (2026-09-30)
 ### New features
  - **NOTAFLOF purchase links** accessible from the purchase page in the widget.

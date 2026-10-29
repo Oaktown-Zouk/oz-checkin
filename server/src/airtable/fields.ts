@@ -11,6 +11,10 @@ export interface MemberFields {
   // the preferred name to show up everywhere the app already displays a student's
   // name. Blank omits the parenthetical entirely.
   "Preferred Name"?: string;
+  // Synced from Givebutter. Read directly only to prefill a new Suspension (see
+  // services/suspension.ts); everywhere else uses Full Name.
+  "First Name"?: string;
+  "Last Name"?: string;
   Email?: string;
   Phone?: string;
   "Lead Level"?: number;
@@ -22,15 +26,30 @@ export interface MemberFields {
   "Remaining Today"?: number;
   "Available Credits"?: number;
   // Flat signup bonus, defaulting to 1 in Airtable's own field config so every new
-  // Member row gets one with zero automation logic needed. Only ever read/written by
-  // services/merge.ts's fillMemberGaps (copy-if-missing, same as Phone/Lead Level) —
-  // everywhere else just reads the combined "Available Credits" formula, which folds
-  // this in along with Credits Purchased and Comp Credits.
+  // Member row gets one with zero automation logic needed. Only ever written by
+  // docs/airtable-automations/merge-duplicate-member.js (copy-if-missing, same as
+  // Phone/Lead Level) — this app just reads the combined "Available Credits" formula,
+  // which folds this in along with Credits Purchased and Comp Credits.
   "New Member Credit"?: number;
-  // Set manually when Givebutter's own contact-merge tool doesn't actually remove the
-  // merged-away contact — it keeps re-syncing as a separate record otherwise. Excluded
-  // from the roster (see studentStatus.ts); not a schema-level dedupe, just a hide flag.
+  // Ticked by docs/airtable-automations/merge-duplicate-member.js once this Member's
+  // links have moved onto its Duplicate Of. Excluded from the roster (see
+  // studentStatus.ts) along with any row whose Duplicate Of is already filled.
   Duplicate?: boolean;
+  // Ticked by docs/airtable-automations/detect-givebutter-merges.js when this Member's
+  // Givebutter contact no longer exists (merged away in Givebutter's UI). Gates the
+  // roster's "Mark as duplicate…" action (see services/merge.ts).
+  "Removed From Givebutter"?: boolean;
+  // Inverse of Suspensions.Member — every suspension ever linked to this member,
+  // lifted or not. See SuspensionFields.
+  Suspensions?: string[];
+  // Rollup: count of linked Suspensions with Lifted On blank. Non-zero marks the
+  // member suspended: left off the kiosk entirely and refused at check-in (see
+  // services/checkins.ts); the front desk roster still lists them, with Check In
+  // showing a suspension notice instead of the dialog.
+  "Is Suspended"?: number;
+  // The surviving Member this one was merged into. Filling it is the whole merge as
+  // far as this app is concerned — merge-duplicate-member.js does the data move.
+  "Duplicate Of"?: string[];
   // 1 iff Last Activity (max of last check-in / last transaction, both computed in
   // Airtable) is within the last 30 days — that threshold lives in the Airtable
   // formula, not here, so it's tunable without a code deploy. Drives roster sort order
@@ -154,6 +173,7 @@ export interface UserRoleFields {
   Email?: string;
   Role?: string[]; // link -> Role Permissions (one row per role)
   "Password Hash"?: string; // set only on password-login (kiosk) rows, never OAuth ones
+  "First Name"?: string;
 }
 
 // A record of a student's Lead/Follow level being set, written once per level
@@ -186,6 +206,25 @@ export interface NoteFields {
   "Issuer Name"?: string[];
 }
 
+// One suspension of one person, who may not have a Member record yet — linked to
+// every Member matching its name by
+// docs/airtable-automations/match-suspensions.js, or directly by
+// services/suspension.ts when suspended from the roster. Lifting fills Lifted By/On
+// rather than deleting the row, so the history stays.
+export interface SuspensionFields {
+  "First Name"?: string;
+  "Last Name"?: string;
+  "Other Names"?: string; // one "First Last" per line
+  Member?: string[]; // link -> Members (any number)
+  "Suspended By"?: string[]; // link -> User Roles
+  "Suspended On"?: string; // date-only (YYYY-MM-DD, studio timezone)
+  "Lifted By"?: string[]; // link -> User Roles
+  "Lifted On"?: string; // date-only
+  // Ticked by match-suspensions.js whenever it links a Member.
+  "Needs Review"?: boolean;
+  Reason?: string;
+}
+
 export type Permission =
   | "View Student Data"
   | "Write Student Data"
@@ -196,7 +235,9 @@ export type Permission =
   // lookup) to simulate "now" for testing — e.g. checking a Visible For window
   // without waiting for a real class time. Granted to Admin only; a real Kiosk-role
   // session must never see or use this. See SPEC.md's "Kiosk mode".
-  | "Backdate Kiosk";
+  | "Backdate Kiosk"
+  // Suspend/unsuspend a student from the front desk roster's Actions menu.
+  | "Suspend Students";
 
 export interface RolePermissionFields {
   Role?: string; // the role's display name ("Staff"/"Volunteer"/"Kiosk"/"Admin"), not a link
@@ -206,6 +247,7 @@ export interface RolePermissionFields {
   "Undo Checkins"?: boolean;
   "Write Memberships"?: boolean;
   "Backdate Kiosk"?: boolean;
+  "Suspend Students"?: boolean;
 }
 
 export interface TransactionFields {

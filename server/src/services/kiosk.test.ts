@@ -5,13 +5,15 @@ import { TABLES } from "../airtable/tableIds.js";
 import { listKioskRoster } from "./kiosk.js";
 
 describe("listKioskRoster", () => {
-  it("includes every non-duplicate student, eligible or not", async () => {
+  it("includes every non-duplicate, non-suspended student, eligible or not", async () => {
     resetMockStore({
       [TABLES.members]: [
         { id: "recEligible", fields: { "Full Name": "Eligible Student", "Classes Allowed": 1 } },
         { id: "recIneligible", fields: { "Full Name": "Ineligible Student", "Classes Allowed": 0 } },
         { id: "recDup", fields: { "Full Name": "Duplicate", "Classes Allowed": 1, Duplicate: true } },
+        { id: "recSuspended", fields: { "Full Name": "Suspended", "Classes Allowed": 1 } },
       ],
+      [TABLES.suspensions]: [{ id: "recSusp1", fields: { Member: ["recSuspended"], "Suspended On": "2026-10-01" } }],
     });
 
     const roster = await listKioskRoster();

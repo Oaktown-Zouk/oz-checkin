@@ -256,6 +256,13 @@ body {
   color: var(--gray);
 }
 
+.student-flag {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+
 .badges {
   display: flex;
   align-items: center;
@@ -456,6 +463,16 @@ body {
   min-width: 160px;
   z-index: 10;
   overflow: hidden;
+}
+
+.suspended-message {
+  white-space: pre-line;
+  text-align: center;
+}
+
+.row-menu-dropdown-left {
+  right: auto;
+  left: 0;
 }
 
 .row-menu-item {
@@ -695,7 +712,7 @@ body {
   margin-top: 10px;
 }
 
-.transfer-link {
+.student-actions {
   margin-top: 10px;
 }
 
@@ -849,6 +866,20 @@ body {
 
 .timeline-dot-note {
   background: var(--blue);
+}
+
+.timeline-dot-suspended {
+  background: var(--red);
+}
+
+.timeline-dot-suspension_lifted {
+  background: var(--gray);
+}
+
+.timeline-event-suspended {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .timeline-content {

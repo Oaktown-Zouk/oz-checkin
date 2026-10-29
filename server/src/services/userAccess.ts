@@ -8,6 +8,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "Undo Checkins",
   "Write Memberships",
   "Backdate Kiosk",
+  "Suspend Students",
 ];
 
 export interface UserAccess {
@@ -82,7 +83,7 @@ export async function getPasswordAuthForIdentifier(
 // student app (server/src/studentApp.ts) — a completely different lookup path from
 // everything else in this file: Members, not User Roles, and no permissions/role
 // resolution at all (a Student session is identity-scoped, not permission-based; see
-// lib/session.ts's studentId). Excludes Duplicate-flagged records, same filter
+// lib/session.ts's studentId). Excludes merged-away duplicates, same filter
 // services/studentStatus.ts's listStudentStatuses already uses for the same reason
 // (Givebutter contact-merge artifacts, not real distinct members). Also requires at
 // least one Transaction or Recurring Plan — narrows self-service login to members
@@ -91,7 +92,7 @@ export async function getPasswordAuthForIdentifier(
 export async function getStudentAccessForEmail(email: string): Promise<{ studentId: string } | null> {
   const escaped = email.replace(/'/g, "\\'");
   const records = await listRecords<MemberFields>(TABLES.members, {
-    filterByFormula: `AND(LOWER({Email}) = LOWER('${escaped}'), NOT({Duplicate}), OR(NOT({Transactions} = BLANK()), NOT({Recurring Plans} = BLANK())))`,
+    filterByFormula: `AND(LOWER({Email}) = LOWER('${escaped}'), NOT({Duplicate}), {Duplicate Of} = BLANK(), OR(NOT({Transactions} = BLANK()), NOT({Recurring Plans} = BLANK())))`,
     fields: ["Email"],
   });
   const member = records[0];

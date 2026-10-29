@@ -253,25 +253,50 @@ function buildRecurringPlanFields(plan, syncedAt) {
 function shouldAssignCoversMember(hasMemberRecordId, alreadyAssigned) {
     return hasMemberRecordId && !alreadyAssigned;
 }
-// Tiers must already be sorted richest-first by the caller; picks the first
-// (highest) tier whose minimum price the amount still clears. Matches on
-// AMOUNT, not tier name, since Tier Rule is itself derived from this match --
-// matching by name would be circular.
-function tierRuleForAmount(tierRules, amount) {
-    if (!amount || amount <= 0)
-        return null;
-    return tierRules.find((rule) => amount >= rule.min) ?? null;
-}
-// null means no write is needed -- the link already points at the right
-// place, including "correctly still empty" when no tier matches.
-function tierRuleLinkFields(desiredTierRule, currentTierRuleId) {
-    const desiredId = desiredTierRule?.id ?? null;
-    if (desiredId === currentTierRuleId)
-        return null;
-    return { "Tier Rule": desiredTierRule ? [{ id: desiredTierRule.id }] : [] };
-}
+// Tier Rule used to be maintained here (off a member's pledged Membership Amount),
+// but that clobbered a paused/canceled member's tier early -- Membership Amount
+// goes blank with no active plan to read it from, even though they may have paid
+// within the last 30 days and have plenty of time left on what they paused. Tier
+// assignment now lives entirely in its own Airtable automation, keyed off actual
+// payments in the last 30 days via formula/rollup fields -- see
+// docs/airtable-automations/assign-member-tier.js and docs/airtable-schema.md's
+// "Tier Rule" section. This sync no longer touches Tier Rule at all.
 
 // transactionFields.ts
+// The NOTAFLOF ("none turned away for lack of funds") drop-in campaign's own
+// checkout question -- its pay-what-you-can amount can't be used to infer a class
+// count the way a regular drop-in's fixed sliding-scale price can, so its widget
+// asks the student directly. There's a separate NOTAFLOF campaign for memberships
+// too, which doesn't ask this at all -- matched by campaign below so only the
+// drop-in campaign's transactions ever get a value here, which is also easier for a
+// human scanning the table to make sense of than a column that's sometimes
+// meaningful and sometimes not.
+const NOTAFLOF_DROPINS_CAMPAIGN = "ZROVNN";
+const CLASSES_CUSTOM_FIELD_TITLE = "how many classes are you paying for?";
+// Matched case-insensitively since Givebutter form text is edited by hand and
+// whitespace/casing drift is cheap to shrug off; the digits are pulled out of the
+// answer rather than requiring an exact "1"/"2" so a value like "2 classes" still
+// parses.
+function classesRequestedFromCustomFields(customFields) {
+    if (!Array.isArray(customFields))
+        return null;
+    const field = customFields.find((entry) => typeof entry?.title === "string" && entry.title.trim().toLowerCase() === CLASSES_CUSTOM_FIELD_TITLE);
+    if (!field)
+        return null;
+    const match = String(field.value ?? "").match(/\d+/);
+    if (!match)
+        return null;
+    const parsed = Number(match[0]);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+// null for every transaction except the NOTAFLOF drop-in campaign's own -- see
+// NOTAFLOF_DROPINS_CAMPAIGN above for why this is deliberately narrower than "any
+// transaction with a matching custom field".
+function notaflofCreditsRequested(transaction, campaign) {
+    if (campaign !== NOTAFLOF_DROPINS_CAMPAIGN)
+        return null;
+    return classesRequestedFromCustomFields(transaction.custom_fields);
+}
 // One field set for both the nightly sync and the webhook -- the nightly sync used
 // to write a narrower set (no Plan ID / Is Recurring / Refunded fields), which meant
 // any transaction only ever nightly-synced was indistinguishable from a plain
@@ -286,6 +311,7 @@ function buildTransactionFields(transaction, syncedAt) {
     // falling back to an empty object (refunded/refunded_at both undefined,
     // same as "not refunded") is the safe default rather than throwing.
     const subTransaction = transaction.transactions?.[0] ?? {};
+    const campaign = toText(transaction.campaign?.title ?? transaction.campaign_code);
     return {
         "Transaction ID": String(transaction.id),
         "Amount": Number(transaction.amount) || 0,
@@ -293,7 +319,8 @@ function buildTransactionFields(transaction, syncedAt) {
         "Donated": Number(transaction.donated) || 0,
         "Status": toSelectField(transaction.status),
         "Payment Method": toText(transaction.payment_method ?? transaction.method),
-        "Campaign": toText(transaction.campaign?.title ?? transaction.campaign_code),
+        "Campaign": campaign,
+        "NOTAFLOF Credits Requeested": notaflofCreditsRequested(transaction, campaign),
         "Transacted At": transaction.transacted_at ?? transaction.created_at ?? null,
         "Plan ID": toText(transaction.plan_id),
         "Is Recurring": Boolean(transaction.plan_id) || toBoolean(transaction.is_recurring),
@@ -428,6 +455,94 @@ function decideRebateUpdate(transactionRecurringPaymentKey, memberFirstRecurring
     }
     const untouched = !currentRebateStatus || currentRebateStatus === "New";
     return { markTransactionRebateEligible: true, markMemberRefundEligible: untouched };
+}
+
+// mergeDetection.ts
+// Every address a contact is reachable at, lowercased and de-duplicated.
+function contactEmails(contact) {
+    const all = [contact.primary_email, ...(contact.emails ?? []).map((e) => e?.value)]
+        .map((e) => toText(e).toLowerCase())
+        .filter(Boolean);
+    return [...new Set(all)];
+}
+// email → ids of every live contact carrying that email.
+function indexContactIdsByEmail(contacts) {
+    const index = new Map();
+    for (const contact of contacts) {
+        const contactId = toText(contact.id);
+        if (!contactId)
+            continue;
+        for (const email of contactEmails(contact)) {
+            index.set(email, [...(index.get(email) ?? []), contactId]);
+        }
+    }
+    return index;
+}
+function splitVanishedMembers(members, liveContactIds) {
+    const newlyVanished = [];
+    const reappeared = [];
+    for (const member of members) {
+        if (!member.contactId)
+            continue;
+        const live = liveContactIds.has(member.contactId);
+        if (!live && !member.removedFromGivebutter)
+            newlyVanished.push(member);
+        if (live && member.removedFromGivebutter && !member.hasDuplicateOf)
+            reappeared.push(member);
+    }
+    return { newlyVanished, reappeared };
+}
+// The Member a vanished Member was most likely merged into: the one whose
+// contact is the ONLY live contact carrying the vanished Member's email.
+// Returns null when there's no email, no match, several matches, or the match
+// is the vanished Member itself -- all of which are left for manual review.
+function survivorMemberId(vanished, contactIdsByEmail, memberIdByContactId) {
+    const email = toText(vanished.email).toLowerCase();
+    if (!email)
+        return null;
+    const contactIds = contactIdsByEmail.get(email) ?? [];
+    if (contactIds.length !== 1)
+        return null;
+    const memberId = memberIdByContactId.get(contactIds[0]);
+    if (!memberId || memberId === vanished.id)
+        return null;
+    return memberId;
+}
+
+// suspensionMatch.ts
+// Matching a Suspension (a person, who may never have had a Member record) against
+// Members by name, for match-suspensions.js. Name alone decides it — staff often
+// know only a name, and a different email mustn't get a suspended person in.
+// Case, accents, punctuation, and spacing are all ignored: "José O'Brien" and
+// "jose obrien" are the same name.
+function normalizeName(value) {
+    return String(value ?? "")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+// Every full name this suspension goes by, normalized. A blank first or last name
+// on the main name drops it (a bare surname would match far too widely).
+function suspensionNames(s) {
+    const names = new Set();
+    const first = normalizeName(s.firstName);
+    const last = normalizeName(s.lastName);
+    if (first && last)
+        names.add(`${first} ${last}`);
+    for (const line of String(s.otherNames ?? "").split("\n")) {
+        const name = normalizeName(line);
+        if (name.includes(" "))
+            names.add(name);
+    }
+    return names;
+}
+function matchesSuspension(s, m) {
+    const first = normalizeName(m.firstName);
+    const last = normalizeName(m.lastName);
+    return !!first && !!last && suspensionNames(s).has(`${first} ${last}`);
 }
 
 // ── end of generated shared helpers — automation-specific logic below ───

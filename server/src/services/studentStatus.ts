@@ -28,6 +28,11 @@ export interface StudentStatus {
   // Givebutter's contact id, printed on this student's kiosk QR code — see
   // services/kiosk.ts.
   contactId: string | null;
+  // Givebutter merged this student's contact away (see detect-givebutter-merges.js);
+  // gates the roster's "Mark as duplicate…" action.
+  removedFromGivebutter: boolean;
+  // Has an unlifted Suspension — see MemberFields."Is Suspended".
+  suspended: boolean;
   leadLevel: number | null;
   followLevel: number | null;
   accessStatus: string;
@@ -145,6 +150,8 @@ export function buildStatus(
     preferredName: f["Preferred Name"] ?? null,
     email: f.Email ?? "",
     contactId: f["Contact ID"] ?? null,
+    removedFromGivebutter: !!f["Removed From Givebutter"],
+    suspended: (f["Is Suspended"] ?? 0) > 0,
     leadLevel: f["Lead Level"] ?? null,
     followLevel: f["Follow Level"] ?? null,
     accessStatus: f["Access Status"] ?? "Inactive",
@@ -179,15 +186,17 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
 
   const [members, checkins, programNameById, mostRecentByMember] = await Promise.all([
     listRecords<MemberFields>(TABLES.members, {
-      // Excludes records flagged as a stray Givebutter sync duplicate (see
-      // airtable/fields.ts) — filtered server-side so the roster never even fetches
-      // them, not just hides them client-side.
-      filterByFormula: "NOT({Duplicate})",
+      // Excludes merged-away duplicates (see airtable/fields.ts) — filtered server-side
+      // so the roster never even fetches them. Duplicate Of counts too, so a row hides
+      // the moment it's marked, before merge-duplicate-member.js ticks Duplicate.
+      filterByFormula: "AND(NOT({Duplicate}), {Duplicate Of} = BLANK())",
       fields: [
         "Full Name",
         "Preferred Name",
         "Email",
         "Contact ID",
+        "Removed From Givebutter",
+        "Is Suspended",
         "Lead Level",
         "Follow Level",
         "Access Status",

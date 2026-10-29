@@ -32,10 +32,10 @@ export const FIXTURE_IDS = {
     lapsedLarry: "recMemberLapsedLarry",
     // Flagged Duplicate — must never appear in the roster.
     duplicateDana: "recMemberDuplicateDana",
-    // An UNFLAGGED duplicate pair — same person, two rows, exactly the
-    // case-variant-email scenario the merge feature exists to fix (see
-    // e2e/merge-duplicate.spec.ts). twinTaraA holds the active membership, so it's
-    // the one MergeDialog should pre-select as the survivor by default.
+    // An unresolved duplicate pair — same person, two rows (see
+    // e2e/merge-duplicate.spec.ts). twinTaraB's Givebutter contact was merged into
+    // twinTaraA's, so B is Removed From Givebutter and the one "Mark as duplicate…"
+    // is offered on.
     twinTaraA: "recMemberTwinTaraA",
     twinTaraB: "recMemberTwinTaraB",
     // The web-student/ dev-login fixture (server/src/studentApp.ts's
@@ -162,6 +162,7 @@ export function buildSandboxSeed(): SeedData {
         fields: {
           "Full Name": "Twin Tara",
           Email: "Twin.Tara@Example.com",
+          "Removed From Givebutter": true,
           "Access Status": "Inactive",
           "Membership Status": "Prospect",
           "Recently Active": 0,
@@ -301,6 +302,7 @@ export function buildSandboxSeed(): SeedData {
           "Undo Checkins": true,
           "Write Memberships": true,
           "Backdate Kiosk": true,
+          "Suspend Students": true,
         },
       },
     ],
@@ -308,7 +310,7 @@ export function buildSandboxSeed(): SeedData {
       { id: "recUserRoleStaff", fields: { Email: "claude-staff@test.com", Role: [rolePermissions.staff] } },
       { id: "recUserRoleVolunteer", fields: { Email: "claude-volunteer@test.com", Role: [rolePermissions.volunteer] } },
       { id: "recUserRoleKiosk", fields: { Email: "claude-kiosk@test.com", Role: [rolePermissions.kiosk] } },
-      { id: "recUserRoleAdmin", fields: { Email: "claude-admin@test.com", Role: [rolePermissions.admin] } },
+      { id: "recUserRoleAdmin", fields: { Email: "claude-admin@test.com", "First Name": "Ada", Role: [rolePermissions.admin] } },
       {
         id: "recUserRoleKioskTablet",
         fields: {

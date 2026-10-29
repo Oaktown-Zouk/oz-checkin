@@ -28,7 +28,10 @@ this folder, paste the regenerated file into the corresponding Airtable automati
 script step by hand.
 
 - `sync-givebutter-plans.js` — nightly scheduled automation, upserts `Recurring Plans`
-  and creates/refreshes `Members` from `/plans`. Also maintains `Tier Rule` links.
+  and creates/refreshes `Members` from `/plans`. Does **not** touch `Tier Rule` —
+  that's `assign-member-tier.js`'s job now (see below); this sync used to re-link it
+  off a member's pledged `Membership Amount`, which cleared a paused/canceled
+  member's tier early, so that logic was removed.
 - `sync-givebutter-contacts.js` — nightly scheduled automation (also runnable ad hoc
   from the Scripting extension for a manual full pull), upserts `Members` from
   `/contacts`.
@@ -37,6 +40,18 @@ script step by hand.
   full-table first-time-membership rebate-eligibility pass every night (see
   `docs/airtable-schema.md`'s "Rebates" section) — self-healing, not scoped to the
   usual lookback window.
+- `detect-givebutter-merges.js` — nightly scheduled automation (3:45, after
+  contacts), also runnable ad hoc from the Scripting extension. Full `/contacts` pull;
+  a Member whose contact is gone (confirmed by its own `GET /contacts/{id}` 404 —
+  Givebutter deletes the losing side of a merge and never says where it went) gets
+  `Removed From Givebutter`, plus `Duplicate Of` when its email belongs to exactly one
+  live contact. Stops without writing if more than `MAX_VANISHED_PER_RUN` Members
+  vanish at once, which points at a bad pull rather than real merges.
+- `match-suspensions.js` — links every unlifted `Suspensions` row to each Member
+  whose name matches, ticking `Needs Review` on each new link. Re-checks everything
+  each run, so one script serves all triggers: Members created / First Name, Last
+  Name updated; Suspensions created / First Name, Last Name, Other Names, Lifted On
+  updated; or ad hoc from the Scripting extension. No input variables.
 - `sync-givebutter-webhook.js` — real-time automation triggered by a Givebutter
   webhook (`plan.*`, `transaction.*`, `contact.created`), re-fetches the changed
   record and upserts it immediately rather than waiting for the nightly batch. Runs
@@ -48,12 +63,36 @@ script step by hand.
   nightly sync already re-pulls every transaction's real refunded state on its own,
   so a refund just takes up to a day to land instead of being near-instant.
 
-`grant-dropin-credits.js` is different from the four above (see `docs/airtable-
-schema.md`'s "Credits" section): it's triggered by every `Transactions` record
-being created, not anything Givebutter-shaped, and does its own qualifying check
-internally rather than relying on a filtered trigger view. It's also a plain
-hand-maintained file — not generated, no `src`/`bodies` split, since it's small
-enough not to warrant one. Edit it directly and paste it into Airtable.
+`grant-dropin-credits.js`, `assign-member-tier.js`, `link-class-feedback-session.js` and
+`merge-duplicate-member.js` are different from the five
+above: none is triggered by anything Givebutter-shaped, and all are plain
+hand-maintained files — not generated, no `src`/`bodies` split, since each is small
+enough not to warrant one. Edit them directly and paste the result into Airtable.
+
+- `grant-dropin-credits.js` (see `docs/airtable-schema.md`'s "Credits" section) —
+  triggered by every `Transactions` record being created; does its own qualifying
+  check internally rather than relying on a filtered trigger view.
+- `assign-member-tier.js` (see `docs/airtable-schema.md`'s "Tier Rule" section) —
+  the sole source of truth for `Members."Tier Rule"`, keyed off actual payments in
+  the last 30 days (`Current Membership Payment`, itself a formula/rollup — see the
+  script's own header) rather than a pledged plan amount, so pausing or canceling a
+  membership doesn't clear a tier the member already paid for and still has time
+  left on. Wired up two ways: immediately via a `Members` "when record updated"
+  automation (`RUN_MODE = 'single'`), and as a backstop/manual re-sweep from the
+  Scripting extension (`RUN_MODE = 'all'`) — run the latter by hand after editing
+  the `Tiers` table itself.
+- `link-class-feedback-session.js` — links each `Class Feedback` record to its
+  `Sessions` record: `Class` ("Level 2") picks the `Program` ("Zouk L2"), then the
+  session on the submitter's `Date` if given, else the latest session starting at
+  or before submission (`Original Submission Date`, else `Created`); the feedback's
+  `Instructors` lookup follows that link. Wired up via a `Class Feedback` "when
+  record created" automation (`RUN_MODE = 'single'`), with `RUN_MODE = 'all'` from
+  the Scripting extension as a re-sweep after adding missing Sessions.
+- `merge-duplicate-member.js` (see `SPEC.md`'s "Merging duplicate students") —
+  triggered by a `Members` "when record matches conditions: Duplicate Of is not
+  empty" automation. Moves every link field on the duplicate onto the survivor
+  (except `Tier Rule` and the `Duplicate Of`/`Duplicates` pair), gap-fills `Phone`,
+  `Lead Level`, `Follow Level` and `New Member Credit`, then ticks `Duplicate`.
 
 See `docs/airtable-schema.md` for what each Airtable table/field means to this app.
 

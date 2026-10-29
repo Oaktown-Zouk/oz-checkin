@@ -97,6 +97,12 @@ function levelupsFor(store: Store, memberId: string): RawRecord[] {
   return [...table(store, TABLES.levelups).values()].filter((l) => linksTo(l.fields, "Member", memberId));
 }
 
+// Members.Suspensions (the inverse link) and Is Suspended (rollup: count of those
+// with Lifted On blank).
+function suspensionsFor(store: Store, memberId: string): RawRecord[] {
+  return [...table(store, TABLES.suspensions).values()].filter((s) => linksTo(s.fields, "Member", memberId));
+}
+
 // Members.Available Credits / Checked In Today (Live) / Remaining Today / the
 // Levelups lookup fields — everything the whole check-in/eligibility/timeline flow
 // actually gates on. Everything else on the member passes through untouched
@@ -105,6 +111,7 @@ export function computeMemberFields(member: RawRecord, store: Store): Record<str
   const classesAllowed = Number(member.fields["Classes Allowed"] ?? 0);
   const checkedInToday = checkedInCountOn(store, member.id, today());
   const myLevelups = levelupsFor(store, member.id);
+  const mySuspensions = suspensionsFor(store, member.id);
   return {
     ...member.fields,
     "Available Credits": availableCreditsFor(store, member),
@@ -115,6 +122,8 @@ export function computeMemberFields(member: RawRecord, store: Store): Record<str
     "To (safe, from Levelups)": myLevelups.map((l) => (isBlank(l.fields.To) ? -1 : l.fields.To)),
     "Issuer Name (from Levelups)": myLevelups.map((l) => (l.fields["Issuer Name"] as string[] | undefined)?.[0]),
     "Created (from Levelups)": myLevelups.map((l) => l.createdTime),
+    Suspensions: mySuspensions.map((s) => s.id),
+    "Is Suspended": mySuspensions.filter((s) => isBlank(s.fields["Lifted On"])).length,
   };
 }
 

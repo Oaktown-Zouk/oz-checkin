@@ -28,7 +28,8 @@ export type Permission =
   | "Create Checkins"
   | "Undo Checkins"
   | "Write Memberships"
-  | "Backdate Kiosk";
+  | "Backdate Kiosk"
+  | "Suspend Students";
 
 export interface KioskRosterEntry {
   id: string;
@@ -131,12 +132,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ planId, targetEmail }),
     }),
-  // Not nested under a single student id — the caller picks which of the two is the
-  // survivor in MergeDialog, so both ids are just body fields (see routes/students.ts).
-  mergeStudents: (survivorId: string, duplicateId: string) =>
-    request<StudentStatus>("/api/students/merge", {
+  setSuspended: (studentId: string, suspended: boolean) =>
+    request<StudentStatus>(`/api/students/${studentId}/suspension`, {
+      method: "PATCH",
+      body: JSON.stringify({ suspended }),
+    }),
+  markDuplicateOf: (duplicateId: string, survivorId: string) =>
+    request<{ ok: true }>(`/api/students/${duplicateId}/duplicate-of`, {
       method: "POST",
-      body: JSON.stringify({ survivorId, duplicateId }),
+      body: JSON.stringify({ survivorId }),
     }),
   addNote: (studentId: string, summary: string, strengths: string, opportunities: string) =>
     request<{ ok: true }>(`/api/students/${studentId}/notes`, {

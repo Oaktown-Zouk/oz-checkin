@@ -184,42 +184,15 @@ for (let i = 0; i < recurringPlansToUpdate.length; i += 50) await recurringPlans
 
 console.log(`Plans — created ${recurringPlansToCreate.length}, updated ${recurringPlansToUpdate.length}`);
 
-// 6 ── Keep each member's Tier Rule link pointing at the matching Tiers row.
-//      This is what lets "Classes Allowed" be a rollup off the Tiers table
-//      instead of a second copy of the allowance numbers.
-//
-//      Runs last, after plan amounts are written, so Tier has settled. A tier
-//      that changed during THIS run may not be recalculated yet — it corrects
-//      on the next nightly run, and the check-in automation repairs it on the
-//      spot if someone shows up before then.
-const tiersTable = base.tables.find(t => t.name === 'Tiers');
-const membersTableHasTierRuleField = membersTable.fields.some(f => f.name === 'Tier Rule');
+// Tier Rule is deliberately NOT touched here -- it used to be re-linked from each
+// member's Membership Amount at the end of this run, but that cleared a paused or
+// canceled member's tier immediately (no active plan to read an amount from), even
+// though they may have paid within the last 30 days and still have time left on
+// what they paused. Tier assignment now lives entirely in its own Airtable
+// automation, keyed off actual payments in the last 30 days via formula/rollup
+// fields -- see docs/airtable-automations/assign-member-tier.js.
 
-if (tiersTable && membersTableHasTierRuleField) {
-  const tierQuery = await tiersTable.selectRecordsAsync({ fields: ['Tier', 'Min Monthly Price'] });
-  const tierRules = tierQuery.records
-    .map(record => ({ id: record.id, name: record.getCellValueAsString('Tier'), min: record.getCellValue('Min Monthly Price') ?? 0 }))
-    .sort((a, b) => b.min - a.min);            // richest first
-
-  const memberTierLinkQuery = await membersTable.selectRecordsAsync({ fields: ['Membership Amount', 'Tier Rule'] });
-  const tierRuleLinkUpdates = [];
-
-  for (const record of memberTierLinkQuery.records) {
-    const desiredTierRule = tierRuleForAmount(tierRules, record.getCellValue('Membership Amount') ?? 0);
-    const currentTierRuleId = (record.getCellValue('Tier Rule') ?? [])[0]?.id ?? null;
-    const linkFields = tierRuleLinkFields(desiredTierRule, currentTierRuleId);
-    if (linkFields) tierRuleLinkUpdates.push({ id: record.id, fields: linkFields });
-  }
-
-  for (let i = 0; i < tierRuleLinkUpdates.length; i += 50) {
-    await membersTable.updateRecordsAsync(tierRuleLinkUpdates.slice(i, i + 50));
-  }
-  console.log(`Tier Rule links updated: ${tierRuleLinkUpdates.length}`);
-} else {
-  console.log('Skipping Tier Rule sync — Tiers table or Tier Rule field not found.');
-}
-
-// 7 ── Close out the log row (only reached if everything above succeeded)
+// 6 ── Close out the log row (only reached if everything above succeeded)
 await syncLogTable.updateRecordAsync(syncLogRecordId, {
   'Records Created': recurringPlansToCreate.length + membersToCreate.length,
   'Records Updated': recurringPlansToUpdate.length + membersToUpdate.length

@@ -13,10 +13,10 @@ export interface KioskRosterEntry {
 // — no per-keystroke round trip. Still missing email/tier/badges (no reason to ship
 // those to a physically-accessible tablet), but full names are fine — the studio is
 // comfortable with a shared roster view of names, same as other studio-management
-// tools (e.g. MyStudio) already show.
+// tools (e.g. MyStudio) already show. Suspended students are left off entirely.
 export async function listKioskRoster(date?: string): Promise<KioskRosterEntry[]> {
   const statuses = await listStudentStatuses({ date });
-  return statuses.map((s) => ({
+  return statuses.filter((s) => !s.suspended).map((s) => ({
     id: s.id,
     name: s.name,
     membershipStatus: s.membershipStatus,

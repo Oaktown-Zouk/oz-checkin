@@ -20,6 +20,47 @@ export interface GivebutterTransactionPayload {
   // isn't reported anywhere in this object either way -- Givebutter only ever
   // exposes a refunded boolean + timestamp, never a dollar figure.
   transactions?: Array<{ refunded?: unknown; refunded_at?: unknown }>;
+  // Answers to whatever custom questions the campaign's checkout form asks --
+  // see classesRequestedFromCustomFields below for the one this app actually reads.
+  custom_fields?: Array<{ title?: unknown; value?: unknown }>;
+}
+
+// The NOTAFLOF ("none turned away for lack of funds") drop-in campaign's own
+// checkout question -- its pay-what-you-can amount can't be used to infer a class
+// count the way a regular drop-in's fixed sliding-scale price can, so its widget
+// asks the student directly. There's a separate NOTAFLOF campaign for memberships
+// too, which doesn't ask this at all -- matched by campaign below so only the
+// drop-in campaign's transactions ever get a value here, which is also easier for a
+// human scanning the table to make sense of than a column that's sometimes
+// meaningful and sometimes not.
+export const NOTAFLOF_DROPINS_CAMPAIGN = "ZROVNN";
+
+const CLASSES_CUSTOM_FIELD_TITLE = "how many classes are you paying for?";
+
+// Matched case-insensitively since Givebutter form text is edited by hand and
+// whitespace/casing drift is cheap to shrug off; the digits are pulled out of the
+// answer rather than requiring an exact "1"/"2" so a value like "2 classes" still
+// parses.
+function classesRequestedFromCustomFields(
+  customFields: GivebutterTransactionPayload["custom_fields"]
+): number | null {
+  if (!Array.isArray(customFields)) return null;
+  const field = customFields.find(
+    (entry) => typeof entry?.title === "string" && entry.title.trim().toLowerCase() === CLASSES_CUSTOM_FIELD_TITLE
+  );
+  if (!field) return null;
+  const match = String(field.value ?? "").match(/\d+/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+// null for every transaction except the NOTAFLOF drop-in campaign's own -- see
+// NOTAFLOF_DROPINS_CAMPAIGN above for why this is deliberately narrower than "any
+// transaction with a matching custom field".
+export function notaflofCreditsRequested(transaction: GivebutterTransactionPayload, campaign: string): number | null {
+  if (campaign !== NOTAFLOF_DROPINS_CAMPAIGN) return null;
+  return classesRequestedFromCustomFields(transaction.custom_fields);
 }
 
 // One field set for both the nightly sync and the webhook -- the nightly sync used
@@ -36,6 +77,7 @@ export function buildTransactionFields(transaction: GivebutterTransactionPayload
   // falling back to an empty object (refunded/refunded_at both undefined,
   // same as "not refunded") is the safe default rather than throwing.
   const subTransaction = transaction.transactions?.[0] ?? {};
+  const campaign = toText(transaction.campaign?.title ?? transaction.campaign_code);
   return {
     "Transaction ID": String(transaction.id),
     "Amount": Number(transaction.amount) || 0,
@@ -43,7 +85,8 @@ export function buildTransactionFields(transaction: GivebutterTransactionPayload
     "Donated": Number(transaction.donated) || 0,
     "Status": toSelectField(transaction.status),
     "Payment Method": toText(transaction.payment_method ?? transaction.method),
-    "Campaign": toText(transaction.campaign?.title ?? transaction.campaign_code),
+    "Campaign": campaign,
+    "NOTAFLOF Credits Requeested": notaflofCreditsRequested(transaction, campaign),
     "Transacted At": transaction.transacted_at ?? transaction.created_at ?? null,
     "Plan ID": toText(transaction.plan_id),
     "Is Recurring": Boolean(transaction.plan_id) || toBoolean(transaction.is_recurring),
