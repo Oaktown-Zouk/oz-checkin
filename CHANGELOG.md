@@ -5,7 +5,7 @@ release shipped after that week's main deploy already went out.
 
 ## 2026w44 (2026-10-28)
 ### New features
- - **Suspensions** - Staff with the new "Suspend Students" permission can suspend or unsuspend a
+ - **Suspensions** - Staff can suspend or unsuspend a
    student from the front desk. A suspended student is hidden from the kiosk, and Check In at the
    front desk shows a notice instead of the check-in dialog.
    - Suspensions live in their own Airtable table, by name, so people who have never attended can
