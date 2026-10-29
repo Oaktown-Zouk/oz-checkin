@@ -94,7 +94,7 @@ async function fetchSuspensionEvents(member: MemberFields): Promise<TimelineEven
 // Check-ins for its own, narrower purposes. This function already needs this student's
 // *entire* non-undone check-in history for the timeline's own check-in events, so
 // today's check-ins (for status.checkinsToday/remaining) and the most-recent-visit
-// preselection (for status.lastCheckinSelections) are both just derived from that same
+// hint (for status.lastCheckinSelections) are both just derived from that same
 // already-fetched list in memory — no separate fetch for either.
 export async function getStudentTimeline(studentId: string): Promise<StudentTimeline | null> {
   const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);

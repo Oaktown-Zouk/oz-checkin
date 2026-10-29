@@ -61,8 +61,8 @@ export interface StudentStatus {
   // precision, and grouping by date-only risks a UTC-vs-studio-timezone mismatch this
   // app is otherwise careful about — see lib/date.ts. Doing it here reuses that already-
   // correct timezone handling instead). Empty if that most recent visit was more than a
-  // week ago — see computeLastCheckinSelections — so the front desk dialog doesn't
-  // preselect a stale guess from a month-old visit as if it were relevant today.
+  // week ago — see computeLastCheckinSelections — so the check-in dialogs only
+  // hint at a recent visit, never a month-old one.
   lastCheckinSelections: RecentCheckinSelection[];
 }
 
@@ -108,7 +108,7 @@ export function computeLastCheckinSelections(
 // only exposes the linked record's primary-field text, not its id), so this scans
 // non-undone Check-ins once and groups in memory. Bounded to the last 30 days (same
 // window "Recently Active" uses) rather than the table's entire history — this is
-// only ever used to guess which classes to preselect on the check-in dialog, so a
+// only ever used to hint at which classes to pick on the check-in dialog, so a
 // check-in older than that wouldn't be a useful guess anyway, and the table only ever
 // grows (check-ins are marked undone, never deleted).
 async function fetchMostRecentCheckinsByMember(): Promise<Map<string, RecentCheckinSelection[]>> {

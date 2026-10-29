@@ -44,7 +44,7 @@ export interface StudentStatus {
   checkinsToday: CheckInInfo[];
   checkedInToday: boolean;
   // Programs/roles from this student's most recent check-in occasion, computed once as
-  // part of the roster fetch — see CheckInDialog for how it's used to preselect.
+  // part of the roster fetch — the check-in dialogs mark these with a ↺ as a hint.
   lastCheckinSelections: CheckInSelection[];
 }
 

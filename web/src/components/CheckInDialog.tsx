@@ -1,6 +1,13 @@
 import { Fragment, useMemo, useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
-import { activeProgramsForDate, isCheckedInToday, isProgramCheckedInToday, timeslotGroup, todayInStudioTz } from "../programSchedule.js";
+import {
+  activeProgramsForDate,
+  isCheckedInToday,
+  isProgramCheckedInToday,
+  isRecentSelection,
+  timeslotGroup,
+  todayInStudioTz,
+} from "../programSchedule.js";
 import { MembershipBadge, Portal } from "shared";
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
@@ -29,25 +36,11 @@ export function CheckInDialog({
 
   const activePrograms = useMemo(() => activeProgramsForDate(programs, viewedDate), [programs, viewedDate]);
 
-  // Preselects whatever the student picked their most recent visit (computed once as
-  // part of the roster fetch — see StudentStatus.lastCheckinSelections — not a fetch
-  // triggered by opening this dialog, and not backdating-aware: always the true most
-  // recent visit regardless of viewedDate). Only applied to programs still on this
-  // day's active schedule; anything else from that visit is silently dropped.
-  const [roles, setRoles] = useState<RoleByProgram>(() => {
-    const activeIds = new Set(activePrograms.map((p) => p.id));
-    const initial: RoleByProgram = {};
-    for (const s of student.lastCheckinSelections) {
-      if (!activeIds.has(s.programId) || isCheckedInToday(student, s.programId, s.role)) continue;
-      // Guard against historical data (e.g. a Backfill import) predating this
-      // one-pick-per-timeslot rule — never seed two picks in the same group even if
-      // a past visit's own records somehow have them.
-      const group = timeslotGroup(activePrograms, s.programId);
-      if (group.some((g) => g.id in initial)) continue;
-      initial[s.programId] = s.role;
-    }
-    return initial;
-  });
+  // Starts empty — whatever the student picked their most recent visit is hinted with
+  // a ↺ (see isRecentSelection below; computed once as part of the roster
+  // fetch, always the true most recent visit regardless of viewedDate) and front desk
+  // clicks to choose.
+  const [roles, setRoles] = useState<RoleByProgram>({});
 
   // Only one {class, role} pick allowed per timeslot — a student can't be in two
   // classes at once, or dance one class as both Lead and Follow at once. Picking a
@@ -152,11 +145,12 @@ export function CheckInDialog({
                           const done = isCheckedInToday(student, p.id, role);
                           const isSelected = roles[p.id] === role;
                           const grayed = !groupCommitted && pickedProgramId !== undefined && !isSelected;
+                          const recent = !done && isRecentSelection(student, p.id, role);
                           return (
                             <button
                               key={role}
                               type="button"
-                              className={`role-toggle${isSelected ? " role-toggle-selected" : ""}${done ? " role-toggle-done" : ""}${grayed ? " role-toggle-grayed" : ""}`}
+                              className={`role-toggle${isSelected ? " role-toggle-selected" : ""}${done ? " role-toggle-done" : ""}${grayed ? " role-toggle-grayed" : ""}${recent ? " role-toggle-recent" : ""}`}
                               disabled={groupCommitted}
                               onClick={() => toggle(p.id, role)}
                             >

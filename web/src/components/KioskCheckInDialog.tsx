@@ -4,6 +4,7 @@ import {
   activeProgramsForDate,
   isCheckedInToday,
   isProgramCheckedInToday,
+  isRecentSelection,
   studioLocalToUtc,
   timeslotGroup,
   todayInStudioTz,
@@ -26,16 +27,6 @@ function playChime(timesRemaining: number) {
 }
 
 type RoleByProgram = Record<string, "Lead" | "Follow" | undefined>;
-
-// lastCheckinSelections is already bounded to the student's last 29 days (see
-// computeLastCheckinSelections) — the same source the preselection below reads, but
-// this checks every {program, role} independently rather than one pick per timeslot
-// group, so it can still highlight a recent pick that preselection had to drop (e.g.
-// two roles from the same group in old Backfill data) as a visual nudge even though
-// it isn't the one actually selected.
-function isRecentSelection(student: StudentStatus, programId: string, role: "Lead" | "Follow") {
-  return student.lastCheckinSelections.some((s) => s.programId === programId && s.role === role);
-}
 
 // The self-serve, large-touch-target version of the check-in flow — structurally
 // different enough from CheckInDialog (no email/undo/transfer affordances, no
@@ -81,23 +72,9 @@ export function KioskCheckInDialog({
   const activePrograms = activeProgramsForDate(programs, effectiveDateStr);
   const visiblePrograms = activePrograms.filter((p) => withinVisibleWindow(p, effectiveDate));
 
-  // Preselects the student's most recent visit's picks, same as the front desk
-  // dialog (see CheckInDialog.tsx's identical comment) — but scoped to
-  // visiblePrograms, not activePrograms: a class that's already past its visible
-  // window isn't offered as a button here at all, so preselecting it would silently
-  // do nothing (or worse, get dropped without the student noticing a pick they'd
-  // expect was already there).
-  const [roles, setRoles] = useState<RoleByProgram>(() => {
-    const visibleIds = new Set(visiblePrograms.map((p) => p.id));
-    const initial: RoleByProgram = {};
-    for (const s of student.lastCheckinSelections) {
-      if (!visibleIds.has(s.programId) || isCheckedInToday(student, s.programId, s.role)) continue;
-      const group = timeslotGroup(visiblePrograms, s.programId);
-      if (group.some((g) => g.id in initial)) continue;
-      initial[s.programId] = s.role;
-    }
-    return initial;
-  });
+  // Starts empty — the student's most recent picks are hinted with a ↺ (see
+  // isRecentSelection below) and the student taps to choose.
+  const [roles, setRoles] = useState<RoleByProgram>({});
 
   const selections: CheckInSelection[] = Object.entries(roles)
     .filter((entry): entry is [string, "Lead" | "Follow"] => Boolean(entry[1]))

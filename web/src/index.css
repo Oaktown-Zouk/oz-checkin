@@ -983,8 +983,9 @@ body {
     font-size: 1.4rem;
   }
 
-  .dialog-card-checkin .program-picker-row {
-    justify-content: space-between;
+  /* Full width on phones — name fills the row, buttons against the right edge. */
+  .dialog-card-checkin .program-picker {
+    grid-template-columns: 0 1fr max-content 0;
   }
 
   .dialog-card-checkin .role-toggle {
@@ -1028,8 +1029,8 @@ body {
     font-size: 1.5rem;
   }
 
-  .kiosk-dialog-card-checkin .kiosk-program-row {
-    justify-content: space-between;
+  .kiosk-dialog-card-checkin .kiosk-program-list {
+    grid-template-columns: 0 1fr max-content 0;
   }
 
   .kiosk-dialog-card-checkin .kiosk-role-btn {
@@ -1045,27 +1046,35 @@ body {
   }
 }
 
+/* One grid shared by every row (via subgrid): the name column is as wide as the
+   longest class name and sits centered with the buttons column, so the role buttons
+   line up across rows with only a small gap after the longest name. The outer 1fr
+   columns are the centering margins. */
 .program-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr max-content max-content 1fr;
+  row-gap: 8px;
   max-height: 40vh;
   overflow-y: auto;
 }
 
 .program-picker-row {
-  display: flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  justify-content: space-evenly;
-  gap: 12px;
   margin: 4px;
 }
 
 .program-picker-name {
+  grid-column: 2;
   font-size: 2rem;
+  text-align: center;
+  padding-right: 12px;
 }
 
 .program-picker-roles {
+  grid-column: 3;
   display: flex;
   gap: 6px;
 }
@@ -1106,11 +1115,27 @@ body {
   opacity: 0.5;
 }
 
+/* Hints at what the student picked last week — a small ↺ in the top right corner,
+   leaving the button's own look to reflect whether it's selected. */
+.role-toggle-recent {
+  position: relative;
+}
+
+.role-toggle-recent::after {
+  content: "\21BA";
+  position: absolute;
+  top: 0;
+  right: 6px;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
 .program-picker-row-disabled .program-picker-name {
   color: var(--gray);
 }
 
 .program-picker-divider {
+  grid-column: 1 / -1;
   border: none;
   border-top: 1px solid var(--border);
   margin: 2px 0;
@@ -1139,28 +1164,34 @@ body {
   text-align: center;
 }
 
+/* Same shared-grid layout as the front desk's .program-picker above — role buttons
+   line up across rows, centered with the class names. */
 .kiosk-program-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr max-content max-content 1fr;
+  row-gap: 12px;
   width: 100%;
 }
 
 .kiosk-program-row {
-  display: flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  justify-content: space-evenly;
-  gap: 16px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
 
 .kiosk-program-name {
+  grid-column: 2;
+  text-align: center;
   font-size: 2.2rem;
   font-weight: 600;
+  padding-right: 16px;
 }
 
 .kiosk-role-buttons {
+  grid-column: 3;
   display: flex;
   gap: 12px;
 }
@@ -1197,10 +1228,19 @@ body {
   opacity: 0.5;
 }
 
-/* Nudges a student toward what they picked last week — bold text only, so it doesn't
-   compete visually with the done/conflict states above. */
+/* Hints at what the student picked last week — a small ↺ in the top right corner,
+   leaving the button's own look to reflect whether it's selected. */
 .kiosk-role-btn-recent {
-  font-weight: 800;
+  position: relative;
+}
+
+.kiosk-role-btn-recent::after {
+  content: "\21BA";
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 .kiosk-role-btn:disabled {

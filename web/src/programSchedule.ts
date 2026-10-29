@@ -76,6 +76,14 @@ export function isProgramCheckedInToday(student: StudentStatus, programId: strin
   return student.checkinsToday.some((c) => c.programId === programId);
 }
 
+// Whether {programId, role} was among the student's picks on their most recent visit
+// (lastCheckinSelections, bounded to the last 29 days — see
+// computeLastCheckinSelections). Both check-in dialogs mark these with a ↺ as a hint; the
+// student still picks explicitly.
+export function isRecentSelection(student: StudentStatus, programId: string, role: "Lead" | "Follow"): boolean {
+  return student.lastCheckinSelections.some((s) => s.programId === programId && s.role === role);
+}
+
 // Every program sharing `programId`'s start time, including itself — the set of
 // {class, role} options a student can only take one of. A student can't be in two
 // classes at once, and can't dance a single class as both Lead and Follow at once
