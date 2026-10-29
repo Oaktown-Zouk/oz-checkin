@@ -13,6 +13,11 @@ export interface CheckInSelection {
   role: "Lead" | "Follow";
 }
 
+// Shown by the front desk's Check In for a suspended student. The server's
+// check-in refusal (server/src/services/checkins.ts) carries the same text.
+export const SUSPENDED_MESSAGE =
+  "This student has been suspended and is not allowed to attend classes.\nContact a Staff member if you need more details.";
+
 export interface StudentStatus {
   id: string;
   name: string;
@@ -25,6 +30,9 @@ export interface StudentStatus {
   // Givebutter merged this student's contact away; the roster offers "Mark as
   // duplicate…" only for these.
   removedFromGivebutter: boolean;
+  // Staff-set in Airtable; the front desk's Check In shows SUSPENDED_MESSAGE instead
+  // of the check-in dialog.
+  suspended: boolean;
   leadLevel: number | null;
   followLevel: number | null;
   accessStatus: string;
@@ -54,7 +62,16 @@ export interface NoteDetails {
 }
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin" | "levelup" | "note";
+  type:
+    | "membership_started"
+    | "membership_status"
+    | "payment"
+    | "credit_granted"
+    | "checkin"
+    | "levelup"
+    | "note"
+    | "suspended"
+    | "suspension_lifted";
   at: string;
   label: string;
   note?: NoteDetails;

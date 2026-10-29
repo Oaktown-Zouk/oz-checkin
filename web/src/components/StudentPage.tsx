@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, UnauthorizedError, ForbiddenError, type StudentTimeline, type NoteDetails } from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { LevelEditDialog } from "./LevelEditDialog.js";
-import { TransferDialog } from "./TransferDialog.js";
+import { RowMenu } from "./RowMenu.js";
+import { useStudentActions } from "./useStudentActions.js";
 import { AddNoteDialog } from "./AddNoteDialog.js";
 import { LevelBadge, MembershipBadge, Timeline, NoteDetailModal } from "shared";
 
@@ -32,12 +33,14 @@ function StatBox({ label, value, onClick }: { label: string; value: React.ReactN
 // The student detail page (`/students/:id`) — reached by clicking a name on the
 // roster. Loads and displays:
 //   - Header: name, email, the same badges as the roster row, and (with
-//     Write Memberships) a "Transfer membership" button.
+//     any action permission) an "Actions" dropdown — the same Transfer membership /
+//     Suspend items as the roster row's menu, see useStudentActions.
 //   - Stats row: most recent check-in, total check-ins, and Lead/Follow level (the
 //     level boxes are clickable and open the edit dialog when the session has
 //     Write Student Data).
 //   - A synthesized timeline of membership/payment/credit/check-in events.
-// Actions available from here: edit Lead/Follow level, transfer a membership, and
+// Actions available from here: edit Lead/Follow level, transfer a membership,
+// suspend/unsuspend, and
 // (via onBack) return to the roster — each gated by its own permission, see
 // usePermissions() below.
 export function StudentPage({
@@ -53,13 +56,11 @@ export function StudentPage({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [editingLevel, setEditingLevel] = useState<"lead" | "follow" | null>(null);
-  const [transferOpen, setTransferOpen] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [viewingNote, setViewingNote] = useState<NoteDetails | null>(null);
   const [editingNote, setEditingNote] = useState<NoteDetails | null>(null);
   const { has, userRoleId } = usePermissions();
   const canEditLevels = has("Write Student Data");
-  const canTransfer = has("Write Memberships");
   const canAddNotes = has("Write Student Data");
 
   const load = useCallback(async () => {
@@ -100,6 +101,21 @@ export function StudentPage({
       throw err;
     }
   }
+
+  async function handleSetSuspended(suspended: boolean) {
+    try {
+      await api.setSuspended(studentId, suspended);
+      await load();
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) onUnauthorized();
+      throw err;
+    }
+  }
+
+  const actions = useStudentActions(timeline?.status ?? null, {
+    onTransferMembership: handleTransferMembership,
+    onSetSuspended: handleSetSuspended,
+  });
 
   async function handleAddNote(summary: string, strengths: string, opportunities: string) {
     try {
@@ -142,14 +158,10 @@ export function StudentPage({
             <div className="badges">
               <MembershipBadge student={timeline.status} showBothWhenApplicable />
             </div>
-            {canTransfer && (
-              <button
-                type="button"
-                className="btn btn-secondary transfer-link"
-                onClick={() => setTransferOpen(true)}
-              >
-                Transfer membership
-              </button>
+            {actions.items.length > 0 && (
+              <div className="student-actions">
+                <RowMenu label="Actions" items={actions.items} />
+              </div>
             )}
           </div>
 
@@ -193,13 +205,7 @@ export function StudentPage({
         />
       )}
 
-      {canTransfer && transferOpen && timeline && (
-        <TransferDialog
-          student={timeline.status}
-          onSubmit={handleTransferMembership}
-          onClose={() => setTransferOpen(false)}
-        />
-      )}
+      {actions.dialogs}
 
       {canAddNotes && addingNote && timeline && (
         <AddNoteDialog

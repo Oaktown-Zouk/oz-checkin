@@ -13,4 +13,5 @@ export const TABLES = {
   rolePermissions: "tblYo1awEOvqBGVpR",
   levelups: "tblSFmkH7KlWVRmfM",
   notes: "tblXfNHoBzKa3mqpB",
+  suspensions: "tblQY32VQ6XTn8t5T",
 } as const;

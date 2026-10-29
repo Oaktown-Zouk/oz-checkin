@@ -32,6 +32,7 @@ const PURE_MODULES = [
   "retry.ts",
   "rebateEligibility.ts",
   "mergeDetection.ts",
+  "suspensionMatch.ts",
 ];
 
 function transpileToPlainJs(tsSource: string): string {
@@ -65,6 +66,7 @@ const SCRIPTS = [
   { body: "sync-givebutter-transactions.body.js", out: "sync-givebutter-transactions.js" },
   { body: "sync-givebutter-webhook.body.js", out: "sync-givebutter-webhook.js" },
   { body: "detect-givebutter-merges.body.js", out: "detect-givebutter-merges.js" },
+  { body: "match-suspensions.body.js", out: "match-suspensions.js" },
 ];
 
 // Every body file marks the end of its own config block (API keys, tunable

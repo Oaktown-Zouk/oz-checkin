@@ -31,6 +31,8 @@ export interface StudentStatus {
   // Givebutter merged this student's contact away (see detect-givebutter-merges.js);
   // gates the roster's "Mark as duplicate…" action.
   removedFromGivebutter: boolean;
+  // Has an unlifted Suspension — see MemberFields."Is Suspended".
+  suspended: boolean;
   leadLevel: number | null;
   followLevel: number | null;
   accessStatus: string;
@@ -149,6 +151,7 @@ export function buildStatus(
     email: f.Email ?? "",
     contactId: f["Contact ID"] ?? null,
     removedFromGivebutter: !!f["Removed From Givebutter"],
+    suspended: (f["Is Suspended"] ?? 0) > 0,
     leadLevel: f["Lead Level"] ?? null,
     followLevel: f["Follow Level"] ?? null,
     accessStatus: f["Access Status"] ?? "Inactive",
@@ -193,6 +196,7 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
         "Email",
         "Contact ID",
         "Removed From Givebutter",
+        "Is Suspended",
         "Lead Level",
         "Follow Level",
         "Access Status",

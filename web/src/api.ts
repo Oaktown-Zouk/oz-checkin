@@ -28,7 +28,8 @@ export type Permission =
   | "Create Checkins"
   | "Undo Checkins"
   | "Write Memberships"
-  | "Backdate Kiosk";
+  | "Backdate Kiosk"
+  | "Suspend Students";
 
 export interface KioskRosterEntry {
   id: string;
@@ -130,6 +131,11 @@ export const api = {
     request<StudentStatus>(`/api/students/${studentId}/transfer-membership`, {
       method: "POST",
       body: JSON.stringify({ planId, targetEmail }),
+    }),
+  setSuspended: (studentId: string, suspended: boolean) =>
+    request<StudentStatus>(`/api/students/${studentId}/suspension`, {
+      method: "PATCH",
+      body: JSON.stringify({ suspended }),
     }),
   markDuplicateOf: (duplicateId: string, survivorId: string) =>
     request<{ ok: true }>(`/api/students/${duplicateId}/duplicate-of`, {

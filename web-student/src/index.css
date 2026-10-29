@@ -346,6 +346,20 @@ body {
   background: var(--blue);
 }
 
+.timeline-dot-suspended {
+  background: var(--red);
+}
+
+.timeline-dot-suspension_lifted {
+  background: var(--gray);
+}
+
+.timeline-event-suspended {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
+}
+
 .timeline-content {
   display: flex;
   align-items: baseline;

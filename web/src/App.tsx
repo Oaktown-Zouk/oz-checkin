@@ -286,6 +286,16 @@ export function App() {
     }
   }
 
+  async function handleSetSuspended(studentId: string, suspended: boolean) {
+    try {
+      await api.setSuspended(studentId, suspended);
+      await refreshStudents(effectiveDate);
+    } catch (err) {
+      if (err instanceof UnauthorizedError || err instanceof ForbiddenError) setAuthenticated(false);
+      throw err;
+    }
+  }
+
   async function handleMarkDuplicate(duplicateId: string, survivorId: string) {
     try {
       await api.markDuplicateOf(duplicateId, survivorId);
@@ -405,6 +415,7 @@ export function App() {
           onUpdateFollowLevel={handleUpdateFollowLevel}
           onUpdatePreferredName={handleUpdatePreferredName}
           onTransferMembership={handleTransferMembership}
+          onSetSuspended={handleSetSuspended}
           onMarkDuplicate={handleMarkDuplicate}
         />
       </div>

@@ -47,6 +47,11 @@ script step by hand.
   `Removed From Givebutter`, plus `Duplicate Of` when its email belongs to exactly one
   live contact. Stops without writing if more than `MAX_VANISHED_PER_RUN` Members
   vanish at once, which points at a bad pull rather than real merges.
+- `match-suspensions.js` — links every unlifted `Suspensions` row to each Member
+  whose name matches, ticking `Needs Review` on each new link. Re-checks everything
+  each run, so one script serves all triggers: Members created / First Name, Last
+  Name updated; Suspensions created / First Name, Last Name, Other Names, Lifted On
+  updated; or ad hoc from the Scripting extension. No input variables.
 - `sync-givebutter-webhook.js` — real-time automation triggered by a Givebutter
   webhook (`plan.*`, `transaction.*`, `contact.created`), re-fetches the changed
   record and upserts it immediately rather than waiting for the nightly batch. Runs

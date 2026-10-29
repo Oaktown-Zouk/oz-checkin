@@ -11,6 +11,10 @@ import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { dateStringFor, STUDIO_TIMEZONE } from "../lib/date.js";
 import { getStudentStatusById, type StudentStatus } from "./studentStatus.js";
 
+// Same text as the web app's SUSPENDED_MESSAGE (shared/src/types.ts).
+const SUSPENDED_MESSAGE =
+  "This student has been suspended and is not allowed to attend classes.\nContact a Staff member if you need more details.";
+
 export interface CheckInSelection {
   programId: string;
   role: "Lead" | "Follow";
@@ -30,6 +34,7 @@ async function checkinsForDate(dateStr: string, fields: string[]): Promise<Airta
 // wasn't getting regularly exercised either, letting failures go unnoticed.
 async function gateCheckIns(
   studentId: string,
+  member: AirtableRecord<MemberFields>,
   effectiveAt: Date,
   createdCheckins: AirtableRecord<CheckinFields>[]
 ): Promise<void> {
@@ -41,15 +46,14 @@ async function gateCheckIns(
     (c) => (c.fields.Member ?? []).includes(studentId) && !createdIds.has(c.id)
   ).length;
 
-  const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);
-  const classesAllowed = member?.fields["Classes Allowed"] ?? 0;
+  const classesAllowed = member.fields["Classes Allowed"] ?? 0;
   // Tracked in memory rather than re-read per check-in: Available Credits is a
   // formula (Credits Purchased + New Member Credit + Comp Credits - Credits
   // Consumed), and writing this batch's own Credits Consumed as we go wouldn't be
   // reflected in a fresh read until Airtable recomputes the rollup anyway — an
   // in-memory running balance is both simpler and more immediately correct for a
   // multi-check-in batch than re-fetching would be.
-  let availableCredits = member?.fields["Available Credits"] ?? 0;
+  let availableCredits = member.fields["Available Credits"] ?? 0;
 
   // createRecords (batch create) preserves request order, so index+1 is this row's
   // position among this date's check-ins for this student.
@@ -79,6 +83,12 @@ export async function createCheckIns(
     throw new ConflictError("At least one program/role selection is required.");
   }
 
+  // Read before creating anything, both to refuse a suspended student outright and
+  // to hand gateCheckIns the allowance/credit balance it gates against.
+  const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);
+  if (!member) throw new NotFoundError("Student not found");
+  if (member.fields["Is Suspended"]) throw new ConflictError(SUSPENDED_MESSAGE);
+
   const isLive = !opts.effectiveAt;
   const checkedInAt = opts.effectiveAt ?? new Date();
 
@@ -93,7 +103,7 @@ export async function createCheckIns(
     }))
   );
 
-  await gateCheckIns(studentId, checkedInAt, created);
+  await gateCheckIns(studentId, member, checkedInAt, created);
 
   const updated = await getStudentStatusById(studentId, isLive ? undefined : dateStringFor(checkedInAt));
   if (!updated) throw new NotFoundError("Student not found");

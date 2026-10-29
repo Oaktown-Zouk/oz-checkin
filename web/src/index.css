@@ -465,6 +465,16 @@ body {
   overflow: hidden;
 }
 
+.suspended-message {
+  white-space: pre-line;
+  text-align: center;
+}
+
+.row-menu-dropdown-left {
+  right: auto;
+  left: 0;
+}
+
 .row-menu-item {
   display: block;
   width: 100%;
@@ -702,7 +712,7 @@ body {
   margin-top: 10px;
 }
 
-.transfer-link {
+.student-actions {
   margin-top: 10px;
 }
 
@@ -856,6 +866,20 @@ body {
 
 .timeline-dot-note {
   background: var(--blue);
+}
+
+.timeline-dot-suspended {
+  background: var(--red);
+}
+
+.timeline-dot-suspension_lifted {
+  background: var(--gray);
+}
+
+.timeline-event-suspended {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .timeline-content {

@@ -6,6 +6,8 @@ import type {
   CheckinFields,
   NoteFields,
   MemberFields,
+  UserRoleFields,
+  SuspensionFields,
 } from "../airtable/fields.js";
 import { fetchProgramNames, buildStatus, computeLastCheckinSelections, type StudentStatus } from "./studentStatus.js";
 import { today, dateStringFor } from "../lib/date.js";
@@ -22,7 +24,16 @@ export interface NoteDetails {
 }
 
 export interface TimelineEvent {
-  type: "membership_started" | "membership_status" | "payment" | "credit_granted" | "checkin" | "levelup" | "note";
+  type:
+    | "membership_started"
+    | "membership_status"
+    | "payment"
+    | "credit_granted"
+    | "checkin"
+    | "levelup"
+    | "note"
+    | "suspended"
+    | "suspension_lifted";
   at: string;
   label: string;
   // Populated only for type "note" — the full text behind the on-timeline summary,
@@ -41,6 +52,42 @@ function formatDollars(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+// Read by id off the member's own Suspensions link, so a never-suspended student
+// costs no request at all; staff first names come from one User Roles read per
+// distinct person.
+async function fetchSuspensionEvents(member: MemberFields): Promise<TimelineEvent[]> {
+  const suspensions = (
+    await Promise.all(
+      (member.Suspensions ?? []).map((id) => getRecordOrNull<SuspensionFields>(TABLES.suspensions, id))
+    )
+  ).filter((s) => s !== null);
+
+  const staffIds = new Set(
+    suspensions.flatMap((s) => [s.fields["Suspended By"]?.[0], s.fields["Lifted By"]?.[0]]).filter((id) => !!id)
+  );
+  const staff = await Promise.all(
+    [...staffIds].map((id) => getRecordOrNull<UserRoleFields>(TABLES.userRoles, id!))
+  );
+  const firstNameById = new Map(staff.filter((r) => r !== null).map((r) => [r.id, r.fields["First Name"]]));
+  const by = (ids: string[] | undefined) => {
+    const name = ids?.[0] ? firstNameById.get(ids[0]) : undefined;
+    return name ? ` by ${name}` : "";
+  };
+
+  const events: TimelineEvent[] = [];
+  for (const s of suspensions) {
+    const suspendedOn = s.fields["Suspended On"];
+    if (suspendedOn) {
+      events.push({ type: "suspended", at: suspendedOn, label: `Suspended${by(s.fields["Suspended By"])}` });
+    }
+    const liftedOn = s.fields["Lifted On"];
+    if (liftedOn) {
+      events.push({ type: "suspension_lifted", at: liftedOn, label: `Suspension lifted${by(s.fields["Lifted By"])}` });
+    }
+  }
+  return events;
+}
+
 // Always a live ("today") view — no caller ever passes a date (see routes/students.ts,
 // studentApp.ts) — so this fetches everything itself in one batch rather than going
 // through getStudentStatusById, which would redundantly re-fetch Programs and re-scan
@@ -53,7 +100,7 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
   const member = await getRecordOrNull<MemberFields>(TABLES.members, studentId);
   if (!member) return null;
 
-  const [plans, transactions, compCredits, checkins, notes, programNameById] = await Promise.all([
+  const [plans, transactions, compCredits, checkins, notes, programNameById, suspensionEvents] = await Promise.all([
     listRecords<RecurringPlanFields>(TABLES.recurringPlans, {
       fields: ["Covers Member", "Status", "Start Date", "Frequency", "Canceled At"],
     }),
@@ -71,6 +118,7 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       fields: ["Member", "Summary", "Strengths", "Opportunities", "Issuer", "Issuer Name"],
     }),
     fetchProgramNames(),
+    fetchSuspensionEvents(member.fields),
   ]);
 
   const myPlans = plans.filter((p) => p.fields["Covers Member"]?.includes(studentId));
@@ -187,6 +235,8 @@ export async function getStudentTimeline(studentId: string): Promise<StudentTime
       },
     });
   }
+
+  events.push(...suspensionEvents);
 
   events.sort((a, b) => b.at.localeCompare(a.at));
 

@@ -7,6 +7,7 @@ import { transferMembership, heldMemberships } from "../services/transfers.js";
 import { markDuplicateOf } from "../services/merge.js";
 import { createNote, updateNote } from "../services/notes.js";
 import { updatePreferredName } from "../services/preferredName.js";
+import { setSuspended } from "../services/suspension.js";
 import { isValidDateString } from "../lib/date.js";
 import { handleError } from "../lib/respond.js";
 
@@ -53,6 +54,20 @@ studentRoutes.patch("/:id/preferred-name", requirePermission("Write Student Data
   if (typeof preferredName !== "string") return c.json({ error: "preferredName is required" }, 400);
   try {
     return c.json(await updatePreferredName(id, preferredName.trim()));
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+studentRoutes.patch("/:id/suspension", requirePermission("Suspend Students"), async (c) => {
+  const id = c.req.param("id") ?? "";
+  const body = await c.req.json().catch(() => ({}));
+  const { suspended } = body as { suspended?: unknown };
+  if (typeof suspended !== "boolean") return c.json({ error: "suspended must be true or false" }, 400);
+  try {
+    // Guarded by requirePermission("Suspend Students") above — a "Student" session
+    // (the only role without userRoleId) never has that permission, so this is safe.
+    return c.json(await setSuspended(id, suspended, c.get("user").userRoleId!));
   } catch (err) {
     return handleError(c, err);
   }

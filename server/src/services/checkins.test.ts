@@ -94,6 +94,20 @@ describe("createCheckIns (live, no effectiveAt)", () => {
   });
 });
 
+describe("createCheckIns (suspended)", () => {
+  it("refuses a suspended student without creating any check-in", async () => {
+    resetMockStore({
+      [TABLES.members]: [{ id: MEMBER, fields: { "Full Name": "Test Student", "Classes Allowed": 1 } }],
+      [TABLES.programs]: [{ id: PROGRAM, fields: { "Program Name": "Zouk L1", Status: "Active" } }],
+      [TABLES.suspensions]: [{ id: "recSusp1", fields: { Member: [MEMBER], "Suspended On": "2026-10-01" } }],
+    });
+
+    await assert.rejects(createCheckIns(MEMBER, [{ programId: PROGRAM, role: "Lead" }]), ConflictError);
+    const checkins = await listRecords<CheckinFields>(TABLES.checkins, {});
+    assert.equal(checkins.length, 0);
+  });
+});
+
 describe("createCheckIns (backdated)", () => {
   const PAST_DATE = new Date("2020-06-01T18:00:00.000Z"); // dateStringFor -> "2020-06-01"
   const OTHER_PAST_DATE = new Date("2019-01-01T18:00:00.000Z");

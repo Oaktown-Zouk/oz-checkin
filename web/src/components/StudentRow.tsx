@@ -2,11 +2,12 @@ import { useState } from "react";
 import type { CheckInSelection, ProgramSchedule, StudentStatus } from "../api.js";
 import { usePermissions } from "../permissions.js";
 import { RowMenu } from "./RowMenu.js";
-import { TransferDialog } from "./TransferDialog.js";
 import { PreferredNameDialog } from "./PreferredNameDialog.js";
 import { DuplicateOfDialog } from "./DuplicateOfDialog.js";
 import { StudentBadges } from "./StudentBadges.js";
 import { CheckInDialog } from "./CheckInDialog.js";
+import { SuspendedDialog } from "./SuspendedDialog.js";
+import { useStudentActions } from "./useStudentActions.js";
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -24,6 +25,7 @@ export function StudentRow({
   onUpdateFollowLevel,
   onUpdatePreferredName,
   onTransferMembership,
+  onSetSuspended,
   onMarkDuplicate,
 }: {
   student: StudentStatus;
@@ -40,11 +42,11 @@ export function StudentRow({
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdatePreferredName: (studentId: string, preferredName: string) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
+  onSetSuspended: (studentId: string, suspended: boolean) => Promise<void>;
   onMarkDuplicate: (duplicateId: string, survivorId: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [preferredNameOpen, setPreferredNameOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
   const { has } = usePermissions();
@@ -52,9 +54,13 @@ export function StudentRow({
   const canUndo = has("Undo Checkins");
   const canEditStudentData = has("Write Student Data");
   const canTransfer = has("Write Memberships");
+  const actions = useStudentActions(student, {
+    onTransferMembership: (planId, targetEmail) => onTransferMembership(student.id, planId, targetEmail),
+    onSetSuspended: (suspended) => onSetSuspended(student.id, suspended),
+  });
   const menuItems = [
     ...(canEditStudentData ? [{ label: "Set preferred name…", onClick: () => setPreferredNameOpen(true) }] : []),
-    ...(canTransfer ? [{ label: "Transfer membership", onClick: () => setTransferOpen(true) }] : []),
+    ...actions.items,
     // Only once Givebutter has merged this contact away — see services/merge.ts.
     ...(canTransfer && student.removedFromGivebutter
       ? [{ label: "Mark as duplicate…", onClick: () => setDuplicateOpen(true) }]
@@ -128,7 +134,9 @@ export function StudentRow({
         {menuItems.length > 0 && <RowMenu items={menuItems} />}
       </div>
 
-      {checkInOpen && (
+      {checkInOpen && student.suspended && <SuspendedDialog onClose={() => setCheckInOpen(false)} />}
+
+      {checkInOpen && !student.suspended && (
         <CheckInDialog
           student={student}
           effectiveDate={effectiveDate}
@@ -146,13 +154,7 @@ export function StudentRow({
         />
       )}
 
-      {transferOpen && (
-        <TransferDialog
-          student={student}
-          onSubmit={(planId, targetEmail) => onTransferMembership(student.id, planId, targetEmail)}
-          onClose={() => setTransferOpen(false)}
-        />
-      )}
+      {actions.dialogs}
 
       {duplicateOpen && (
         <DuplicateOfDialog

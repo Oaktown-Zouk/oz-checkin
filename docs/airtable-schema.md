@@ -68,6 +68,12 @@ Computed fields to read directly, never recompute:
   (merged away in Givebutter's UI, confirmed by a 404), and cleared again if the
   contact reappears before `Duplicate Of` is set. Gates the webapp's "Mark as
   duplicate…".
+- `Suspensions` (link → `Suspensions`, inverse of its `Member`) and `Is Suspended`
+  (rollup over `Suspensions`, counting linked rows with `Lifted On` blank — added by
+  hand, since the API can't create rollups). A non-zero `Is Suspended` marks the
+  member suspended: they're left off the kiosk (roster and by-id lookup both), the
+  front desk's Check In shows a suspension notice instead of the check-in dialog,
+  and `createCheckIns` refuses them server-side (409). See "Suspensions" below.
 - `Duplicate Of` (link → `Members`; inverse `Duplicates`) — the surviving Member this
   one was merged into. Filled by `detect-givebutter-merges.js` (unique email match),
   the webapp, or by hand; filling it triggers `merge-duplicate-member.js`. Review queue:
@@ -333,7 +339,7 @@ Permissions` row.
 - **`Role Permissions`** — one row per role (`Staff` / `Volunteer` / `Kiosk` / `Admin`,
   `Role` plain text primary), with a checkbox per permission: `View Student Data`,
   `Write Student Data`, `Create Checkins`, `Undo Checkins`, `Write Memberships`,
-  `Backdate Kiosk`. Every route in the app requires exactly one of these — see
+  `Backdate Kiosk`, `Suspend Students`. Every route in the app requires exactly one of these — see
   `SPEC.md`'s "Permissions" section for the full route → permission map. Check the
   table directly for the live grants. `Kiosk` is deliberately `Create Checkins` +
   `Undo Checkins` only — no `View Student Data` — so a kiosk session is routed straight
@@ -431,6 +437,30 @@ UI (the "Add note" dialog and the timeline's inline summary/detail-modal split).
   Name`, read by `services/studentTimeline.ts` to attribute the note in the student
   timeline without a second lookup), and `Created` (Airtable's own auto-set creation
   timestamp) — none of these are ever written by the app.
+
+## Suspensions (`tblQY32VQ6XTn8t5T`)
+
+One row per suspension of one person, who may never have had a Member record (staff
+often know only a name). Lifting fills `Lifted By`/`Lifted On`; rows are never
+deleted, so the history stays and shows on the student timeline ("Suspended by X",
+red; "Suspension lifted by Y").
+
+- `First Name` (primary), `Last Name`, `Other Names` (long text, one "First Last"
+  per line — nicknames/aliases) — what the person is matched on.
+- `Member` (link → `Members`, any number) — filled by
+  `docs/airtable-automations/match-suspensions.js`, by the webapp's Suspend action
+  (which creates the row already linked and prefilled from the Member), or by hand.
+  Unlinking a wrongly-matched Member is the fix for a false match; the script never
+  removes a link.
+- `Suspended By` / `Lifted By` (link → `User Roles`), `Suspended On` / `Lifted On`
+  (date, studio timezone).
+- `Needs Review` (checkbox) — ticked by `match-suspensions.js` whenever it links a
+  Member (still blocked meanwhile); staff confirm and untick.
+- `Reason` (long text) — staff-only, not read by the app.
+
+Matching: first + last name (or an `Other Names` line), ignoring case, accents,
+punctuation and spacing. Name only — a different email can't get a suspended person
+in. Preferred Name is not matched (it's staff-entered, never student-supplied).
 
 ## Sessions / Events
 

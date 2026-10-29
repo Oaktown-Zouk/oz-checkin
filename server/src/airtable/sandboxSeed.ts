@@ -302,6 +302,7 @@ export function buildSandboxSeed(): SeedData {
           "Undo Checkins": true,
           "Write Memberships": true,
           "Backdate Kiosk": true,
+          "Suspend Students": true,
         },
       },
     ],
@@ -309,7 +310,7 @@ export function buildSandboxSeed(): SeedData {
       { id: "recUserRoleStaff", fields: { Email: "claude-staff@test.com", Role: [rolePermissions.staff] } },
       { id: "recUserRoleVolunteer", fields: { Email: "claude-volunteer@test.com", Role: [rolePermissions.volunteer] } },
       { id: "recUserRoleKiosk", fields: { Email: "claude-kiosk@test.com", Role: [rolePermissions.kiosk] } },
-      { id: "recUserRoleAdmin", fields: { Email: "claude-admin@test.com", Role: [rolePermissions.admin] } },
+      { id: "recUserRoleAdmin", fields: { Email: "claude-admin@test.com", "First Name": "Ada", Role: [rolePermissions.admin] } },
       {
         id: "recUserRoleKioskTablet",
         fields: {

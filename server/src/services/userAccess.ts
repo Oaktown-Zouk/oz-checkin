@@ -8,6 +8,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "Undo Checkins",
   "Write Memberships",
   "Backdate Kiosk",
+  "Suspend Students",
 ];
 
 export interface UserAccess {

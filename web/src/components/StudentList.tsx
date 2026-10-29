@@ -14,6 +14,7 @@ export function StudentList({
   onUpdateFollowLevel,
   onUpdatePreferredName,
   onTransferMembership,
+  onSetSuspended,
   onMarkDuplicate,
 }: {
   students: StudentStatus[];
@@ -30,6 +31,7 @@ export function StudentList({
   onUpdateFollowLevel: (studentId: string, level: number | null) => Promise<void>;
   onUpdatePreferredName: (studentId: string, preferredName: string) => Promise<void>;
   onTransferMembership: (studentId: string, planId: string, targetEmail: string) => Promise<void>;
+  onSetSuspended: (studentId: string, suspended: boolean) => Promise<void>;
   onMarkDuplicate: (duplicateId: string, survivorId: string) => Promise<void>;
 }) {
   if (loading && students.length === 0) {
@@ -55,6 +57,7 @@ export function StudentList({
           onUpdateFollowLevel={onUpdateFollowLevel}
           onUpdatePreferredName={onUpdatePreferredName}
           onTransferMembership={onTransferMembership}
+          onSetSuspended={onSetSuspended}
           onMarkDuplicate={onMarkDuplicate}
         />
       ))}

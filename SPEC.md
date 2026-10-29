@@ -33,13 +33,16 @@ handful of things that are genuinely this app's own business logic.
   leave on a student, shown inline on their timeline and in full via a detail modal.
 - **Membership transfers** — move a Recurring Plan (membership) to a different student
   (e.g. someone bought a membership for a friend).
+- **Suspensions** — bar a person from classes, including someone who has never had a
+  Member record: they're left off the kiosk and refused at check-in. See
+  "Suspensions" below.
 - **Backdating** — view and correct check-ins for a past day via an effective
   date/time picker. Creating a *new* check-in for a past day still works, but the
   tier-allowance/credit-consumption decision is computed by the app for that path
   specifically, since Airtable's live formulas only ever mean literal "today" — see
   "Check-in semantics" below.
 - **Student detail pages** with a synthesized timeline (membership events, payments,
-  credits granted, check-ins, level changes, notes) and running stats.
+  credits granted, check-ins, level changes, notes, suspensions) and running stats.
 - **Manual refresh** — no live cross-device push (Netlify Functions can't hold a
   connection open); a "Refresh" button re-fetches the roster.
 - **Google OAuth or password login**, per-account roles (`Staff`/`Volunteer`/`Kiosk`/
@@ -267,7 +270,7 @@ A student can buy a Recurring Plan (membership) **for someone else** — Givebut
 no concept of this. `Recurring Plans` already splits `Member` (raw Givebutter payer,
 refreshed by sync) from `Covers Member` (who it's for, for access/display purposes);
 transferring is just updating `Covers Member` to the new holder. Reached via the 3-dot
-menu on a row, or a button on the student detail page. Credit transfers (a `Credit
+menu on a row, or the Actions dropdown on the student detail page. Credit transfers (a `Credit
 Transfers` table, adding to a recipient's balance and subtracting an equal amount from
 a source) are deferred — not built yet.
 
@@ -317,6 +320,41 @@ into. Everything after that is split into three independent pieces, all keyed on
   that's the studio actually double-billing someone — merging the `Members` rows
   doesn't fix that, only canceling one subscription in Givebutter does.
 
+## Suspensions
+
+A suspended person may not attend classes. Staff often know only a name, and the
+person may never have had a `Members` row — so a suspension is its own `Suspensions`
+row (a person, by name), linked to every Member that person is or later turns up as.
+Full field detail in `docs/airtable-schema.md`.
+
+- **Matching is by name only**: first + last name (or a line of the Suspension's
+  `Other Names`), ignoring case, accents, punctuation, and spacing. Email/phone are
+  deliberately not used — a different email mustn't get a suspended person in.
+  Preferred Name isn't matched either (it's staff-entered, never student-supplied).
+  `docs/airtable-automations/match-suspensions.js` does the linking, on Member or
+  Suspension create/rename; every link it adds ticks `Needs Review` so staff can
+  confirm it's the same person. The person is blocked meanwhile; a wrong match is
+  fixed by unlinking that Member by hand (the script never removes a link).
+- **Suspended** means `Members."Is Suspended"` (count of linked Suspensions with
+  `Lifted On` blank) is non-zero. A suspended student:
+  - is left off the kiosk entirely — not in the roster, and resolves as not found by
+    id;
+  - still appears on the front desk roster as normal, but Check In opens a notice
+    instead of the picker: "This student has been suspended and is not allowed to
+    attend classes. / Contact a Staff member if you need more details.";
+  - is refused by `POST /api/checkins` regardless (409, same message), so no check-in
+    path can record one.
+- **Suspend / Unsuspend** (**Suspend Students** permission), from the roster row's ⋮
+  menu or the student page's Actions dropdown, after a confirm dialog. Suspend creates
+  a Suspension already linked to the student and prefilled with their first/last name
+  (so the matching script also catches any other Member record they turn up under),
+  with `Suspended By`/`Suspended On`. Unsuspend fills `Lifted By`/`Lifted On` on every
+  unlifted Suspension linked to them — rows are never deleted, so the history stays.
+- **Timeline**: each suspension shows as a red "Suspended by `<first name>`" row on
+  its `Suspended On` date, and its lifting as "Suspension lifted by `<first name>`".
+  Students see these on their own timeline too.
+- Suspending doesn't stop a Givebutter purchase — it only gates check-in.
+
 ## Permissions
 
 Access is permission-based, not role-based — a role is just Airtable's way of
@@ -330,7 +368,8 @@ permission, never a role name directly. Two tables drive this (full detail in
   (see "Auth" below) — never on an OAuth row, which authenticates via Google instead.
 - **`Role Permissions`** — one row per role (`Staff`/`Volunteer`/`Kiosk`/`Admin`), a
   checkbox per permission: `View Student Data`, `Write Student Data`,
-  `Create Checkins`, `Undo Checkins`, `Write Memberships`, `Backdate Kiosk`. `Kiosk`
+  `Create Checkins`, `Undo Checkins`, `Write Memberships`, `Backdate Kiosk`,
+  `Suspend Students`. `Kiosk`
   deliberately has neither `View Student Data` nor `Write Student Data` — only
   `Create Checkins`/`Undo Checkins` — so a kiosk session can never reach the roster at
   all, not even a read-only view of it (see "Kiosk mode" below). `Backdate Kiosk` is
@@ -344,7 +383,7 @@ permissions via a `PermissionsProvider` context (`web/src/permissions.ts`), so a
 missing a permission doesn't just get a 403 from the API — the corresponding button
 never renders in the first place (e.g. no Undo link without `Undo Checkins`, no level-
 edit badges without `Write Student Data`, no Transfer menu item without
-`Write Memberships`). A session with no `View Student Data` can't reach the roster at
+`Write Memberships`, no Suspend/Unsuspend without `Suspend Students`). A session with no `View Student Data` can't reach the roster at
 all: one with `Create Checkins` (i.e. `Kiosk`) is routed to `/kiosk` instead (see
 "Kiosk mode" below); one with neither sees a "not authorized for this page" screen
 naming the signed-in account.
@@ -374,6 +413,7 @@ one thing, their own data, and nothing else.
 │     ├─ GET  students/:id/timeline              │
 │     ├─ GET  students/:id/memberships           │
 │     ├─ POST students/:id/transfer-membership   │
+│     ├─ PATCH students/:id/suspension           │
 │     ├─ POST students/:id/notes                 │
 │     ├─ GET  programs                           │
 │     ├─ POST checkins                           │
@@ -596,6 +636,12 @@ permissions don't include the one that route needs). See "Permissions" above.
   `targetEmail`. 400 if missing fields; 404 if the plan or target student doesn't
   exist; 409 if the plan doesn't currently belong to `:id` or already belongs to the
   target.
+- `PATCH /api/students/:id/suspension` `{ suspended }` — **Suspend Students.**
+  `true` creates a `Suspensions` row linked to `:id` and prefilled from it, with
+  `Suspended By` (the caller) and `Suspended On` (today); `false` fills `Lifted By`/
+  `Lifted On` on every unlifted `Suspensions` row linked to `:id`. Either is a no-op
+  when already in that state. Returns the updated status. 400 unless `suspended` is a boolean; 404 if the
+  student doesn't exist.
 - `POST /api/students/:id/notes` `{ summary, strengths, opportunities }` — **Write
   Student Data.** Creates a `Notes` row attributed to the signed-in session. 400 if
   `summary` is blank; `strengths`/`opportunities` may be empty. 404 if the student
@@ -608,20 +654,21 @@ permissions don't include the one that route needs). See "Permissions" above.
   schedule data, not student data, and it's only ever consumed by the check-in flow.
 - `POST /api/checkins` `{ studentId, selections: [{ programId, role }], effectiveAt? }`
   — **Create Checkins.** Creates one `Check-ins` record per selection. 400 if
-  `studentId`/`selections` missing or malformed, or `effectiveAt` doesn't parse.
+  `studentId`/`selections` missing or malformed, or `effectiveAt` doesn't parse. 409
+  if the student is suspended (see "Suspensions"), before anything is written.
 - `DELETE /api/checkins/:id` — **Undo Checkins.** Sets `Undone At` on that check-in.
   404 if unknown; 409 if already undone.
 - `GET /api/kiosk/roster?date=` — **Create Checkins.** `{ students: [{id, contactId,
-  name, membershipStatus, availableCredits, remaining}] }` — every non-duplicate
-  student (not just eligible ones), fetched once and cached client-side so both name
+  name, membershipStatus, availableCredits, remaining}] }` — every non-duplicate,
+  non-suspended student (not just eligible ones), fetched once and cached client-side so both name
   search and QR-scan matching run locally with no per-keystroke/per-scan round trip
   (see "Kiosk mode" below). `date` is only honored for a session that also holds
   **Backdate Kiosk**; anyone else passing it gets a 403.
 - `GET /api/kiosk/students/:id?date=` — **Create Checkins.** Full `StudentStatus` by
   record id — used once a roster-cache match (scan or search tap) picks a specific,
   currently-eligible student, and to refresh state after each kiosk check-in. 404 if
-  unknown or no longer eligible (re-checked authoritatively, even though the frontend
-  already filtered on its cached snapshot). Same `date` gating as `/roster`.
+  unknown, suspended, or no longer eligible (re-checked authoritatively, even though
+  the frontend already filtered on its cached snapshot). Same `date` gating as `/roster`.
 
 ## Webpage (front desk view)
 
@@ -630,7 +677,7 @@ permissions don't include the one that route needs). See "Permissions" above.
   credits-remaining badge — one or the other, never both, to keep a list of many rows
   scannable; see "Tier Rule gaps" (under Members) in `docs/airtable-schema.md` for
   when a nominal member shows credits instead) · Check In button · 3-dot menu. Each of
-  Check In/Undo/level-edit/Transfer only renders for a session with the matching
+  Check In/Undo/level-edit/Transfer/Suspend only renders for a session with the matching
   permission (see "Permissions" above) — a lower-permission session simply doesn't see
   the control, not a disabled version of it.
 - "Check In" opens the Program + Role picker (see "Check-in semantics"); once checked
@@ -642,7 +689,8 @@ permissions don't include the one that route needs). See "Permissions" above.
   in the background and reconcile the row with the real numbers once they land. If the
   write fails, a dismissible banner at the top of the page shows the error and stays
   until closed — the row itself has already moved on by then, so there's nothing left
-  to show it inline.
+  to show it inline. For a suspended student, Check In shows the suspension notice
+  instead of the picker (see "Suspensions").
 - Checked-in-today rows sink to the bottom, grayed out. Above that, students whose
   `Members."Recently Active"` (Airtable formula, 30-day window) is false sort below
   recently-active ones — see `docs/airtable-schema.md`.
@@ -654,6 +702,9 @@ permissions don't include the one that route needs). See "Permissions" above.
   "First (Preferred) Last" everywhere the app already shows a student's name, so no
   other display code needs to know about it. **Transfer membership** — dialog listing
   every Recurring Plan this student currently holds, plus a target email field.
+  **Suspend** / **Unsuspend** — confirm dialog (see "Suspensions"). Transfer and
+  Suspend come from `useStudentActions`, shared with the student page's Actions
+  dropdown so the two stay identical.
 - Student names link to `/students/:id` — see "Student detail page" below.
 
 ### Student detail page
@@ -662,7 +713,9 @@ permissions don't include the one that route needs). See "Permissions" above.
 clicking a name.
 
 - Header: name, email, the same status badges as the list row (dance levels are
-  clickable here too), and a "Transfer membership" button — except a member who also
+  clickable here too), and an "Actions" dropdown (Transfer membership, Suspend/
+  Unsuspend — the same items as the roster row's ⋮ menu, each permission-gated) —
+  except a member who also
   holds an unused credit sees both the membership and credit badge here (and on the
   check-in dialogs), unlike the roster row above, which stays one badge per row on
   purpose; see `MembershipBadge`'s `showBothWhenApplicable` prop.
@@ -670,7 +723,7 @@ clicking a name.
   ones only), and clickable **Lead Level** / **Follow Level** boxes (same picker
   dialog as the compact badges).
 - A newest-first timeline synthesized from `Recurring Plans`, `Transactions`,
-  `Comp Credits`, `Check-ins`, `Levelups`, and `Notes` for that student — not a stored
+  `Comp Credits`, `Check-ins`, `Levelups`, `Notes`, and `Suspensions` for that student — not a stored
   event log. Event types: `membership_started`, `membership_status` (non-active
   statuses only), `payment` (one per held Transaction, labeled as membership payment
   or one-time pass by whether it carries a plan, with purchased credits folded into
@@ -684,7 +737,10 @@ clicking a name.
   the level was reset back to unset; each suffixed with "by `<issuer's first name>`"
   — read from `Levelups."Issuer Name"`, a lookup through `Issuer` — when known), and
   `note` (see "Notes" above — inline as "Note from `<Issuer>`: `<Summary>`", the row
-  itself clickable to open the full Summary/Strengths/Opportunities in a modal).
+  itself clickable to open the full Summary/Strengths/Opportunities in a modal),
+  `suspended` (red row, "Suspended by `<first name>`") and `suspension_lifted`
+  ("Suspension lifted by `<first name>`") — see "Suspensions" above. A date-only
+  event (plan start, suspension) shows just its date, no time.
 - Routing is hand-rolled — a direct load or reload of `/students/:id` lands back on
   that student's page, not the list.
 
@@ -699,7 +755,7 @@ front-desk involvement.
   navigating anywhere else in the app bounces straight back. Staff/Volunteer/Admin
   accounts can also reach `/kiosk` directly via `NavMenu` (they hold `Create Checkins`
   too); it's just not their default landing page.
-- **Roster cache**: on load, the page fetches every non-duplicate student once
+- **Roster cache**: on load, the page fetches every non-duplicate, non-suspended student once
   (`GET /api/kiosk/roster`) into local state — id, full name, membership status,
   available credits, and remaining allowance. Name search runs against this local
   snapshot, not a per-keystroke server round trip. Names are shown in full — no more
