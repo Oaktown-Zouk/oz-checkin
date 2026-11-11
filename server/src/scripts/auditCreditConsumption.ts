@@ -28,13 +28,12 @@ async function main() {
   console.log(APPLY ? "Running for real (--apply passed).\n" : "DRY RUN — pass --apply to actually write.\n");
 
   const members = await listRecords<MemberFields>(TABLES.members, {
-    fields: ["Full Name", "Access Status", "Tier Rule", "Duplicate", "Available Credits"],
+    fields: ["Full Name", "Tier Rule", "Duplicate", "Available Credits"],
   });
   const tierlessMemberIds = new Set(
     members.filter((m) => !m.fields.Duplicate && !(m.fields["Tier Rule"]?.length)).map((m) => m.id)
   );
   const nameById = new Map(members.map((m) => [m.id, m.fields["Full Name"] ?? "Unnamed"]));
-  const accessById = new Map(members.map((m) => [m.id, m.fields["Access Status"] ?? "?"]));
   const availableCreditsById = new Map(members.map((m) => [m.id, m.fields["Available Credits"] ?? 0]));
 
   const checkins = await listRecords<CheckinFields>(TABLES.checkins, {
@@ -74,7 +73,7 @@ async function main() {
     const note = alreadyFlagged ? `already flagged: ${c.fields["Review Reason"]}` : willFlag ? "will flag: Negative balance" : "not flagged";
 
     console.log(
-      `  ${c.id} | ${nameById.get(memberId)} (${accessById.get(memberId)}) | ${c.fields["Checked In At"]} | ${note}` +
+      `  ${c.id} | ${nameById.get(memberId)} | ${c.fields["Checked In At"]} | ${note}` +
         ` -> would set Credits Consumed = 1`
     );
     if (APPLY) {

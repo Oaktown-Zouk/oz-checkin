@@ -18,7 +18,7 @@ handful of things that are genuinely this app's own business logic.
   be selected at once, creating one check-in record per {class, role} pair.
 - **Tier-based access, computed by Airtable, not this app**: each member's `Tiers` →
   `Classes Per Day` determines how many check-ins are covered before a credit gets
-  spent. The app reads Airtable's computed `Remaining Today`/`Access Status` rather
+  spent. The app reads Airtable's computed `Remaining Today`/`Classes Allowed` rather
   than reimplementing that logic — a formula change in Airtable takes effect without a
   code deploy. See `docs/airtable-schema.md`.
 - **Credits system**: a plain numeric balance (purchased on a qualifying one-time
@@ -76,8 +76,7 @@ Givebutter (contacts, transactions, recurring plans) independently of this app �
 verified live and running (`Sync Log` table). **This app never calls the Givebutter
 API.**
 
-**Guiding principle:** read Airtable's *computed* fields (`Access Status`,
-`Remaining Today`, `Available Credits`, `Classes Allowed`, `Is Active Membership`, …)
+**Guiding principle:** read Airtable's *computed* fields (`Remaining Today`, `Available Credits`, `Classes Allowed`, `Is Active Membership`, …)
 directly rather than reimplementing their logic in the server. A future formula edit in
 Airtable (e.g. changing the drop-in credit expiry window) takes effect on next read,
 with no code deploy.
@@ -542,8 +541,7 @@ credit on undo — application code, not automations, see "Credits system" above
 don't need any special mock support at all: they're plain
 `listRecords`/`updateRecord` calls the mock already serves like any other write,
 which is strictly *better* than real Airtable for testing purposes: no automation lag
-to wait out or get bitten by. `Access Status`,
-`Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`,
+to wait out or get bitten by. `Membership Status`, `Tier Name`, `Classes Allowed`, `Recently Active`,
 `Recurring Plans.Is Active/Paid Access`, `Levelups`' `Event`/`Issuer Name`/
 `Full Name (from Member)` lookups, and `Notes`' `Name`/`Full Name`/`Issuer Name`
 lookups are deliberately **not** derived (no `Tiers` join, no cross-table lookup
@@ -612,7 +610,7 @@ permissions don't include the one that route needs). See "Permissions" above.
 - `POST /api/logout` — clears the session cookie.
 - `GET /api/session` — `{ authenticated: boolean, email?, role?, permissions? }`.
 - `GET /api/students?date=<YYYY-MM-DD>` — **View Student Data.** The full roster with
-  computed status (`accessStatus`, `membershipStatus`, `tierName`, `classesAllowed`,
+  computed status (`membershipStatus`, `tierName`, `classesAllowed`,
   `remaining`, `availableCredits`, `checkinsToday`, `checkedInToday`,
   `lastCheckinSelections` — see "Check-in semantics"). `date` defaults to today; 400 if
   malformed. No `q` param — the frontend fetches the unfiltered roster once and

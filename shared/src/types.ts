@@ -35,7 +35,6 @@ export interface StudentStatus {
   suspended: boolean;
   leadLevel: number | null;
   followLevel: number | null;
-  accessStatus: string;
   membershipStatus: string;
   tierName: string | null;
   classesAllowed: number;

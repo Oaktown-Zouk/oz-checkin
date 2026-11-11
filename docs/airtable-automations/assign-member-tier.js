@@ -2,7 +2,7 @@
 // Assign a member's tier from the Tiers table
 //
 // Picks the highest-priced Tiers row whose "Min Monthly Price" is <= the
-// member's Membership Amount, and links it via Tier Rule. Everything else
+// member's Current Membership Payment, and links it via Tier Rule. Everything else
 // follows from that link:
 //
 //   Tier Rule  →  Tier Name (rollup)  →  Tier (formula)
@@ -23,8 +23,6 @@
 //
 // B. BACKSTOP — Scripting extension, run any time to re-link everyone.
 //    Set RUN_MODE = 'all'. Also what to run right after editing Tiers.
-//
-// The nightly plans sync does the same job, so this is belt-and-braces.
 // ═══════════════════════════════════════════════════════════════════════
 
 const RUN_MODE = 'single';        // 'single' for the automation, 'all' for a sweep

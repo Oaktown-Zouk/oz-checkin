@@ -33,12 +33,8 @@ respective tables, checked only for non-emptiness, never read individually) — 
 `SPEC.md`'s "Student self-service app" section.
 
 Computed fields to read directly, never recompute:
-- `Access Status` (formula) — `"Active"` (has an active Recurring Plan) / `"Paid"`
-  (recent drop-in or check-in) / `"Inactive"` / `"Trial"` (new sign-ups). The app only
-  ever branches on literally `"Active"` vs. everything else — `Trial` behaves like
-  `Inactive`: no access-status badge, credits shown instead.
 - `Membership Status` (formula) — `"Active"` / `"Lapsed / Donor"` / `"Prospect"`, a
-  donor-status label distinct from `Access Status`.
+  donor-status label. The kiosk branches on literally `"Active"`.
 - `Tier Name` / `Classes Allowed` (rollups via `Tier Rule` → `Tiers`) — can be blank
   even for an `Active` member; see "Tier Rule gaps" below.
 - `Remaining Today` (formula) — `Classes Allowed - Checked In Today (Live)`. Fully
@@ -97,7 +93,7 @@ reads `Available Credits` instead — see "Credits" below), `Checked In Today` /
 
 ### Tier Rule gaps
 
-A member can show `Access Status = Active` with no resolved `Tier Name`/
+A member with an active Recurring Plan can have no resolved `Tier Name`/
 `Classes Allowed` — the automation that maintains `Tier Rule` runs off the member's
 recent payment activity, so it can miss a member, or no `Tiers` row may match their
 actual payment amount at all. Two things handle this:

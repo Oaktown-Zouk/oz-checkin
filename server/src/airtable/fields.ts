@@ -19,7 +19,6 @@ export interface MemberFields {
   Phone?: string;
   "Lead Level"?: number;
   "Follow Level"?: number;
-  "Access Status"?: string;
   "Membership Status"?: string;
   "Tier Name"?: string;
   "Classes Allowed"?: number;

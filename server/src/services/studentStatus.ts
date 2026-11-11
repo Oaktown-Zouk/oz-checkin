@@ -35,7 +35,6 @@ export interface StudentStatus {
   suspended: boolean;
   leadLevel: number | null;
   followLevel: number | null;
-  accessStatus: string;
   membershipStatus: string;
   tierName: string | null;
   classesAllowed: number;
@@ -154,7 +153,6 @@ export function buildStatus(
     suspended: (f["Is Suspended"] ?? 0) > 0,
     leadLevel: f["Lead Level"] ?? null,
     followLevel: f["Follow Level"] ?? null,
-    accessStatus: f["Access Status"] ?? "Inactive",
     membershipStatus: f["Membership Status"] ?? "Prospect",
     tierName: f["Tier Name"] ?? null,
     classesAllowed,
@@ -199,7 +197,6 @@ export async function listStudentStatuses(opts: { date?: string } = {}): Promise
         "Is Suspended",
         "Lead Level",
         "Follow Level",
-        "Access Status",
         "Membership Status",
         "Tier Name",
         "Classes Allowed",
